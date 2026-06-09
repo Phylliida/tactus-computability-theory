@@ -233,7 +233,10 @@ proof fn lemma_multi_output_for_input(
         (forall|r: int| 0 <= r < rm_h.num_regs as int ==>
             run(m, c0, g).registers[(r + bh) as int] == halt_h.registers[r]) &&
         run(m, c0, g).registers[scratch as int] == 0 &&
-        run(m, c0, g).registers.len() == m.num_regs;
+        run(m, c0, g).registers.len() == m.num_regs &&
+        (forall|j: int| 0 <= j < m.num_regs
+            && (j < bh || j >= bh + rm_h.num_regs) && j != scratch
+            ==> run(m, c0, g).registers[j] == c0.registers[j]);
     let c1 = run(m, c0, g1);
     assert(c1.pc == p2);
     //  c1.registers[bh] == halt_h.registers[0] == output(rm_h, s) == f_h(s)
@@ -248,10 +251,11 @@ proof fn lemma_multi_output_for_input(
     assert(m.instructions[p2 as int] == mk_dj(bh, p2 + 3));
     assert(m.instructions[(p2 + 1) as int] == mk_inc(0));
     assert(m.instructions[(p2 + 2) as int] == mk_dj(scratch, p2));
-    assert(c1.registers[0] == 0) by {
-        //  reg 0 was zeroed by Phase 0, not touched by Phase 1 (Phase 1 only touches bh..bh+N_h)
-        //  Phase 0 zeroed reg 0, Phase 1 operates at reg_offset = bh = 4, so reg 0 untouched
-    };
+    //  reg 0 (< bh, != scratch) is out-of-bank for Phase 1, so its frame preserves it from c0,
+    //  where Phase 0 (triple_dist, src==0) had zeroed it.
+    assert(c0.registers[0] == 0);
+    assert(c1.registers[0] == c0.registers[0]);
+    assert(c1.registers[0] == 0);
     lemma_copy_loop_inner(m, c1, bh, 0, scratch, p2, f_h(s), 0, f_h(s));
     let f2: nat = 3 * f_h(s) + 1;
     let c2 = run(m, c1, f2);
