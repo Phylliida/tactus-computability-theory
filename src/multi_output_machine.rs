@@ -1,6 +1,6 @@
 use vstd::prelude::*;
 use crate::machine::*;
-use crate::conditional_halt::{lemma_run_split, lemma_run_halts_split};
+use crate::conditional_halt::{lemma_run_split, lemma_run_halts_split, lemma_init_configs_agree};
 use crate::multi_output_primitives::*;
 
 verus! {
@@ -178,6 +178,11 @@ proof fn lemma_multi_output_for_input(
     lemma_triple_dist_inner(m, init, 0, bh, b1, b2, scratch, 0, s, 0, s);
     let f0: nat = 5 * s + 1;
     let c0 = run(m, init, f0);
+    //  config_wf(m, c0): m well-formed, init well-formed, run preserves config_wf.
+    lemma_build_multi_output_wf(rm_h, rm_1, rm_2);
+    lemma_init_configs_agree(m, s);
+    lemma_run_preserves_config_wf(m, init, f0);
+    assert(c0.registers.len() == m.num_regs);
     assert(c0.pc == p1);
     assert(c0.registers[bh as int] == s);
     assert(c0.registers[scratch as int] == 0);

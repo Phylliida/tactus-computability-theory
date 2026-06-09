@@ -353,6 +353,27 @@ pub proof fn lemma_embed_step_sim(
     }
 }
 
+//  run preserves config_wf (registers.len() == m.num_regs and pc in range) — lifts
+//  lemma_step_preserves_config_wf through the fuel recursion.
+pub proof fn lemma_run_preserves_config_wf(m: RegisterMachine, c: Configuration, fuel: nat)
+    requires
+        machine_wf(m),
+        config_wf(m, c),
+    ensures
+        config_wf(m, run(m, c, fuel)),
+    decreases fuel,
+{
+    if fuel > 0 {
+        match step(m, c) {
+            Some(next) => {
+                lemma_step_preserves_config_wf(m, c);
+                lemma_run_preserves_config_wf(m, next, (fuel - 1) as nat);
+            },
+            None => {},
+        }
+    }
+}
+
 #[verifier::rlimit(500)]
 pub proof fn lemma_embed_reaches_target(
     rm_sub: RegisterMachine,
