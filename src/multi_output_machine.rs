@@ -259,6 +259,10 @@ proof fn lemma_multi_output_for_input(
     lemma_copy_loop_inner(m, c1, bh, 0, scratch, p2, f_h(s), 0, f_h(s));
     let f2: nat = 3 * f_h(s) + 1;
     let c2 = run(m, c1, f2);
+    //  config_wf propagates: c0 (established) -> c1 -> c2, giving the len preconditions.
+    lemma_run_preserves_config_wf(m, c0, g1);
+    lemma_run_preserves_config_wf(m, c1, f2);
+    assert(c2.registers.len() == m.num_regs);
     assert(c2.pc == p3);
     assert(c2.registers[0] == f_h(s));
 
@@ -268,12 +272,27 @@ proof fn lemma_multi_output_for_input(
     let init_1 = initial_config(rm_1, s);
     assert forall|r: int| 0 <= r < rm_1.num_regs as int implies
         c2.registers[(r + b1) as int] == init_1.registers[r]
-    by {};
+    by {
+        let idx = (r + b1) as int;
+        //  Preserve the b1 bank through phases 1-2 back to c0, then phase-0 distribution.
+        assert(c2.registers[idx] == c1.registers[idx]);   //  copy frame: idx != bh(src), != 0(dst)
+        assert(c1.registers[idx] == c0.registers[idx]);   //  embed frame: idx >= b1 out-of-bank, != scratch
+        if r == 0 {
+            assert(c0.registers[idx] == s);                //  triple_dist d2 == orig_val == s
+        } else {
+            //  idx not in {0=src, bh=d1, b1=d2, b2=d3}: idx in (b1, b2), so triple_dist's frame
+            //  preserves it from init, which is 0 everywhere but reg 0.
+            assert(idx != b2 as int);
+            assert(init.registers[idx] == 0);
+            assert(c0.registers[idx] == 0);
+        }
+    };
     assert(embed_configs_agree(rm_1, b1, p3, scratch, init_1, c2));
     assert forall|i: int| 0 <= i < n_1 as int implies
         m.instructions[(i + p3) as int] ==
             embed_instructions(rm_1.instructions, b1, p3, p4, scratch)[i]
     by {};
+    assert(halts(rm_1, s));  //  instantiate forall|s| halts(rm_1, s)
     let fuel_1: nat = choose|f: nat| run_halts(rm_1, init_1, f);
     lemma_embed_reaches_target(rm_1, m, b1, p3, p4, scratch, init_1, c2, fuel_1);
     let halt_1 = run(rm_1, init_1, fuel_1);
@@ -282,10 +301,25 @@ proof fn lemma_multi_output_for_input(
         (forall|r: int| 0 <= r < rm_1.num_regs as int ==>
             run(m, c2, g).registers[(r + b1) as int] == halt_1.registers[r]) &&
         run(m, c2, g).registers[scratch as int] == 0 &&
-        run(m, c2, g).registers.len() == m.num_regs;
+        run(m, c2, g).registers.len() == m.num_regs &&
+        (forall|j: int| 0 <= j < m.num_regs
+            && (j < b1 || j >= b1 + rm_1.num_regs) && j != scratch
+            ==> run(m, c2, g).registers[j] == c2.registers[j]);
     let c3 = run(m, c2, g3);
+    //  c3[b1] == halt_1[0] == output(rm_1,s) == f_1(s)  (like phase 1's f_h chain).
+    assert(output(rm_1, s) == f_1(s));
+    assert(init_1 == initial_config(rm_1, s));
+    assert(halt_1.registers[0] == output(rm_1, s));
     assert(c3.registers[b1 as int] == f_1(s));
+    lemma_run_preserves_config_wf(m, c2, g3);   //  config_wf(m, c3)
+    //  reg 0 (Phase 2 set f_h(s)) and reg 1 (=0, Phase 4's dst) preserved through Phase 3 (out-of-bank).
+    assert(c3.registers[0] == c2.registers[0]);
     assert(c3.registers[0] == f_h(s)); //  preserved from Phase 2
+    assert(init.registers[1] == 0);
+    assert(c0.registers[1] == 0);                  //  triple_dist frame (1 not in {0,bh,b1,b2})
+    assert(c1.registers[1] == c0.registers[1]);    //  phase 1 frame (1 out-of-bank)
+    assert(c2.registers[1] == c1.registers[1]);    //  phase 2 copy frame (1 != bh, != 0)
+    assert(c3.registers[1] == c2.registers[1]);    //  phase 3 frame (1 out-of-bank)
 
     //  ========================================
     //  Phase 4: copy bank_1[0] → reg 1
@@ -305,12 +339,27 @@ proof fn lemma_multi_output_for_input(
     let init_2 = initial_config(rm_2, s);
     assert forall|r: int| 0 <= r < rm_2.num_regs as int implies
         c4.registers[(r + b2) as int] == init_2.registers[r]
-    by {};
+    by {
+        let idx = (r + b2) as int;
+        //  Preserve the b2 bank through phases 1-4 back to c0, then phase-0 distribution.
+        assert(c4.registers[idx] == c3.registers[idx]);   //  phase 4 copy: idx != b1(src), != 1(dst)
+        assert(c3.registers[idx] == c2.registers[idx]);   //  phase 3 frame: idx >= b2 out-of-bank for b1
+        assert(c2.registers[idx] == c1.registers[idx]);   //  phase 2 copy: idx != bh(src), != 0(dst)
+        assert(c1.registers[idx] == c0.registers[idx]);   //  phase 1 frame: idx out-of-bank for bh
+        if r == 0 {
+            assert(c0.registers[idx] == s);                //  triple_dist d3 == orig_val == s
+        } else {
+            assert(init.registers[idx] == 0);
+            assert(c0.registers[idx] == 0);                //  triple_dist frame: init reg == 0
+        }
+    };
     assert(embed_configs_agree(rm_2, b2, p5, scratch, init_2, c4));
     assert forall|i: int| 0 <= i < n_2 as int implies
         m.instructions[(i + p5) as int] ==
             embed_instructions(rm_2.instructions, b2, p5, p6, scratch)[i]
     by {};
+    lemma_run_preserves_config_wf(m, c3, f4);   //  config_wf(m, c4)
+    assert(halts(rm_2, s));                      //  instantiate forall|s| halts(rm_2, s)
     let fuel_2: nat = choose|f: nat| run_halts(rm_2, init_2, f);
     lemma_embed_reaches_target(rm_2, m, b2, p5, p6, scratch, init_2, c4, fuel_2);
     let halt_2 = run(rm_2, init_2, fuel_2);
@@ -319,11 +368,29 @@ proof fn lemma_multi_output_for_input(
         (forall|r: int| 0 <= r < rm_2.num_regs as int ==>
             run(m, c4, g).registers[(r + b2) as int] == halt_2.registers[r]) &&
         run(m, c4, g).registers[scratch as int] == 0 &&
-        run(m, c4, g).registers.len() == m.num_regs;
+        run(m, c4, g).registers.len() == m.num_regs &&
+        (forall|j: int| 0 <= j < m.num_regs
+            && (j < b2 || j >= b2 + rm_2.num_regs) && j != scratch
+            ==> run(m, c4, g).registers[j] == c4.registers[j]);
     let c5 = run(m, c4, g5);
+    //  c5[b2] == halt_2[0] == output(rm_2,s) == f_2(s).
+    assert(output(rm_2, s) == f_2(s));
+    assert(init_2 == initial_config(rm_2, s));
+    assert(halt_2.registers[0] == output(rm_2, s));
     assert(c5.registers[b2 as int] == f_2(s));
+    lemma_run_preserves_config_wf(m, c4, g5);   //  config_wf(m, c5)
+    //  regs 0,1 (set by earlier copies) and reg 2 (=0, Phase 6's dst) preserved through Phase 5.
+    assert(c5.registers[0] == c4.registers[0]);
     assert(c5.registers[0] == f_h(s)); //  preserved
+    assert(c5.registers[1] == c4.registers[1]);
     assert(c5.registers[1] == f_1(s)); //  preserved
+    assert(init.registers[2] == 0);
+    assert(c0.registers[2] == 0);
+    assert(c1.registers[2] == c0.registers[2]);
+    assert(c2.registers[2] == c1.registers[2]);
+    assert(c3.registers[2] == c2.registers[2]);
+    assert(c4.registers[2] == c3.registers[2]);
+    assert(c5.registers[2] == c4.registers[2]);
 
     //  ========================================
     //  Phase 6: copy bank_2[0] → reg 2
