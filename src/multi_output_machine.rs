@@ -218,6 +218,7 @@ proof fn lemma_multi_output_for_input(
     by {};
 
     //  rm_h halts on s
+    assert(halts(rm_h, s));  //  instantiate forall|s| halts(rm_h, s); halts := exists f. run_halts(rm_h, init_h, f)
     let fuel_h: nat = choose|f: nat| run_halts(rm_h, init_h, f);
     lemma_embed_reaches_target(rm_h, m, bh, p1, p2, scratch, init_h, c0, fuel_h);
 
@@ -231,6 +232,9 @@ proof fn lemma_multi_output_for_input(
     let c1 = run(m, c0, g1);
     assert(c1.pc == p2);
     //  c1.registers[bh] == halt_h.registers[0] == output(rm_h, s) == f_h(s)
+    assert(output(rm_h, s) == f_h(s));  //  instantiate forall|s| output(rm_h,s)==f_h(s)
+    assert(init_h == initial_config(rm_h, s));  //  so output's choose == fuel_h's choose
+    assert(halt_h.registers[0] == output(rm_h, s));
     assert(c1.registers[bh as int] == f_h(s));
 
     //  ========================================
