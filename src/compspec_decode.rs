@@ -94,10 +94,14 @@ proof fn lemma_seq_scan_step_eval(acc: nat, i: nat, input: nat)
             if unpair2(acc) == 0 { acc } else { unpair2(acc) },
 {
     let x = pair(i, pair(acc, input));
-    assert(eval_comp(br_acc(), x) == acc) by {
-        lemma_unpair1_pair(acc, input);
-        lemma_unpair2_pair(i, pair(acc, input));
-    };
+    //  eval_comp is recursive (default fuel 1); seq_scan_step nests IfZero/CantorSnd/CantorFst/Id
+    //  several levels deep, so give the evaluator enough fuel to unfold the whole tree.
+    reveal_with_fuel(eval_comp, 8);
+    //  br_acc = CantorFst(CantorSnd(Id)) => unpair1(unpair2(x)) == unpair1(pair(acc,input)) == acc.
+    lemma_unpair2_pair(i, pair(acc, input));   //  unpair2(x) == pair(acc, input)
+    lemma_unpair1_pair(acc, input);            //  unpair1(pair(acc, input)) == acc
+    assert(eval_comp(br_acc(), x) == acc);
+    //  cond/else = CantorSnd(br_acc()) => unpair2(acc); IfZero gives the postcondition.
 }
 
 ///  Once at a position with unpair2 == 0, scanning stays there.
