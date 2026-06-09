@@ -188,6 +188,23 @@ proof fn lemma_iterate_extra_fuel(fuel1: nat, fuel2: nat, acc: nat, input: nat)
 //  Correctness: get_last_pair on encoded sequences
 //  ============================================================
 
+///  Bridge: eval_comp's closure-free compspec_iterate equals the closure-based
+///  iterate the scan helpers reason with. seq_scan_step() captures nothing, so the
+///  closure |x| eval_comp(seq_scan_step(), x) is identity-stable (the closure-identity
+///  issue that motivated compspec_iterate doesn't bite here). Straight induction.
+proof fn lemma_seq_compspec_iterate_is_iterate(count: nat, acc: nat, input: nat)
+    ensures
+        compspec_iterate(seq_scan_step(), count, acc, input)
+            == iterate(|x: nat| eval_comp(seq_scan_step(), x), count, acc, input),
+    decreases count,
+{
+    if count > 0 {
+        let arg = pair((count - 1) as nat, pair(acc, input));
+        lemma_seq_compspec_iterate_is_iterate(
+            (count - 1) as nat, eval_comp(seq_scan_step(), arg), input);
+    }
+}
+
 ///  For encoded sequences, eval_comp(get_last_pair(), enc) correctly finds the last pair.
 ///  Result is encode_nat_seq(seq![last_element]) = pair(last_element + 1, 0).
 pub proof fn lemma_get_last_pair_correct(s: Seq<nat>)
@@ -204,11 +221,21 @@ pub proof fn lemma_get_last_pair_correct(s: Seq<nat>)
     let step_fn = |x: nat| eval_comp(seq_scan_step(), x);
     lemma_encode_nat_seq_structure(s);
 
-    //  eval_comp(get_last_pair(), enc) = iterate(step_fn, enc, enc, enc)
+    //  Establish eval_comp(get_last_pair(), enc) == iterate(step_fn, enc, enc, enc):
+    //  get_last_pair = BoundedRec{Id, Id, seq_scan_step()}, so eval_comp == compspec_iterate
+    //  (lemma_eval_bounded_rec), which equals the closure iterate (the bridge lemma).
+    assert(eval_comp(get_last_pair(), enc) == iterate(step_fn, enc, enc, enc)) by {
+        reveal_with_fuel(eval_comp, 2);
+        lemma_eval_bounded_rec(CompSpec::Id, CompSpec::Id, seq_scan_step(), enc);
+        lemma_seq_compspec_iterate_is_iterate(enc, enc, enc);
+    };
 
     if s.len() == 1 {
-        //  unpair2(enc) == 0, so iterate stays at enc
+        //  singleton: unpair2(enc) == 0 so iterate stays at enc; s == seq![s.last()].
+        assert(unpair2(enc) == 0);
+        assert(s =~= seq![s[s.len() - 1]]);
         lemma_scan_stays_at_last(enc, enc, enc);
+        assert(iterate(step_fn, enc, enc, enc) == encode_nat_seq(seq![s[s.len() - 1]]));
     } else {
         //  unpair2(enc) = tail_enc != 0, first step advances to tail_enc
         lemma_encode_nat_seq_nonempty(tail_seq);
@@ -217,6 +244,12 @@ pub proof fn lemma_get_last_pair_correct(s: Seq<nat>)
         //  First step: iterate(enc, enc, enc) → iterate(enc-1, tail_enc, enc)
         lemma_encode_nat_seq_nonempty(s);
         lemma_seq_scan_step_eval(enc, (enc - 1) as nat, enc);
+        //  step value == unpair2(enc) == tail_enc; unfold iterate(enc,enc,enc) one step.
+        assert(step_fn(pair((enc - 1) as nat, pair(enc, enc))) == tail_enc);
+        assert(iterate(step_fn, enc, enc, enc)
+            == iterate(step_fn, (enc - 1) as nat, tail_enc, enc)) by {
+            reveal_with_fuel(iterate, 2);
+        };
 
         //  Input independence: iterate(enc-1, tail_enc, enc) == iterate(enc-1, tail_enc, tail_enc)
         lemma_iterate_input_independent(
@@ -231,6 +264,13 @@ pub proof fn lemma_get_last_pair_correct(s: Seq<nat>)
         assert(enc > tail_enc);
         //  iterate(tail_enc, tail_enc, tail_enc) converges (unpair2 of result == 0)
         let result = iterate(step_fn, tail_enc, tail_enc, tail_enc);
+        //  Same bridge at tail_enc: result == eval_comp(get_last_pair(), tail_enc), which the
+        //  IH (lemma_get_last_pair_correct(tail_seq)) equates to encode_nat_seq(seq![tail.last()]).
+        assert(eval_comp(get_last_pair(), tail_enc) == result) by {
+            reveal_with_fuel(eval_comp, 2);
+            lemma_eval_bounded_rec(CompSpec::Id, CompSpec::Id, seq_scan_step(), tail_enc);
+            lemma_seq_compspec_iterate_is_iterate(tail_enc, tail_enc, tail_enc);
+        };
         assert(result == encode_nat_seq(seq![s[s.len() - 1]]));
         lemma_encode_nat_seq_structure(seq![s[s.len() - 1]]);
         assert(unpair2(result) == 0);
@@ -238,6 +278,9 @@ pub proof fn lemma_get_last_pair_correct(s: Seq<nat>)
         //  Extra fuel: iterate(enc-1, tail_enc, tail_enc) == iterate(tail_enc, tail_enc, tail_enc)
         lemma_iterate_extra_fuel(
             tail_enc, (enc - 1) as nat, tail_enc, tail_enc);
+        //  Chain: iterate(enc,enc,enc) == iterate(enc-1,tail_enc,enc) == iterate(enc-1,tail_enc,tail_enc)
+        //        == result == encode_nat_seq(seq![last]).
+        assert(iterate(step_fn, enc, enc, enc) == encode_nat_seq(seq![s[s.len() - 1]]));
     }
 }
 
