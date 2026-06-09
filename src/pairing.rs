@@ -166,12 +166,16 @@ pub proof fn lemma_unpair_sum_exists(p: nat)
     //  Actually, unpair_sum(p) IS the chosen k, so its properties hold by definition.
     //  But we need to show the choice is valid (the predicate is satisfiable).
     //  Let's prove it by finding a concrete witness.
+    //  Precondition for the helper: T(p+1) > p (since T(p+1) >= p+1 > p).
+    lemma_triangular_ge(p + 1);
     lemma_unpair_sum_exists_helper(p, p);
 }
 
 proof fn lemma_unpair_sum_exists_helper(p: nat, fuel: nat)
+    requires
+        triangular(fuel + 1) > p,
     ensures
-        exists|k: nat| triangular(k) <= p && p < triangular(k + 1),
+        exists|k: nat| #![trigger triangular(k)] triangular(k) <= p && p < triangular(k + 1),
     decreases fuel,
 {
     assert(triangular(0) == 0);
@@ -224,13 +228,15 @@ pub proof fn lemma_unpair1_pair(a: nat, b: nat)
     assert(p < triangular(s + 1));
     //  By uniqueness (T is strictly monotone), k == s
     if k < s {
-        lemma_triangular_strict_mono(k + 1, s + 1);
-        assert(triangular(k + 1) <= triangular(s) <= p);
-        assert(false); //  contradicts p < T(k+1)
+        //  k+1 <= s, so T(k+1) <= T(s) <= p < T(k+1) — contradiction.
+        if k + 1 < s { lemma_triangular_strict_mono(k + 1, s); }
+        assert(triangular(k + 1) <= triangular(s));
+        assert(false);
     } else if k > s {
-        lemma_triangular_strict_mono(s + 1, k + 1);
-        assert(triangular(s + 1) <= triangular(k) <= p);
-        assert(false); //  contradicts p < T(s+1)
+        //  s+1 <= k, so T(s+1) <= T(k) <= p < T(s+1) — contradiction.
+        if s + 1 < k { lemma_triangular_strict_mono(s + 1, k); }
+        assert(triangular(s + 1) <= triangular(k));
+        assert(false);
     }
     assert(k == s);
     //  unpair1(p) = p - T(k) = T(s) + a - T(s) = a
@@ -250,10 +256,12 @@ pub proof fn lemma_unpair2_pair(a: nat, b: nat)
     let k = unpair_sum(p);
     lemma_triangular_step(s);
     if k < s {
-        lemma_triangular_strict_mono(k + 1, s + 1);
+        if k + 1 < s { lemma_triangular_strict_mono(k + 1, s); }
+        assert(triangular(k + 1) <= triangular(s));
         assert(false);
     } else if k > s {
-        lemma_triangular_strict_mono(s + 1, k + 1);
+        if s + 1 < k { lemma_triangular_strict_mono(s + 1, k); }
+        assert(triangular(s + 1) <= triangular(k));
         assert(false);
     }
     assert(k == s);
@@ -271,8 +279,10 @@ pub proof fn lemma_unpair_sum(p: nat)
 {
     lemma_unpair_sum_exists(p);
     let k = unpair_sum(p);
-    //  unpair1(p) = p - T(k), unpair2(p) = k - unpair1(p)
-    //  sum = (p - T(k)) + (k - (p - T(k))) = k
+    //  T(k) <= p < T(k+1) = T(k)+k+1, so unpair1(p) = p - T(k) <= k = unpair_sum(p);
+    //  then unpair2(p) = k - unpair1(p) and unpair1 + unpair2 = k.
+    lemma_triangular_step(k);
+    assert(unpair1(p) <= k);
 }
 
 ///  Full roundtrip: pair(unpair1(p), unpair2(p)) == p.
