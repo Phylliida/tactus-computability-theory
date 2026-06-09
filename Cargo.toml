@@ -1,0 +1,17 @@
+[package]
+name = "tactus-computability-theory"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+vstd = { path = "../tactus/source/vstd" }
+# The group-theory dependency is imported via verus --import/--extern (see check.sh),
+# not through cargo (cargo verus routes to the verus-dev/Z3 binary). Aliased so the
+# sources' `use verus_group_theory::...` resolve to the tactus crate.
+verus_group_theory = { path = "../tactus-group-theory", package = "tactus-group-theory" }
+
+[package.metadata.verus]
+verify = true
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(verus_keep_ghost)'] }
