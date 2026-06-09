@@ -426,11 +426,13 @@ proof fn lemma_multi_output_for_input(
     assert(!is_halted(m, c4)); //  c4.pc == p5, instruction is embedded
     assert(!is_halted(m, c5)); //  c5.pc == p6, instruction is copy
 
+    //  c6 = run(m, c5, f6) is halted (phase 7), so the run halts within f6 steps.
+    lemma_halted_at_end_run_halts(m, c5, f6);
     assert(run_halts(m, c5, f6));
 
-    //  Phase 5→6: run_halts(m, c5, f6) — established above.
-    //  Phase 4→5→6:
+    //  Phase 4→5→6: the step before c5 isn't halted (else c5 would be, but c5.pc==p6).
     if g5 > 0 {
+        lemma_not_halted_pred(m, c4, g5);
         lemma_not_halted_means_not_run_halts(m, c4, (g5 - 1) as nat);
         lemma_run_halts_split(m, c4, (g5 - 1) as nat, f6);
     }
@@ -439,6 +441,7 @@ proof fn lemma_multi_output_for_input(
 
     //  Phase 3→4→5→6:
     if f4 > 0 {
+        lemma_not_halted_pred(m, c3, f4);
         lemma_not_halted_means_not_run_halts(m, c3, (f4 - 1) as nat);
         lemma_run_halts_split(m, c3, (f4 - 1) as nat, f56);
     }
@@ -447,6 +450,7 @@ proof fn lemma_multi_output_for_input(
 
     //  Phase 2→3→4→5→6:
     if g3 > 0 {
+        lemma_not_halted_pred(m, c2, g3);
         lemma_not_halted_means_not_run_halts(m, c2, (g3 - 1) as nat);
         lemma_run_halts_split(m, c2, (g3 - 1) as nat, f46);
     }
@@ -455,6 +459,7 @@ proof fn lemma_multi_output_for_input(
 
     //  Phase 1→2→...→6:
     if f2 > 0 {
+        lemma_not_halted_pred(m, c1, f2);
         lemma_not_halted_means_not_run_halts(m, c1, (f2 - 1) as nat);
         lemma_run_halts_split(m, c1, (f2 - 1) as nat, f36);
     }
@@ -463,6 +468,7 @@ proof fn lemma_multi_output_for_input(
 
     //  Phase 0→1→...→6:
     if g1 > 0 {
+        lemma_not_halted_pred(m, c0, g1);
         lemma_not_halted_means_not_run_halts(m, c0, (g1 - 1) as nat);
         lemma_run_halts_split(m, c0, (g1 - 1) as nat, f26);
     }
@@ -470,6 +476,7 @@ proof fn lemma_multi_output_for_input(
     assert(run_halts(m, c0, f16));
 
     //  init→0→1→...→6:
+    lemma_not_halted_pred(m, init, f0);
     lemma_not_halted_means_not_run_halts(m, init, (f0 - 1) as nat);
     lemma_run_halts_split(m, init, (f0 - 1) as nat, f16);
     let total: nat = f0 + f16;

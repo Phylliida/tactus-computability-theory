@@ -394,6 +394,43 @@ pub proof fn lemma_run_preserves_config_wf(m: RegisterMachine, c: Configuration,
     }
 }
 
+//  is_halted at the end of a run => the run halts (the symbolic-fuel version of
+//  run_halts that can't be unfolded a symbolic number of times at the call site).
+pub proof fn lemma_halted_at_end_run_halts(m: RegisterMachine, c: Configuration, fuel: nat)
+    requires
+        is_halted(m, run(m, c, fuel)),
+    ensures
+        run_halts(m, c, fuel),
+    decreases fuel,
+{
+    if fuel > 0 {
+        match step(m, c) {
+            Some(next) => lemma_halted_at_end_run_halts(m, next, (fuel - 1) as nat),
+            None => {},
+        }
+    }
+}
+
+//  If the config one step earlier were halted, the machine would stay halted, so the
+//  end would be halted too — contrapositive gives: end not halted => predecessor not halted.
+pub proof fn lemma_not_halted_pred(m: RegisterMachine, c: Configuration, fuel: nat)
+    requires
+        fuel > 0,
+        !is_halted(m, run(m, c, fuel)),
+    ensures
+        !is_halted(m, run(m, c, (fuel - 1) as nat)),
+    decreases fuel,
+{
+    match step(m, c) {
+        Some(next) => {
+            if fuel > 1 {
+                lemma_not_halted_pred(m, next, (fuel - 1) as nat);
+            }
+        },
+        None => {},
+    }
+}
+
 #[verifier::rlimit(500)]
 pub proof fn lemma_embed_reaches_target(
     rm_sub: RegisterMachine,
