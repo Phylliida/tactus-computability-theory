@@ -312,6 +312,12 @@ pub proof fn lemma_embed_step_sim(
         ),
         step(m, c).unwrap().registers.len() == m.num_regs,
         config_wf(rm_sub, step(rm_sub, c_sub).unwrap()),
+        //  per-step frame: registers outside the sub-machine's bank (and != scratch) are
+        //  unchanged — the embedded instruction only ever touches register r+reg_offset (in-bank).
+        forall|j: int| 0 <= j < m.num_regs
+            && (j < reg_offset || j >= reg_offset + rm_sub.num_regs)
+            && j != scratch
+            ==> #[trigger] step(m, c).unwrap().registers[j] == c.registers[j],
 {
     reveal(machine_wf);
     let pc = c_sub.pc;
@@ -334,6 +340,13 @@ pub proof fn lemma_embed_step_sim(
             assert(s_m.registers[scratch as int] == 0) by {
                 assert((r + reg_offset) != scratch);
             };
+            assert((r as int) < rm_sub.num_regs);
+            assert forall|j: int| 0 <= j < m.num_regs
+                && (j < reg_offset || j >= reg_offset + rm_sub.num_regs) && j != scratch
+                implies s_m.registers[j] == c.registers[j]
+            by {
+                assert(j != (r + reg_offset) as int);
+            };
         },
         Instruction::DecJump { register: r, target: t } => {
             assert(m_instr == mk_dj(r + reg_offset, t + pc_offset));
@@ -347,6 +360,13 @@ pub proof fn lemma_embed_step_sim(
             };
             assert(s_m.registers[scratch as int] == 0) by {
                 if c_sub.registers[r as int] > 0 { assert((r + reg_offset) != scratch); }
+            };
+            assert((r as int) < rm_sub.num_regs);
+            assert forall|j: int| 0 <= j < m.num_regs
+                && (j < reg_offset || j >= reg_offset + rm_sub.num_regs) && j != scratch
+                implies s_m.registers[j] == c.registers[j]
+            by {
+                assert(j != (r + reg_offset) as int);
             };
         },
         Instruction::Halt => { assert(false); },
@@ -408,7 +428,11 @@ pub proof fn lemma_embed_reaches_target(
             (forall|r: int| 0 <= r < rm_sub.num_regs as int ==>
                 run(m, c, g).registers[(r + reg_offset) as int] == c_sub_halt.registers[r]) &&
             run(m, c, g).registers[scratch as int] == 0 &&
-            run(m, c, g).registers.len() == m.num_regs
+            run(m, c, g).registers.len() == m.num_regs &&
+            (forall|j: int| 0 <= j < m.num_regs
+                && (j < reg_offset || j >= reg_offset + rm_sub.num_regs)
+                && j != scratch
+                ==> run(m, c, g).registers[j] == c.registers[j])
     }),
     decreases fuel,
 {
@@ -427,6 +451,10 @@ pub proof fn lemma_embed_reaches_target(
                 run(m, c, g).registers[(r + reg_offset) as int] == c_sub_halt.registers[r]);
             assert(run(m, c, g).registers[scratch as int] == 0);
             assert(run(m, c, g).registers.len() == m.num_regs);
+            assert(run(m, c, g) == c);   //  g == 0
+            assert(forall|j: int| 0 <= j < m.num_regs
+                && (j < reg_offset || j >= reg_offset + rm_sub.num_regs) && j != scratch
+                ==> run(m, c, g).registers[j] == c.registers[j]);
         } else {
             assert(rm_sub.instructions[c_sub.pc as int] is Halt);
             let embedded = embed_instructions(
@@ -447,6 +475,10 @@ pub proof fn lemma_embed_reaches_target(
                 run(m, c, g).registers[(r + reg_offset) as int] == c_sub_halt.registers[r]);
             assert(run(m, c, g).registers[scratch as int] == 0);
             assert(run(m, c, g).registers.len() == m.num_regs);
+            //  run(m,c,1)==next and next.registers==c.registers => out-of-bank regs preserved.
+            assert(forall|j: int| 0 <= j < m.num_regs
+                && (j < reg_offset || j >= reg_offset + rm_sub.num_regs) && j != scratch
+                ==> run(m, c, g).registers[j] == c.registers[j]);
         }
     } else {
         assert(fuel > 0);
@@ -461,9 +493,21 @@ pub proof fn lemma_embed_reaches_target(
             (forall|r: int| 0 <= r < rm_sub.num_regs as int ==>
                 run(m, s_m, g).registers[(r + reg_offset) as int] == c_sub_halt.registers[r]) &&
             run(m, s_m, g).registers[scratch as int] == 0 &&
-            run(m, s_m, g).registers.len() == m.num_regs;
+            run(m, s_m, g).registers.len() == m.num_regs &&
+            (forall|j: int| 0 <= j < m.num_regs
+                && (j < reg_offset || j >= reg_offset + rm_sub.num_regs) && j != scratch
+                ==> run(m, s_m, g).registers[j] == s_m.registers[j]);
         assert(run(m, c, g_inner + 1) == run(m, s_m, g_inner));
         assert(run(rm_sub, c_sub, fuel) == c_sub_halt);
+        //  Frame for g = g_inner+1: run(m,c,g_inner+1)==run(m,s_m,g_inner), whose out-of-bank
+        //  regs == s_m's (IH frame from the choose) == c's (per-step frame from lemma_embed_step_sim).
+        assert forall|j: int| 0 <= j < m.num_regs
+            && (j < reg_offset || j >= reg_offset + rm_sub.num_regs) && j != scratch
+            implies run(m, c, g_inner + 1).registers[j] == c.registers[j]
+        by {
+            assert(run(m, s_m, g_inner).registers[j] == s_m.registers[j]);  //  g_inner's frame
+            assert(s_m.registers[j] == c.registers[j]);                      //  per-step frame
+        };
     }
 }
 
