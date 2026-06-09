@@ -413,8 +413,8 @@ pub proof fn lemma_encode_ge_cost_inner(f: Formula, v: nat)
 {
     match f {
         Formula::Eq { left, right } => {
-            //  encode = pair(0, pair(a, b)) >= 1 (since encode > 0 by precondition)
-            //  cost = 1. So encode >= 1 = cost. ✓
+            //  encode(f) >= 1 (precondition !(encode==0), nat); traversal_cost(Eq,v) == 1.
+            assert(traversal_cost(f, v) == 1);
         },
         Formula::In { left, right } => {
             //  encode = pair(1, pair(a, b)) >= 1. cost = 1. ✓
@@ -835,6 +835,10 @@ proof fn lemma_subst_tag_atomic_unary(f: Formula, var: nat, t: Term)
     requires formula_tag(f) <= 2,
     ensures unpair1(encode(f)) == unpair1(encode(subst(f, var, t))),
 {
+    //  Hand the closer the one-step encode unfoldings so it doesn't recursively
+    //  churn through encode/subst (Lean maxHeartbeats blowup otherwise).
+    lemma_encode_is_pair(f);
+    lemma_encode_is_pair(subst(f, var, t));
     match f {
         Formula::Eq { left, right } => {
             lemma_unpair1_pair(0nat, pair(encode_term(left), encode_term(right)));
@@ -858,19 +862,17 @@ proof fn lemma_subst_tag_quantifier(f: Formula, var: nat, t: Term)
     requires formula_tag(f) >= 7,
     ensures unpair1(encode(f)) == unpair1(encode(subst(f, var, t))),
 {
+    //  encode(_) == pair(tag, content); unpair1 strips to the tag. subst keeps the
+    //  Forall/Exists constructor in BOTH branches of its capture-check, so the tag is
+    //  preserved. Spelled out (no encode(subst(*sub)) reference) so Lean doesn't churn
+    //  recursively unfolding encode/subst (would blow maxHeartbeats otherwise).
+    lemma_encode_is_pair(f);
+    lemma_encode_is_pair(subst(f, var, t));
+    lemma_unpair1_pair(formula_tag(f), formula_content(f));
+    lemma_unpair1_pair(formula_tag(subst(f, var, t)), formula_content(subst(f, var, t)));
     match f {
-        Formula::Forall { var: v, sub } => {
-            lemma_unpair1_pair(7nat, pair(v, encode(*sub)));
-            if v == var {} else {
-                lemma_unpair1_pair(7nat, pair(v, encode(subst(*sub, var, t))));
-            }
-        },
-        Formula::Exists { var: v, sub } => {
-            lemma_unpair1_pair(8nat, pair(v, encode(*sub)));
-            if v == var {} else {
-                lemma_unpair1_pair(8nat, pair(v, encode(subst(*sub, var, t))));
-            }
-        },
+        Formula::Forall { var: v, sub } => { if v == var {} else {} },
+        Formula::Exists { var: v, sub } => { if v == var {} else {} },
         _ => {},
     }
 }
@@ -882,23 +884,19 @@ proof fn lemma_subst_tag_compound(f: Formula, var: nat, t: Term)
     if formula_tag(f) >= 7 {
         lemma_subst_tag_quantifier(f, var, t);
     } else {
+        //  tags 3..6 (And/Or/Implies/Iff): subst keeps the binary constructor, so the
+        //  tag is preserved. Reduce unpair1(encode(_)) to the tag via encode_is_pair and
+        //  let the match resolve the tag per arm — without referencing encode(subst(*l)),
+        //  which would make Lean churn recursively (maxHeartbeats blowup).
+        lemma_encode_is_pair(f);
+        lemma_encode_is_pair(subst(f, var, t));
+        lemma_unpair1_pair(formula_tag(f), formula_content(f));
+        lemma_unpair1_pair(formula_tag(subst(f, var, t)), formula_content(subst(f, var, t)));
         match f {
-            Formula::And { left, right } => {
-                lemma_subst_tag_binary(3, encode(*left), encode(*right),
-                    encode(subst(*left, var, t)), encode(subst(*right, var, t)));
-            },
-            Formula::Or { left, right } => {
-                lemma_subst_tag_binary(4, encode(*left), encode(*right),
-                    encode(subst(*left, var, t)), encode(subst(*right, var, t)));
-            },
-            Formula::Implies { left, right } => {
-                lemma_subst_tag_binary(5, encode(*left), encode(*right),
-                    encode(subst(*left, var, t)), encode(subst(*right, var, t)));
-            },
-            Formula::Iff { left, right } => {
-                lemma_subst_tag_binary(6, encode(*left), encode(*right),
-                    encode(subst(*left, var, t)), encode(subst(*right, var, t)));
-            },
+            Formula::And { .. } => {},
+            Formula::Or { .. } => {},
+            Formula::Implies { .. } => {},
+            Formula::Iff { .. } => {},
             _ => {},
         }
     }
