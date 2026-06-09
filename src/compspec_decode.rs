@@ -288,6 +288,26 @@ pub proof fn lemma_get_last_pair_correct(s: Seq<nat>)
 //  Main output correctness proofs
 //  ============================================================
 
+//  One-step eval_comp unfold lemmas (empty body, like lemma_eval_bounded_rec): unfold a
+//  single non-recursive constructor without letting the closer churn down into nested
+//  recursive terms (e.g. the BoundedRec inside get_last_pair).
+proof fn lemma_eval_cantor_fst(inner: CompSpec, x: nat)
+    ensures eval_comp(CompSpec::CantorFst { inner: Box::new(inner) }, x) == unpair1(eval_comp(inner, x)),
+{ }
+
+proof fn lemma_eval_cantor_snd(inner: CompSpec, x: nat)
+    ensures eval_comp(CompSpec::CantorSnd { inner: Box::new(inner) }, x) == unpair2(eval_comp(inner, x)),
+{ }
+
+proof fn lemma_eval_comp_compose(outer: CompSpec, inner: CompSpec, x: nat)
+    ensures eval_comp(CompSpec::Comp { outer: Box::new(outer), inner: Box::new(inner) }, x)
+        == eval_comp(outer, eval_comp(inner, x)),
+{ }
+
+proof fn lemma_eval_pred(x: nat)
+    ensures eval_comp(CompSpec::Pred, x) == if x > 0 { (x - 1) as nat } else { 0 },
+{ }
+
 ///  Helper: trace eval_comp through the unpairing chain for a valid proof code.
 pub proof fn lemma_output_eval_chain(s: nat, p: Proof)
     requires
@@ -319,33 +339,43 @@ pub proof fn lemma_output_eval_chain(s: nat, p: Proof)
     let last_pair = encode_nat_seq(seq![last_enc_line]);
     assert(eval_comp(get_last_pair(), s) == last_pair);
 
-    //  Step 3: last_seq_elem(s) = Pred(unpair1(last_pair)) = last_enc_line
+    //  Step 3: eval_comp(last_seq_elem(), s) == last_enc_line.
+    //  last_seq_elem = Comp(Pred, CantorFst(get_last_pair)); eval == Pred(unpair1(last_pair)).
     lemma_encode_nat_seq_structure(seq![last_enc_line]);
-    //  last_pair = pair(last_enc_line + 1, 0)
-    //  unpair1(last_pair) = last_enc_line + 1
-    //  Pred(last_enc_line + 1) = last_enc_line
+    assert(last_pair == pair(last_enc_line + 1, 0));
+    lemma_unpair1_pair(last_enc_line + 1, 0);        //  unpair1(last_pair) == last_enc_line + 1
+    lemma_eval_comp_compose(CompSpec::Pred,
+        CompSpec::CantorFst { inner: Box::new(get_last_pair()) }, s);
+    lemma_eval_cantor_fst(get_last_pair(), s);       //  unpair1(eval_comp(get_last_pair,s)) == last_enc_line+1
+    lemma_eval_pred(last_enc_line + 1);              //  Pred(last_enc_line+1) == last_enc_line
+    assert(eval_comp(last_seq_elem(), s) == last_enc_line);
 
-    //  Step 4: last_formula_enc(s) = unpair1(last_enc_line) = encode(conclusion)
-    //  last_enc_line = encode_line(last_line) = pair(encode(conclusion), encode_justification(last_line.1))
+    //  Step 4: eval_comp(last_formula_enc(), s) == encode(conclusion).
+    //  last_formula_enc = CantorFst(last_seq_elem); last_enc_line = pair(encode(concl), justification).
+    lemma_eval_cantor_fst(last_seq_elem(), s);
     lemma_unpair1_pair(encode(conclusion), encode_justification(last_line.1));
-    //  unpair1(last_enc_line) = encode(conclusion)
+    assert(eval_comp(last_formula_enc(), s) == encode(conclusion));
 
-    //  Step 5: iff_data(s) = unpair2(encode(conclusion))
-    //  conclusion = Iff{left, right}
-    //  encode(Iff{left, right}) = pair(6, pair(encode(left), encode(right)))
-    //  Need to match the Iff pattern
+    //  Step 5: eval_comp(iff_data(), s) == unpair2(encode(conclusion)).
+    lemma_eval_cantor_snd(last_formula_enc(), s);
+    assert(eval_comp(iff_data(), s) == unpair2(encode(conclusion)));
+
     match conclusion {
         Formula::Iff { left, right } => {
             let el = encode(*left);
             let er = encode(*right);
             assert(encode(conclusion) == pair(6, pair(el, er)));
-            lemma_unpair2_pair(6nat, pair(el, er));
-            //  unpair2(encode(conclusion)) = pair(el, er)
+            lemma_unpair2_pair(6nat, pair(el, er));   //  unpair2(encode(concl)) == pair(el, er)
+            assert(eval_comp(iff_data(), s) == pair(el, er));
 
-            //  Step 6: output1 = unpair1(pair(el, er)) = el = enc_left
+            //  Step 6: output1 = CantorFst(iff_data) => unpair1(pair(el,er)) == el == enc_left.
+            lemma_eval_cantor_fst(iff_data(), s);
             lemma_unpair1_pair(el, er);
-            //  Step 6b: output2 = unpair2(pair(el, er)) = er = enc_right
+            assert(eval_comp(output1_comp_term(), s) == el);
+            //  output2 = CantorSnd(iff_data) => unpair2(pair(el,er)) == er == enc_right.
+            lemma_eval_cantor_snd(iff_data(), s);
             lemma_unpair2_pair(el, er);
+            assert(eval_comp(output2_comp_term(), s) == er);
         },
         _ => {
             //  conclusion_is_iff_of_sentences requires Iff
