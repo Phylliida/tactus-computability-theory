@@ -58,6 +58,25 @@ pub proof fn lemma_tm_reaches_trans(tm: Tm, a: TmConfig, b: TmConfig, c: TmConfi
     assert(tm_run(tm, a, (f1 + f2) as nat) == c);
 }
 
+/// The TM, started from `c`, reaches `c2` in a **strictly positive** number of steps. The backward
+/// direction (B6) inducts on TM fuel and needs every simulated 2-counter step to consume `≥ 1` TM
+/// step, so the fuel strictly decreases — even for a `DecJump`-on-zero self-loop, where the encoded
+/// configs coincide (`enc(c) == enc(step(c))`) yet the gadget still runs two peek steps.
+pub open spec fn tm_reaches_pos(tm: Tm, c: TmConfig, c2: TmConfig) -> bool {
+    exists|fuel: nat| 1 <= fuel && tm_run(tm, c, fuel) == c2
+}
+
+/// Introduce `tm_reaches_pos` from a concrete positive run.
+pub proof fn lemma_tm_reaches_pos_intro(tm: Tm, c: TmConfig, c2: TmConfig, fuel: nat)
+    requires
+        1 <= fuel,
+        tm_run(tm, c, fuel) == c2,
+    ensures
+        tm_reaches_pos(tm, c, c2),
+{
+    assert(1 <= fuel && tm_run(tm, c, fuel) == c2);   // witness for the exists
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Quintuple extraction.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -102,6 +121,9 @@ pub proof fn lemma_sim_inc_left(rm: RegisterMachine, pc: nat, c1: nat, c2: nat)
         rm.instructions[pc as int] == mk_inc(0),
     ensures
         tm_reaches(rm_to_tm(rm),
+            two_counter_config(c1, c2, entry(pc), tm_mod(rm.instructions.len())),
+            two_counter_config((c1 + 1) as nat, c2, entry((pc + 1) as nat), tm_mod(rm.instructions.len()))),
+        tm_reaches_pos(rm_to_tm(rm),
             two_counter_config(c1, c2, entry(pc), tm_mod(rm.instructions.len())),
             two_counter_config((c1 + 1) as nat, c2, entry((pc + 1) as nat), tm_mod(rm.instructions.len()))),
 {
@@ -157,6 +179,7 @@ pub proof fn lemma_sim_inc_left(rm: RegisterMachine, pc: nat, c1: nat, c2: nat)
     assert((2 * c1 + 2 + 2) as nat == (2 * c1 + 4) as nat);
     assert(tm_run(tm, cfg0, (2 * c1 + 4) as nat) == cfg_fin);
     lemma_tm_reaches_intro(tm, cfg0, cfg_fin, (2 * c1 + 4) as nat);
+    lemma_tm_reaches_pos_intro(tm, cfg0, cfg_fin, (2 * c1 + 4) as nat);
 }
 
 /// **Inc on the right counter (register 1).** Mirror of `lemma_sim_inc_left`: reaches
@@ -168,6 +191,9 @@ pub proof fn lemma_sim_inc_right(rm: RegisterMachine, pc: nat, c1: nat, c2: nat)
         rm.instructions[pc as int] == mk_inc(1),
     ensures
         tm_reaches(rm_to_tm(rm),
+            two_counter_config(c1, c2, entry(pc), tm_mod(rm.instructions.len())),
+            two_counter_config(c1, (c2 + 1) as nat, entry((pc + 1) as nat), tm_mod(rm.instructions.len()))),
+        tm_reaches_pos(rm_to_tm(rm),
             two_counter_config(c1, c2, entry(pc), tm_mod(rm.instructions.len())),
             two_counter_config(c1, (c2 + 1) as nat, entry((pc + 1) as nat), tm_mod(rm.instructions.len()))),
 {
@@ -217,6 +243,7 @@ pub proof fn lemma_sim_inc_right(rm: RegisterMachine, pc: nat, c1: nat, c2: nat)
     assert((2 * c2 + 2 + 2) as nat == (2 * c2 + 4) as nat);
     assert(tm_run(tm, cfg0, (2 * c2 + 4) as nat) == cfg_fin);
     lemma_tm_reaches_intro(tm, cfg0, cfg_fin, (2 * c2 + 4) as nat);
+    lemma_tm_reaches_pos_intro(tm, cfg0, cfg_fin, (2 * c2 + 4) as nat);
 }
 
 /// **DecJump on the left counter (register 0).** Peek `c1`: if `c1 > 0`, decrement and fall through
@@ -231,6 +258,12 @@ pub proof fn lemma_sim_decjump_left(rm: RegisterMachine, pc: nat, t: nat, c1: na
             two_counter_config(c1, c2, entry(pc), tm_mod(rm.instructions.len())),
             two_counter_config((c1 - 1) as nat, c2, entry((pc + 1) as nat), tm_mod(rm.instructions.len()))),
         c1 == 0 ==> tm_reaches(rm_to_tm(rm),
+            two_counter_config(c1, c2, entry(pc), tm_mod(rm.instructions.len())),
+            two_counter_config(c1, c2, entry(t), tm_mod(rm.instructions.len()))),
+        c1 > 0 ==> tm_reaches_pos(rm_to_tm(rm),
+            two_counter_config(c1, c2, entry(pc), tm_mod(rm.instructions.len())),
+            two_counter_config((c1 - 1) as nat, c2, entry((pc + 1) as nat), tm_mod(rm.instructions.len()))),
+        c1 == 0 ==> tm_reaches_pos(rm_to_tm(rm),
             two_counter_config(c1, c2, entry(pc), tm_mod(rm.instructions.len())),
             two_counter_config(c1, c2, entry(t), tm_mod(rm.instructions.len()))),
 {
@@ -300,11 +333,13 @@ pub proof fn lemma_sim_decjump_left(rm: RegisterMachine, pc: nat, t: nat, c1: na
         assert((2 + (2 * c1 + 2) + 2) as nat == (2 * c1 + 6) as nat);
         assert(tm_run(tm, cfg0, (2 * c1 + 6) as nat) == cfg_fin);
         lemma_tm_reaches_intro(tm, cfg0, cfg_fin, (2 * c1 + 6) as nat);
+        lemma_tm_reaches_pos_intro(tm, cfg0, cfg_fin, (2 * c1 + 6) as nat);
     }
     if c1 == 0 {
         let cfg_jmp = two_counter_config(c1, c2, entry(t), tm.m);
         assert(tm_run(tm, cfg0, 2) == cfg_jmp);
         lemma_tm_reaches_intro(tm, cfg0, cfg_jmp, 2);
+        lemma_tm_reaches_pos_intro(tm, cfg0, cfg_jmp, 2);
     }
 }
 
@@ -320,6 +355,12 @@ pub proof fn lemma_sim_decjump_right(rm: RegisterMachine, pc: nat, t: nat, c1: n
             two_counter_config(c1, c2, entry(pc), tm_mod(rm.instructions.len())),
             two_counter_config(c1, (c2 - 1) as nat, entry((pc + 1) as nat), tm_mod(rm.instructions.len()))),
         c2 == 0 ==> tm_reaches(rm_to_tm(rm),
+            two_counter_config(c1, c2, entry(pc), tm_mod(rm.instructions.len())),
+            two_counter_config(c1, c2, entry(t), tm_mod(rm.instructions.len()))),
+        c2 > 0 ==> tm_reaches_pos(rm_to_tm(rm),
+            two_counter_config(c1, c2, entry(pc), tm_mod(rm.instructions.len())),
+            two_counter_config(c1, (c2 - 1) as nat, entry((pc + 1) as nat), tm_mod(rm.instructions.len()))),
+        c2 == 0 ==> tm_reaches_pos(rm_to_tm(rm),
             two_counter_config(c1, c2, entry(pc), tm_mod(rm.instructions.len())),
             two_counter_config(c1, c2, entry(t), tm_mod(rm.instructions.len()))),
 {
@@ -385,11 +426,15 @@ pub proof fn lemma_sim_decjump_right(rm: RegisterMachine, pc: nat, t: nat, c1: n
         assert((2 + (2 * c2 + 2) + 2) as nat == (2 * c2 + 6) as nat);
         assert(tm_run(tm, cfg0, (2 * c2 + 6) as nat) == cfg_fin);
         lemma_tm_reaches_intro(tm, cfg0, cfg_fin, (2 * c2 + 6) as nat);
+        lemma_tm_reaches_pos_intro(tm, cfg0, cfg_fin, (2 * c2 + 6) as nat);
+        return;   // isolate the c2>0 postcondition check (the c2==0 implications are vacuous here)
     }
-    if c2 == 0 {
+    // c2 == 0
+    {
         let cfg_jmp = two_counter_config(c1, c2, entry(t), tm.m);
         assert(tm_run(tm, cfg0, 2) == cfg_jmp);
         lemma_tm_reaches_intro(tm, cfg0, cfg_jmp, 2);
+        lemma_tm_reaches_pos_intro(tm, cfg0, cfg_jmp, 2);
     }
 }
 
@@ -409,6 +454,10 @@ pub proof fn lemma_sim_step(rm: RegisterMachine, c: Configuration)
         step(rm, c) is Some,
     ensures
         tm_reaches(rm_to_tm(rm),
+            two_counter_config(c.registers[0], c.registers[1], entry(c.pc), tm_mod(rm.instructions.len())),
+            two_counter_config(step(rm, c).unwrap().registers[0], step(rm, c).unwrap().registers[1],
+                entry(step(rm, c).unwrap().pc), tm_mod(rm.instructions.len()))),
+        tm_reaches_pos(rm_to_tm(rm),
             two_counter_config(c.registers[0], c.registers[1], entry(c.pc), tm_mod(rm.instructions.len())),
             two_counter_config(step(rm, c).unwrap().registers[0], step(rm, c).unwrap().registers[1],
                 entry(step(rm, c).unwrap().pc), tm_mod(rm.instructions.len()))),

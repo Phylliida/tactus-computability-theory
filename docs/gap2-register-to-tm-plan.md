@@ -156,12 +156,12 @@ are written once and reused). Bottom-up brick order (companion's priority):
 - **B5 per-instruction simulation — ✅ DONE & verified (full crate 400/0).** See the B5 status
   block below for the architecture. `lemma_sim_step` (`tm_sim.rs`): one non-halting 2-counter step
   ↔ one gadget run, `tm_reaches(rm_to_tm(R2), enc(c), enc(step(c)))`.
-- **B6 run simulation + cleanup** : induct over the 2-counter run; on halt, the cleanup phase
-  (`dec` both to 0, blank the separator, state→0) reaches `tm_origin()`. Gives
-  `rm2_halts(R2,in) ⟺ ∃fuel. tm_halts_at(rm_to_tm(R2), C(in), origin, fuel)`. **The cleanup quintuples
-  are ALREADY built into `rm_to_tm` (the `pc==len` window, `cleanup_act` in `tm_assemble.rs`): phase A
-  dec `c1`→0, phase B dec `c2`→0, phase C blank-separator → origin. B6 only proves they reach origin
-  (correctness) + the run induction; the constructor is frozen.**
+- **B6 run simulation + cleanup — ✅ DONE & verified (full crate 426/0).** `tm_run_sim.rs`
+  `lemma_rm_tm_origin_iff`: a wf 2-counter machine halts from a wf config `c` **iff**
+  `rm_to_tm` reaches `tm_origin()` from `rm_config_enc(rm,c) = two_counter_config(c.r0,c.r1,entry(c.pc))`.
+  See the B6 status block below for the architecture. The cleanup quintuples were ALREADY built into
+  `rm_to_tm` (the `pc==len` window, `cleanup_act` in `tm_assemble.rs`): B6 proved they reach origin
+  + the run induction (both directions); the constructor is frozen.
 
 ### G2-F (wiring, after L0–L2)
 
@@ -179,13 +179,53 @@ identify `mm_in_H0(mm, enc(a,b)) ⟺ declared_equiv(e,a,b)` and discharge `ceer_
   abstraction) — matches the verified `multi_output_primitives` copy-loop style.
 
 **Status 2026-06-26:** design locked. **DONE & verified, all committed, purely additive; full crate
-400/0:** B0 `tm_run_lemmas.rs`, B1 `tm_two_counter.rs`, gadget infra + B2 `tm_gadget.rs`, B3
-`tm_walk.rs`+`tm_inc.rs`, B4 `tm_dec.rs`, **B5 (this session)**: B5.0 `tm_bounce.rs` (exit-routing
+426/0:** B0 `tm_run_lemmas.rs`, B1 `tm_two_counter.rs`, gadget infra + B2 `tm_gadget.rs`, B3
+`tm_walk.rs`+`tm_inc.rs`, B4 `tm_dec.rs`, B5.0 `tm_bounce.rs` (exit-routing
 trampoline), B5.1 `tm_walk_right.rs` (right walk loops), B5.2 `tm_right_gadgets.rs` (peek/inc/dec
 right mirrors), B5.3 `tm_assemble.rs` (`rm_to_tm` + `tm_wf`), B5.4/B5.5 `tm_sim.rs`
-(`lemma_sim_step`). **NEXT = B6** (run induction + prove the already-built cleanup reaches origin),
+(`lemma_sim_step`), **B6 (this session)**: `tm_cleanup.rs` (cleanup phases A/B/C + `lemma_sim_halt`),
+`tm_run_sim.rs` (run induction + the halting iff `lemma_rm_tm_origin_iff`). **NEXT =**
 L1 (k→2 Gödel, the one Euclid lemma), L0 (search_rm dovetailer), G2-F (wire `config_encode`/`enc` +
 discharge `ceer_realizes`).
+
+### B6 architecture (the run simulation + halting iff — read before L0/L1/G2-F)
+
+`rm_config_enc(rm,c) = two_counter_config(c.registers[0], c.registers[1], entry(c.pc), tm_mod(len))`
+is the layout encoding of a register-machine config. The headline `lemma_rm_tm_origin_iff`
+(`tm_run_sim.rs`):
+
+> `(∃F. run_halts(rm,c,F))  ⟺  (∃fuel. tm_halts_at(rm_to_tm(rm), rm_config_enc(rm,c), tm_origin(), fuel))`
+
+for any `machine_wf` 2-counter `rm` and `config_wf` `c`. G2-F will set `config_encode` to
+`rm_config_enc(rm, initial_config(rm, input))` and compose with `tm_h0::lemma_tm_h0_iff`
+(`tm_halts_at(.,origin) ⟺ mm_in_H0`) to get `rm halts ⟺ mm_in_H0`, the machine content of
+`ceer_realizes`.
+
+- **`tm_cleanup.rs` (B6 part 1):** proves the already-built `cleanup_act` quintuples reach origin.
+  - `lemma_cleanup_phaseA` (induct on `c1`): peek+dec+bounce-back-to-`entry(len)` loop drains the
+    left counter — `(c1,c2,entry(len)) →* (0,c2,entry(len)+6)`. Reuses `lemma_peek_gadget` + `lemma_dec`
+    + `lemma_bounce_left`, quintuples extracted at window `pc=len` via `lemma_quint_at(rm,len,off,sym)`.
+  - `lemma_cleanup_phaseB` (induct on `c2`, L↔R mirror): `(c1,c2,entry(len)+6) →* (c1,0,entry(len)+12)`.
+  - `lemma_cleanup_phaseC`: the single `(entry(len)+12, 2, 0, 0, R)` quintuple — `(0,0,entry(len)+12) →¹ origin`.
+  - `lemma_cleanup`: A (right counter untouched) → B (left already 0) → C.
+  - `lemma_sim_halt`: a `Halt` instruction bounces `entry(pc) → entry(len)` (the cleanup entry), via
+    `lemma_bounce_left` on the `halt_act` quintuples.
+- **`tm_sim.rs` (strengthened this session):** added `tm_reaches_pos` (reaches in `≥1` steps) + intro;
+  the 4 per-instruction sims + `lemma_sim_step` now ALSO ensure `tm_reaches_pos` (the gadget fuels are
+  all `≥2`). `lemma_sim_decjump_right` needed `return`-isolation of its two branches to stay under rlimit.
+- **`tm_run_sim.rs` (B6 part 2):**
+  - `lemma_sim_run` (induct on run fuel `F`): chains `lemma_sim_step` (transitively, via
+    `lemma_tm_reaches_trans`) to `tm_reaches(enc(c), enc(run(rm,c,F)))`.
+  - `lemma_run_halts_is_halted` / `lemma_run_preserves_config_wf` / `lemma_rm_terminal_cases`
+    (halt config is `pc==len` OR a `Halt`) — the run bookkeeping.
+  - **Forward** `lemma_rm_halts_implies_tm_origin`: run-sim to the halted config, then cleanup
+    (a `Halt` first routes via `lemma_sim_halt`; a `pc==len` halt IS the cleanup entry), then
+    `lemma_tm_run_reaches_halts_at` (origin terminal via `lemma_origin_tm_terminal`).
+  - **Backward** `lemma_tm_origin_implies_rm_halts` (induct on TM fuel `f`): if `rm` is halted, done
+    (no cleanup reasoning needed); else `tm_reaches_pos` gives `g≥1` to `enc(step(c))`, `g≤f` because
+    origin is terminal (else origin `==` `enc(step(c))`, whose state `≥3`), run-split peels `g`, recurse
+    on `f−g < f`. The `g≥1` is exactly why `tm_reaches_pos` is needed — a `DecJump`-on-zero self-loop
+    (`enc(c)==enc(step(c))`) would otherwise admit `g=0` and never terminate.
 
 ### ⚠ FOUNDATION FIX (this session, committed): `quint_wf` q2 bound weakened
 
