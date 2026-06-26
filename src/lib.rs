@@ -112,6 +112,11 @@
 // zero-test divisibility iff, dodging primality. See number_theory.rs.
 #[cfg(verus_keep_ghost)] pub mod number_theory;
 
+// GAP-2 / L1 Gödel encoding: the Sylvester pairwise-coprime base sequence + godel(regs) +
+// the divisibility iff `base(i) | godel(regs) ⟺ regs[i] ≥ 1` (the 2-counter DecJump zero-test
+// arithmetic). See godel.rs.
+#[cfg(verus_keep_ghost)] pub mod godel;
+
 // GAP-2 interface skeleton: the register->modular machine reduction (Aanderaa-Cohen Thm 2),
 // supplying the `mm` whose H0 realizes the CEER declared pairs. Type-level plumbing + the
 // reduction target; the simulation-correctness proofs are the deferred GAP-2 impl. See
