@@ -27,3 +27,7 @@
 #[cfg(verus_keep_ghost)] pub mod ceer_group_backward;
 #[cfg(verus_keep_ghost)] pub mod ceer_benign;
 #[cfg(verus_keep_ghost)] pub mod higman;
+
+// Layer 0.5 wiring: instantiate verus_group_theory::cohen_layer05's abstract Miller embedding
+// C0 -> C with the concrete CEER declared-relator family (decls_fam). See ceer_layer05.rs.
+#[cfg(verus_keep_ghost)] pub mod ceer_layer05;
