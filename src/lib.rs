@@ -61,6 +61,10 @@
 // representation the simulation gadgets edit. See tm_two_counter.rs.
 #[cfg(verus_keep_ghost)] pub mod tm_two_counter;
 
+// GAP-2-E gadget infra: deterministic step selection (lemma_tm_step_picks) + the bounded
+// zero-test/peek gadget (B2). See tm_gadget.rs.
+#[cfg(verus_keep_ghost)] pub mod tm_gadget;
+
 // GAP-2 interface skeleton: the register->modular machine reduction (Aanderaa-Cohen Thm 2),
 // supplying the `mm` whose H0 realizes the CEER declared pairs. Type-level plumbing + the
 // reduction target; the simulation-correctness proofs are the deferred GAP-2 impl. See
