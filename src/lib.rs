@@ -90,6 +90,10 @@
 // L<->R mirrors of the peek/inc/dec gadgets, operating on c2 (in v). See tm_right_gadgets.rs.
 #[cfg(verus_keep_ghost)] pub mod tm_right_gadgets;
 
+// GAP-2-E brick B5.3: the rm_to_tm assembly (uniform 48-quint windows per program position +
+// cleanup) and tm_wf (quint_wf + determinism via index-recovery arithmetic). See tm_assemble.rs.
+#[cfg(verus_keep_ghost)] pub mod tm_assemble;
+
 // GAP-2 interface skeleton: the register->modular machine reduction (Aanderaa-Cohen Thm 2),
 // supplying the `mm` whose H0 realizes the CEER declared pairs. Type-level plumbing + the
 // reduction target; the simulation-correctness proofs are the deferred GAP-2 impl. See
