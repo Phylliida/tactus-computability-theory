@@ -115,8 +115,28 @@ are written once and reused). Bottom-up brick order (companion's priority):
 - **B2 zero-test gadget** (bounded): `[L peek][R restore]`; `lemma_zerotest` — lands in one of two
   states by `c=0?`, config otherwise unchanged.
 - **B3 inc gadget** (walk-left loop + write + walk-back): `lemma_inc` — `two_counter_config(c1,c2,q)`
-  runs to `two_counter_config(c1+1,c2,q')` in a computed fuel.
-- **B4 dec gadget**: `lemma_dec` — to `two_counter_config(c1−1,c2,q')`.
+  runs to `two_counter_config(c1+1,c2,q')` in fuel `2·(c1+1)`. **DESIGN (left counter):** two states
+  `(q_walk, q_back)`, quintuples
+  ```
+    (q_walk, 2, 2, q_walk, L)   peel the separator, head left
+    (q_walk, 1, 1, q_walk, L)   peel a block-1, head left
+    (q_walk, 0, 1, q_back, R)   at the left blank: WRITE the new 1 (the inc), turn around
+    (q_back, 1, 1, q_back, R)   walk back over a block-1, head right
+  ```
+  The walk-back ends with the head back **on the separator** (scanned `2`) in state `q_back` — that IS
+  `two_counter_config(c1+1, c2, q_back)`; `q_back` is the gadget's *exit* state (the next gadget keys its
+  entry on `(q_back, 2)`; determinism is fine since `(q_back,1)` vs `(q_back,2)` differ). Trace from
+  `two_counter_config(c1,c2,q_walk)`: `c1+1` L-steps to the blank (peel sep + `c1` ones, `u→0`,
+  scanned→0), 1 turnaround R-step (write 1), `c1` walk-back R-steps → `(repunit(c1+1), repunit(c2), 2,
+  q_back)`. Works for `c1=0` (1+1+0 = 2 steps; turnaround pops the separator straight back).
+  **Pile invariant (the cost):** during the walk the peeled symbols pile onto `v` — after `j` L-steps
+  `v_j = repunit(c2)·m^{j} + 2·m^{j-1} + repunit(j-1)` (define recursively `v_j = v_{j-1}·m + digit` to
+  dodge raw `m^j`; carry it through a decreasing-fuel loop lemma `lemma_walk_left_inner` exactly like
+  `multi_output_primitives::lemma_copy_loop_inner`). Walk-back is the mirror loop reconstructing `u`.
+- **B4 dec gadget**: `lemma_dec` — to `two_counter_config(c1−1,c2,q')`, fuel `2·c1`. Mirror of inc: walk
+  left `c1` steps to the **outermost** 1 (peel sep + `c1−1` ones, scanned = outer 1), erase it (write 0),
+  walk back `c1−1`. (DecJump folds the B2 zero-test: peek first; if `c1=0` jump, else run this dec.)
+  Right-counter inc/dec are the L↔R mirror images (walk via R-moves through `v`).
 - **B5 per-instruction simulation** : assemble Inc/DecJump quintuple blocks (relocated like
   `embed_instructions`), prove one 2-counter step ↔ one gadget run; thread `tm_wf` determinism.
 - **B6 run simulation + cleanup** : induct over the 2-counter run; on halt, the cleanup phase
