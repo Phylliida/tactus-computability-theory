@@ -235,4 +235,101 @@ pub proof fn lemma_godel_div_iff(regs: Seq<nat>, i: nat)
     }
 }
 
+// ── Register-op arithmetic: Inc(rᵢ) = ×base(i), Dec(rᵢ) = ÷base(i) at the value level ──
+// These are the abstract-value facts the multiply/divide gadget correctness proofs consume,
+// independent of the (still-to-be-resolved) 2-counter machine instruction set.
+
+/// Updating coordinates outside `[0,upto)` leaves the partial product unchanged.
+pub proof fn lemma_godel_prod_agree(regs: Seq<nat>, regs2: Seq<nat>, upto: nat)
+    requires forall|j: int| 0 <= j < upto ==> regs[j] == regs2[j],
+    ensures godel_prod(regs, upto) == godel_prod(regs2, upto),
+    decreases upto,
+{
+    if upto == 0 {
+    } else {
+        lemma_godel_prod_agree(regs, regs2, (upto - 1) as nat);
+        assert(regs[(upto - 1) as int] == regs2[(upto - 1) as int]);
+    }
+}
+
+/// Bumping `regs[i]` by 1 multiplies the partial product (for `i < upto`) by `base(i)`.
+pub proof fn lemma_godel_prod_update_inc(regs: Seq<nat>, i: nat, upto: nat)
+    requires i < upto, upto <= regs.len(),
+    ensures godel_prod(regs.update(i as int, (regs[i as int] + 1) as nat), upto)
+            == base(i) * godel_prod(regs, upto),
+    decreases upto,
+{
+    let regs2 = regs.update(i as int, (regs[i as int] + 1) as nat);
+    let last = (upto - 1) as nat;
+    let g_prev = godel_prod(regs, (upto - 1) as nat);
+    assert(godel_prod(regs2, upto)
+        == godel_prod(regs2, (upto - 1) as nat) * pow_nat(base(last), regs2[last as int]));
+    assert(godel_prod(regs, upto)
+        == g_prev * pow_nat(base(last), regs[last as int]));
+    if i == last {
+        // regs2 agrees with regs on [0, upto-1) (differs only at i == upto-1).
+        assert forall|j: int| 0 <= j < (upto - 1) implies regs[j] == regs2[j] by {
+            assert(j != i as int);
+        }
+        lemma_godel_prod_agree(regs, regs2, (upto - 1) as nat);   // godel_prod(regs2,upto-1) == g_prev
+        assert(regs2[last as int] == (regs[i as int] + 1) as nat);
+        // pow_nat(base(i), regs[i]+1) == base(i) * pow_nat(base(i), regs[i]).
+        assert(((regs[i as int] + 1) as nat - 1) as nat == regs[i as int]);
+        assert(pow_nat(base(i), (regs[i as int] + 1) as nat)
+            == base(i) * pow_nat(base(i), regs[i as int]));
+        // godel_prod(regs2,upto) = g_prev * (base(i)*pow) = base(i)*(g_prev*pow) = base(i)*godel_prod(regs,upto).
+        let pw = pow_nat(base(i), regs[i as int]);
+        assert(g_prev * (base(i) * pw) == base(i) * (g_prev * pw)) by(nonlinear_arith);
+    } else {
+        // i < last (i < upto, i != last ⟹ i < upto-1).
+        lemma_godel_prod_update_inc(regs, i, (upto - 1) as nat);   // IH on the prefix
+        assert(last as int != i as int);
+        assert(regs2[last as int] == regs[last as int]);
+        let pw_last = pow_nat(base(last), regs[last as int]);
+        // godel_prod(regs2,upto) = (base(i)*g_prev)*pw_last = base(i)*(g_prev*pw_last).
+        assert((base(i) * g_prev) * pw_last == base(i) * (g_prev * pw_last)) by(nonlinear_arith);
+    }
+}
+
+/// **`Inc(rᵢ)` ⟺ ×base(i)**: incrementing register `i` multiplies the Gödel number by `base(i)`.
+pub proof fn lemma_godel_inc(regs: Seq<nat>, i: nat)
+    requires i < regs.len(),
+    ensures godel_encode(regs.update(i as int, (regs[i as int] + 1) as nat))
+            == base(i) * godel_encode(regs),
+{
+    let regs2 = regs.update(i as int, (regs[i as int] + 1) as nat);
+    assert(regs2.len() == regs.len());
+    lemma_godel_prod_update_inc(regs, i, regs.len());
+    assert(godel_encode(regs2) == godel_prod(regs2, regs.len()));
+    assert(godel_encode(regs) == godel_prod(regs, regs.len()));
+}
+
+/// **`Dec(rᵢ)` ⟺ ÷base(i)**: when `regs[i] ≥ 1`, the Gödel number is `base(i)` times the
+/// decremented encoding (so the divide-by-`base(i)` gadget recovers `godel(regs with rᵢ−1)`).
+pub proof fn lemma_godel_dec(regs: Seq<nat>, i: nat)
+    requires i < regs.len(), regs[i as int] >= 1,
+    ensures godel_encode(regs)
+            == base(i) * godel_encode(regs.update(i as int, (regs[i as int] - 1) as nat)),
+{
+    let regs_dec = regs.update(i as int, (regs[i as int] - 1) as nat);
+    assert(regs_dec.len() == regs.len());
+    assert(regs_dec[i as int] == (regs[i as int] - 1) as nat);
+    lemma_godel_inc(regs_dec, i);   // godel(regs_dec.update(i, regs_dec[i]+1)) == base(i)*godel(regs_dec)
+    let regs_back = regs_dec.update(i as int, (regs_dec[i as int] + 1) as nat);
+    assert((regs_dec[i as int] + 1) as nat == regs[i as int]);
+    // regs_back == regs (re-set coordinate i back to its original value).
+    assert(regs_back =~= regs) by {
+        assert(regs_back.len() == regs.len());
+        assert forall|j: int| 0 <= j < regs.len() implies regs_back[j] == regs[j] by {
+            if j == i as int {
+                assert(regs_back[j] == (regs_dec[i as int] + 1) as nat);
+            } else {
+                assert(regs_back[j] == regs_dec[j]);
+                assert(regs_dec[j] == regs[j]);
+            }
+        }
+    }
+    assert(godel_encode(regs_back) == godel_encode(regs));
+}
+
 } // verus!
