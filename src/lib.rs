@@ -147,6 +147,11 @@
 // runs from rm2_config_enc(c) to rm2_config_enc(step(c)). See godel_dispatch.rs.
 #[cfg(verus_keep_ghost)] pub mod godel_dispatch;
 
+// GAP-2 / L1 k→2 reduction M6: the run simulation + halting equivalence. Chains lemma_sim_step along
+// a run (forward) and inducts on RM(2) fuel (backward, using g>=1 gadget progress) to prove
+// RM(k) halts <==> rm_k_to_rm2(RM(k)) halts on the godel-encoded config. See godel_run.rs.
+#[cfg(verus_keep_ghost)] pub mod godel_run;
+
 // GAP-2 / L0 brick B-L0.1: fuel-instrumented bounded simulation. `instrument` guards each original
 // instruction with a `DecJump{fuel, TIMEOUT}` so a run always returns within `fuel` steps with a
 // HALTED-or-TIMEOUT verdict (a non-halting enumerator stage cannot wedge the dovetail). The bounded
