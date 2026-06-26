@@ -286,6 +286,37 @@ All parametric in `k`, additive, no assume/admit/external_body.
 
 **NEXT = M3** (per-instruction block translation, see below) → M4 (assemble) → M5/M6 → G2-F.
 
+#### ✅ M3 + M5-per-instruction DONE 2026-06-26 — `godel_blocks.rs` (5/0) + `godel_sim.rs` (5/0), full crate 610/0.
+The whole **per-instruction simulation layer** is complete (purely additive, no assume/admit/external_body).
+Two layers, exactly per the M3 design below:
+- **`godel_blocks.rs` (M3, value level — `C1`/`C2` as raw nats, no Gödel):**
+  - `lemma_multiply_block` (`C1 := k·C1`) = `move(C1→C2)` + M1 `mult_back`. Closed-form fuel `(k+5)·v+2`.
+  - `lemma_divide_block` (`C1 := C1/k` for `C1 = k·groups`) = `move` + M2 `div_back`. Closed-form fuel.
+  - `lemma_divtest_block` (non-destructive `k|C1`) = `move` + M2 `divtest`. **Existential** fuel; verdict
+    = exit pc (`e1_pc ⟺ v%k==0`), `C1` restored. **Gotcha:** the back-loops `lemma_{move,mult_back,
+    div_back,divtest}_loop` do NOT ensure `.registers.len()` and they REQUIRE `c.registers.len()==num_regs`
+    — call `search_rm_arith::lemma_run_preserves_len(m,c,fuel)` after `move` (before the back-loop) to
+    thread the length.
+- **`godel_sim.rs` (M5 per-instruction core — wraps blocks with `godel.rs` value lemmas):**
+  - `lemma_inc_sim` (`Inc(r_i)`): `multiply` + `lemma_godel_inc` ⇒ `C1' = godel(regs[r_i++])`, next block.
+  - `lemma_decjump_sim` (`DecJump(r_i,t)`): `divtest` (verdict `lemma_godel_div_iff`) → divisible:
+    `divide` + `lemma_godel_dec` (`groups = godel(regs[r_i−1])`, `v = k·groups`) ⇒ `C1' = godel(regs[r_i--])`
+    at `next_block = start_pc+3k+10`; `r_i=0`: single `Jump(target_block)`, `C1` intact. **Existential**,
+    if-then-else ensures on `regs[r_i] ≥ 1`. The **full DecJump block layout** (the address arithmetic
+    M4 must honour): `Div?` block `[start_pc, start_pc+2k+4)` (e1=`do_div_pc=start_pc+2k+5`,
+    notdiv=`jump_pc=start_pc+2k+4`) ; `Jump(target_block)` at `jump_pc` ; `divide` block at `do_div_pc`,
+    whose internal move-Jump targets `do_div_pc` and div_back-Jump targets `do_div_pc+3` (NOT `do_div_pc`
+    — the one bug found+fixed); fall-through `next_block = start_pc+3k+10`.
+  - `lemma_jump_sim` (`Jump(t)`): single `Jump(target_block)`.
+
+**Block sizes (M4 prefix-sum address map input):** `Inc(r_i) = base(i)+5`, `DecJump(r_i,t) = 3·base(i)+10`,
+`Jump = 1`, `Halt = 1`. (`Inc`/`DecJump` are `Θ(base(i))` — fine, the RM(2) is the reduction's OUTPUT,
+never executed.) **NEXT = M4** (assemble `rm_k_to_rm2` + `machine_wf` + the per-block layout-match lemma —
+the `lemma_quint_at`/`lemma_gen_key` analog; the crux is the NON-UNIFORM prefix-sum block-start map +
+its inversion, cf. `tm_assemble.rs`'s uniform 16-windows — here variable. Likely cleaner to CONCAT blocks
++ a subrange lemma than a flat `Seq::new` dispatch) → M5-dispatch (pick the per-instruction sim by the
+RM(k) instruction at `pc`) → M6 (chain along the run + halts-iff) → G2-F.
+
 #### M3 design (per-instruction block-simulation lemmas — the live frontier)
 RM(2): `reg 0 = C1 = godel_encode(regs)`, `reg 1 = C2` (scratch, `=0` between blocks). Each RM(k)
 instruction → an RM(2) BLOCK. The block-sim lemmas should be **parametric in the block's start +
