@@ -65,6 +65,10 @@
 // zero-test/peek gadget (B2). See tm_gadget.rs.
 #[cfg(verus_keep_ghost)] pub mod tm_gadget;
 
+// GAP-2-E brick B3 (part 1): the walk-left ones-loop (pile_ones + lemma_walk_left_inner), the heart
+// of the inc/dec walk gadgets. See tm_walk.rs.
+#[cfg(verus_keep_ghost)] pub mod tm_walk;
+
 // GAP-2 interface skeleton: the register->modular machine reduction (Aanderaa-Cohen Thm 2),
 // supplying the `mm` whose H0 realizes the CEER declared pairs. Type-level plumbing + the
 // reduction target; the simulation-correctness proofs are the deferred GAP-2 impl. See
