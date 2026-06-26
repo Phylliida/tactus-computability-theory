@@ -9,6 +9,8 @@ use crate::multi_output_primitives::{mk_inc, mk_dj, lemma_copy_loop_inner};
 use crate::search_rm_clearbank::{clear_bank_instrs, lemma_clear_bank};
 use crate::search_rm_compare::lemma_clear_loop;
 use crate::search_rm_arith::{lemma_run_add, lemma_double_dist_inner, lemma_run_preserves_len};
+use crate::search_rm_sim::{instr_configs_agree, instrument_frame, instrument_instructions};
+use crate::search_rm_outcome::lemma_instrument_outcome;
 use crate::search_rm::*;
 
 verus! {
@@ -368,6 +370,125 @@ pub proof fn lemma_srm_phase_r2b(
         }
     }
     assert(srm_at_instr(e, c4, inp_v, t_v, s_v, cnt_v, r_v));
+}
+
+//  ============================================================
+//  Phase I — run the instrument; land on CMP (halted) or CONT (timeout).
+//  ============================================================
+
+///  At the instrument sink: the host is on CMP (halted) or CONT (timeout), control + temps preserved,
+///  and the E-bridge holds: reaching CMP ⟺-strong the enumerator halted within T+1, E-bank == its
+///  halt config; and if the enumerator halts within T, CMP is reached.
+pub open spec fn srm_at_sink(e: CEER, cs: Configuration, inp_v: nat, t_v: nat, s_v: nat, cnt_v: nat, r_v: nat) -> bool {
+    &&& (cs.pc == srm_cmp(e) || cs.pc == srm_cont(e))
+    &&& srm_ctrl(e, cs, inp_v, t_v, s_v, cnt_v, r_v)
+    &&& srm_temps_zero(cs)
+    &&& (cs.pc == srm_cmp(e) ==>
+            run_halts(e.enumerator, initial_config(e.enumerator, s_v), (t_v + 1) as nat)
+            && (forall|r: int| 0 <= r < srm_ne(e) ==>
+                    #[trigger] cs.registers[29 + r]
+                        == run(e.enumerator, initial_config(e.enumerator, s_v), (t_v + 1) as nat).registers[r]))
+    &&& (run_halts(e.enumerator, initial_config(e.enumerator, s_v), t_v) ==> cs.pc == srm_cmp(e))
+}
+
+#[verifier::rlimit(8000)]
+pub proof fn lemma_srm_phase_i(
+    e: CEER, c: Configuration, inp_v: nat, t_v: nat, s_v: nat, cnt_v: nat, r_v: nat,
+)
+    requires
+        ceer_wf(e),
+        srm_at_instr(e, c, inp_v, t_v, s_v, cnt_v, r_v),
+    ensures
+        exists|g: nat|
+            #[trigger] run(search_rm(e), c, g).registers.len() == srm_numregs(e)
+            && srm_at_sink(e, run(search_rm(e), c, g), inp_v, t_v, s_v, cnt_v, r_v),
+{
+    reveal(ceer_wf);
+    let m = search_rm(e);
+    let ne = srm_ne(e);
+    let ni = srm_ni(e);
+    let nr = srm_numregs(e);
+    let cmp = srm_cmp(e);
+    let cont = srm_cont(e);
+    let ipc = srm_instr_pc(e);
+    let phi = (t_v + 1) as nat;
+    let csub = initial_config(e.enumerator, s_v);
+    assert(machine_wf(e.enumerator));
+    assert(config_wf(e.enumerator, csub));
+
+    //  --- instr_configs_agree ---
+    assert(csub.pc == 0);
+    assert(c.pc == ipc) by { assert(srm_at_instr(e, c, inp_v, t_v, s_v, cnt_v, r_v)); }
+    assert forall|r: int| 0 <= r < ne as int implies c.registers[(r + 29) as int] == csub.registers[r] by {
+        if r == 0 {
+            assert(c.registers[29] == s_v) by { assert(srm_ebank_init(e, c, s_v)); }
+            assert(csub.registers[0] == s_v);
+        } else {
+            assert(c.registers[(r + 29) as int] == 0) by { assert(srm_ebank_init(e, c, s_v)); }
+            assert(csub.registers[r] == 0);
+        }
+    }
+    assert(c.registers[1] == 0);
+    assert(c.registers[2] == phi);
+    assert(instr_configs_agree(e.enumerator, 29, ipc, 2, 1, phi, csub, c));
+
+    //  --- instrument_frame ---
+    assert forall|j: int| 0 <= j < 2 * ni implies
+        m.instructions[(ipc + j) as int] == #[trigger] instrument_instructions(e.enumerator.instructions, 29, ipc, cmp, cont, 2, 1)[j]
+    by {
+        lemma_srm_index(e, ipc + j);
+        assert(srm_instr(e, ipc + j) == instrument_instructions(e.enumerator.instructions, 29, ipc, cmp, cont, 2, 1)[j]);
+    }
+    assert(instrument_frame(e.enumerator, m, 29, ipc, cmp, cont, 2, 1)) by {
+        assert(cmp == ipc + 2 * ni);
+        assert(cmp <= m.instructions.len());
+    }
+
+    //  --- run the instrument ---
+    lemma_instrument_outcome(e.enumerator, m, 29, ipc, cmp, cont, 2, 1, csub, c, phi);
+    let g = choose|g: nat| g <= 2 * phi + 1
+        && (run(m, c, g).pc == cmp || run(m, c, g).pc == cont)
+        && run(m, c, g).registers.len() == m.num_regs
+        && (run(m, c, g).pc == cmp ==>
+                run_halts(e.enumerator, csub, phi)
+                && (forall|r: int| 0 <= r < e.enumerator.num_regs as int ==>
+                        #[trigger] run(m, c, g).registers[(r + 29) as int] == run(e.enumerator, csub, phi).registers[r]))
+        && (run_halts(e.enumerator, csub, (phi - 1) as nat) ==> run(m, c, g).pc == cmp)
+        && run(m, c, g).registers[1] == 0
+        && (forall|jj: int| 0 <= jj < m.num_regs as int
+                && (jj < 29 || jj >= 29 + e.enumerator.num_regs)
+                && jj != 2 && jj != 1
+                ==> #[trigger] run(m, c, g).registers[jj] == c.registers[jj]);
+    let cs = run(m, c, g);
+    assert(cs.registers.len() == nr);
+
+    //  --- derive srm_at_sink(cs) ---
+    //  control + temps preserved (all < 29, != 2, != 1, except reg 1 which == 0 separately)
+    assert(srm_ctrl(e, cs, inp_v, t_v, s_v, cnt_v, r_v)) by {
+        assert(cs.registers[0] == c.registers[0]) by { assert(0 < 29 && 0 != 2 && 0 != 1); }
+        assert(cs.registers[3] == c.registers[3]) by { assert(3 < 29 && 3 != 2 && 3 != 1); }
+        assert(cs.registers[4] == c.registers[4]) by { assert(4 < 29 && 4 != 2 && 4 != 1); }
+        assert(cs.registers[5] == c.registers[5]) by { assert(5 < 29 && 5 != 2 && 5 != 1); }
+        assert(cs.registers[6] == c.registers[6]) by { assert(6 < 29 && 6 != 2 && 6 != 1); }
+    }
+    assert(srm_temps_zero(cs)) by {
+        //  each temp t in 7..28 (not 13,20): t<29, t!=2, t!=1, so cs[t]==c[t]==0
+    }
+    //  E-bridge: phi == t_v+1, phi-1 == t_v
+    assert((phi - 1) as nat == t_v);
+    assert(srm_at_sink(e, cs, inp_v, t_v, s_v, cnt_v, r_v)) by {
+        //  soundness arm
+        if cs.pc == cmp {
+            assert(run_halts(e.enumerator, csub, phi));
+            assert forall|r: int| 0 <= r < ne as int implies
+                #[trigger] cs.registers[29 + r] == run(e.enumerator, csub, phi).registers[r] by {
+                assert(cs.registers[(r + 29) as int] == run(e.enumerator, csub, phi).registers[r]);
+                assert((r + 29) as int == 29 + r);
+            }
+        }
+        //  completeness arm: run_halts within t_v (= phi-1) ⇒ cmp
+        assert(run_halts(e.enumerator, csub, t_v) ==> cs.pc == cmp);
+    }
 }
 
 ///  Local `run` unfold helper (private copy).
