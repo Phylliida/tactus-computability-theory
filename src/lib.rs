@@ -132,6 +132,11 @@
 // EQUAL exit iff (a)==(b)) — tests `pair(reg1,reg2) == input` in the HALTED comparison. See search_rm_compare.rs.
 #[cfg(verus_keep_ghost)] pub mod search_rm_compare;
 
+// GAP-2 / L0 brick B-L0.2c (pre): contiguous register-bank clear `clear_bank_instrs` — resets the
+// embedded enumerator's `ne`-register bank between dovetail iterations (the `instrument` run leaves it
+// dirty). Symbolic-length unrolled clear block, proven by induction on count. See search_rm_clearbank.rs.
+#[cfg(verus_keep_ghost)] pub mod search_rm_clearbank;
+
 // GAP-2 interface skeleton: the register->modular machine reduction (Aanderaa-Cohen Thm 2),
 // supplying the `mm` whose H0 realizes the CEER declared pairs. Type-level plumbing + the
 // reduction target; the simulation-correctness proofs are the deferred GAP-2 impl. See
