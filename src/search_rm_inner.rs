@@ -4,7 +4,7 @@
 
 use vstd::prelude::*;
 use crate::machine::*;
-use crate::ceer::{CEER, ceer_wf};
+use crate::ceer::{CEER, ceer_wf, declared_pair, lemma_declared_pair_well_defined};
 use crate::multi_output_primitives::{mk_inc, mk_dj, lemma_copy_loop_inner};
 use crate::search_rm_clearbank::{clear_bank_instrs, lemma_clear_bank};
 use crate::search_rm_compare::{lemma_clear_loop, lemma_eq_test_loop, eq_test_frame, eq_exit_pc};
@@ -1104,6 +1104,82 @@ pub proof fn lemma_srm_phase_c2(
         assert(srm_temps_top(ce));
         assert(srm_at_cont(e, ce, inp_v, t_v, s_v, cnt_v, r1));
     }
+}
+
+//  ============================================================
+//  Phase F — CONT: Inc scnt; loop to INNER_TOP.  CONT -> next INNER_TOP.
+//  ============================================================
+
+#[verifier::rlimit(8000)]
+pub proof fn lemma_srm_phase_f(
+    e: CEER, c: Configuration, inp_v: nat, t_v: nat, s_v: nat, cnt_m1: nat, r_final: nat,
+)
+    requires
+        ceer_wf(e),
+        srm_at_cont(e, c, inp_v, t_v, s_v, cnt_m1, r_final),
+    ensures
+        exists|g: nat|
+            #[trigger] run(search_rm(e), c, g).pc == 8
+            && srm_at_top(e, run(search_rm(e), c, g), inp_v, t_v, (s_v + 1) as nat, cnt_m1, r_final),
+{
+    reveal(ceer_wf);
+    let m = search_rm(e);
+    let cont = srm_cont(e);
+    //  Inc scnt(4) at cont
+    lemma_srm_index(e, cont as int);
+    assert(m.instructions[cont as int] == mk_inc(4));
+    assert(!is_halted(m, c));
+    let c1 = step(m, c).unwrap();
+    assert(c1.pc == cont + 1);
+    assert(c1.registers == c.registers.update(4, (s_v + 1) as nat));
+    assert(run(m, c, 1) == c1) by { lemma_run_unfold(m, c, 1); }
+    //  DecJump{zero=1, IT=8} at cont+1; zero == 0 ⇒ jump to 8
+    lemma_srm_index(e, cont as int + 1);
+    assert(m.instructions[(cont + 1) as int] == mk_dj(1, 8));
+    assert(c1.registers[1] == 0) by { assert(1 != 4); }
+    assert(!is_halted(m, c1));
+    let c2 = step(m, c1).unwrap();
+    assert(c2.pc == 8);
+    assert(c2.registers == c1.registers);
+    assert(run(m, c1, 1) == c2) by { lemma_run_unfold(m, c1, 1); }
+    lemma_run_add(m, c, 1, 1);
+    assert(run(m, c, 2) == c2);
+    assert(c2.registers[4] == s_v + 1);
+    assert(srm_ctrl(e, c2, inp_v, t_v, (s_v + 1) as nat, cnt_m1, r_final));
+    assert(srm_temps_top(c2));
+    assert(srm_at_top(e, c2, inp_v, t_v, (s_v + 1) as nat, cnt_m1, r_final));
+}
+
+//  ============================================================
+//  Declared-pair bridge: under a halt within T+1, the declared pair IS (srm_decl1, srm_decl2).
+//  ============================================================
+
+///  The enumerator's declared pair matches the input (either orientation).
+pub open spec fn declared_match(e: CEER, s_v: nat, inp_v: nat) -> bool {
+    match declared_pair(e, s_v) {
+        Some(pr) => pair(pr.0, pr.1) == inp_v || pair(pr.1, pr.0) == inp_v,
+        None => false,
+    }
+}
+
+pub proof fn lemma_srm_decl_is_declared(e: CEER, s_v: nat, t_v: nat)
+    requires
+        ceer_wf(e),
+        run_halts(e.enumerator, initial_config(e.enumerator, s_v), (t_v + 1) as nat),
+    ensures
+        declared_pair(e, s_v) == Some((srm_decl1(e, s_v, t_v), srm_decl2(e, s_v, t_v))),
+{
+    reveal(ceer_wf);
+    let init = initial_config(e.enumerator, s_v);
+    assert(halts(e.enumerator, s_v)) by {
+        assert(run_halts(e.enumerator, init, (t_v + 1) as nat));
+    }
+    assert(e.enumerator.num_regs >= 3);
+    let fuel = choose|f: nat| run_halts(e.enumerator, init, f);
+    assert(run_halts(e.enumerator, init, fuel));
+    lemma_declared_pair_well_defined(e, s_v, (t_v + 1) as nat, fuel);
+    //  declared_pair uses the chosen fuel; run(.,t+1) == run(.,fuel)
+    assert(run(e.enumerator, init, (t_v + 1) as nat) == run(e.enumerator, init, fuel));
 }
 
 ///  Local `run` unfold helper (private copy).
