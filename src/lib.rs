@@ -41,3 +41,9 @@
 // reduction target; the simulation-correctness proofs are the deferred GAP-2 impl. See
 // modular_reduction.rs.
 #[cfg(verus_keep_ghost)] pub mod modular_reduction;
+
+// GAP-1 item-3b brick B2: the conditional relator-set match — connects the Miller direct-limit
+// p_infty(ceer_decls_fam(e)) to Cohen's c_pred(mm,2,m,is_S_canonical) via the block-shift relabeling,
+// using B1 (decode bridge) + B3 (relabel-iso). Conditional on the GAP-2 ceer_realizes hypothesis.
+// See ceer_relator_match.rs.
+#[cfg(verus_keep_ghost)] pub mod ceer_relator_match;
