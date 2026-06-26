@@ -499,6 +499,132 @@ pub proof fn lemma_srm_phase_i(
     }
 }
 
+//  ============================================================
+//  CMP comparison phases
+//  ============================================================
+
+///  The enumerator's declared pair at stage s with fuel T+1: (reg1, reg2) of the halt config.
+pub open spec fn srm_decl1(e: CEER, s_v: nat, t_v: nat) -> nat {
+    run(e.enumerator, initial_config(e.enumerator, s_v), (t_v + 1) as nat).registers[1]
+}
+pub open spec fn srm_decl2(e: CEER, s_v: nat, t_v: nat) -> nat {
+    run(e.enumerator, initial_config(e.enumerator, s_v), (t_v + 1) as nat).registers[2]
+}
+
+///  All registers 11..28 are zero (the pair/eq/backup working set + ii1/ii2; NOT the d-backups 7..10).
+pub open spec fn srm_work_zero(c: Configuration) -> bool {
+    &&& c.registers[11] == 0 && c.registers[12] == 0 && c.registers[13] == 0 && c.registers[14] == 0
+    &&& c.registers[15] == 0 && c.registers[16] == 0 && c.registers[17] == 0 && c.registers[18] == 0
+    &&& c.registers[19] == 0 && c.registers[20] == 0 && c.registers[21] == 0 && c.registers[22] == 0
+    &&& c.registers[23] == 0 && c.registers[24] == 0 && c.registers[25] == 0 && c.registers[26] == 0
+    &&& c.registers[27] == 0 && c.registers[28] == 0
+}
+
+///  At CMP (halted): control + temps zero + the E-bridge (E-bank == enumerator halt config @ T+1).
+pub open spec fn srm_at_cmp(e: CEER, c: Configuration, inp_v: nat, t_v: nat, s_v: nat, cnt_v: nat, r_v: nat) -> bool {
+    &&& c.pc == srm_cmp(e)
+    &&& srm_ctrl(e, c, inp_v, t_v, s_v, cnt_v, r_v)
+    &&& srm_temps_zero(c)
+    &&& run_halts(e.enumerator, initial_config(e.enumerator, s_v), (t_v + 1) as nat)
+    &&& (forall|r: int| 0 <= r < srm_ne(e) ==>
+            #[trigger] c.registers[29 + r]
+                == run(e.enumerator, initial_config(e.enumerator, s_v), (t_v + 1) as nat).registers[r])
+}
+
+///  After C0 (backups): d1A=d1B=d1, d2A=d2B=d2; working set 11..28 still zero.
+pub open spec fn srm_post_c0(e: CEER, c: Configuration, inp_v: nat, t_v: nat, s_v: nat, cnt_v: nat, r_v: nat) -> bool {
+    &&& c.pc == srm_cmp(e) + 8
+    &&& srm_ctrl(e, c, inp_v, t_v, s_v, cnt_v, r_v)
+    &&& c.registers[7] == srm_decl1(e, s_v, t_v) && c.registers[8] == srm_decl1(e, s_v, t_v)
+    &&& c.registers[9] == srm_decl2(e, s_v, t_v) && c.registers[10] == srm_decl2(e, s_v, t_v)
+    &&& srm_work_zero(c)
+}
+
+#[verifier::rlimit(8000)]
+pub proof fn lemma_srm_phase_c0(
+    e: CEER, c: Configuration, inp_v: nat, t_v: nat, s_v: nat, cnt_v: nat, r_v: nat,
+)
+    requires
+        ceer_wf(e),
+        srm_at_cmp(e, c, inp_v, t_v, s_v, cnt_v, r_v),
+    ensures
+        exists|g: nat|
+            #[trigger] run(search_rm(e), c, g).pc == srm_cmp(e) + 8
+            && srm_post_c0(e, run(search_rm(e), c, g), inp_v, t_v, s_v, cnt_v, r_v),
+{
+    reveal(ceer_wf);
+    let m = search_rm(e);
+    let ne = srm_ne(e);
+    let cmp = srm_cmp(e);
+    let d1 = srm_decl1(e, s_v, t_v);
+    let d2 = srm_decl2(e, s_v, t_v);
+    assert(ne >= 3);
+    assert(c.registers[30] == d1) by {
+        let r1: int = 1;
+        assert(0 <= r1 < ne);
+        assert(c.registers[29 + r1] == run(e.enumerator, initial_config(e.enumerator, s_v), (t_v + 1) as nat).registers[r1]);
+    }
+    assert(c.registers[31] == d2) by {
+        let r2: int = 2;
+        assert(0 <= r2 < ne);
+        assert(c.registers[29 + r2] == run(e.enumerator, initial_config(e.enumerator, s_v), (t_v + 1) as nat).registers[r2]);
+    }
+
+    //  --- bk1: double_dist(E1=30 -> d1A=7, d1B=8, zero=1, sp=cmp) ---
+    lemma_srm_index(e, cmp as int);
+    lemma_srm_index(e, cmp as int + 1);
+    lemma_srm_index(e, cmp as int + 2);
+    lemma_srm_index(e, cmp as int + 3);
+    assert(m.instructions[cmp as int] == mk_dj(30, cmp + 4));
+    assert(m.instructions[(cmp + 1) as int] == mk_inc(7));
+    assert(m.instructions[(cmp + 2) as int] == mk_inc(8));
+    assert(m.instructions[(cmp + 3) as int] == mk_dj(1, cmp));
+    lemma_double_dist_inner(m, c, 30, 7, 8, 1, cmp, 0, 0, d1);
+    let s1: nat = (4 * d1 + 1) as nat;
+    let c1 = run(m, c, s1);
+    lemma_run_preserves_len(m, c, s1);
+    assert(c1.pc == cmp + 4);
+    assert(c1.registers[7] == d1 && c1.registers[8] == d1);
+    assert(c1.registers[31] == d2) by { assert(31 != 30 && 31 != 7 && 31 != 8); }
+    assert(c1.registers[9] == 0) by { assert(9 != 30 && 9 != 7 && 9 != 8); }
+    assert(c1.registers[10] == 0) by { assert(10 != 30 && 10 != 7 && 10 != 8); }
+    assert(c1.registers[1] == 0) by { assert(1 != 30 && 1 != 7 && 1 != 8); }
+
+    //  --- bk2: double_dist(E2=31 -> d2A=9, d2B=10, zero=1, sp=cmp+4) ---
+    lemma_srm_index(e, cmp as int + 4);
+    lemma_srm_index(e, cmp as int + 5);
+    lemma_srm_index(e, cmp as int + 6);
+    lemma_srm_index(e, cmp as int + 7);
+    assert(m.instructions[(cmp + 4) as int] == mk_dj(31, cmp + 4 + 4));
+    assert(m.instructions[(cmp + 5) as int] == mk_inc(9));
+    assert(m.instructions[(cmp + 6) as int] == mk_inc(10));
+    assert(m.instructions[(cmp + 7) as int] == mk_dj(1, cmp + 4));
+    lemma_double_dist_inner(m, c1, 31, 9, 10, 1, (cmp + 4) as nat, 0, 0, d2);
+    let s2: nat = (4 * d2 + 1) as nat;
+    let c2 = run(m, c1, s2);
+    lemma_run_preserves_len(m, c1, s2);
+    assert(c2.pc == cmp + 8);
+    assert(c2.registers[9] == d2 && c2.registers[10] == d2);
+    assert(c2.registers[7] == d1) by { assert(7 != 31 && 7 != 9 && 7 != 10); }
+    assert(c2.registers[8] == d1) by { assert(8 != 31 && 8 != 9 && 8 != 10); }
+
+    //  --- compose ---
+    lemma_run_add(m, c, s1, s2);
+    let g: nat = (s1 + s2) as nat;
+    assert(run(m, c, g) == c2);
+
+    //  --- postcondition ---
+    let nr = srm_numregs(e);
+    assert forall|r: int| 0 <= r < nr as int && r != 30 && r != 31 && r != 7 && r != 8 && r != 9 && r != 10
+        implies c2.registers[r] == c.registers[r] by {
+        assert(c1.registers[r] == c.registers[r]);
+        assert(c2.registers[r] == c1.registers[r]);
+    }
+    assert(srm_ctrl(e, c2, inp_v, t_v, s_v, cnt_v, r_v));
+    assert(srm_work_zero(c2));
+    assert(srm_post_c0(e, c2, inp_v, t_v, s_v, cnt_v, r_v));
+}
+
 ///  Local `run` unfold helper (private copy).
 proof fn lemma_run_unfold(m: RegisterMachine, c: Configuration, fuel: nat)
     requires !is_halted(m, c), fuel > 0,
