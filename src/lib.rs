@@ -47,3 +47,9 @@
 // using B1 (decode bridge) + B3 (relabel-iso). Conditional on the GAP-2 ceer_realizes hypothesis.
 // See ceer_relator_match.rs.
 #[cfg(verus_keep_ghost)] pub mod ceer_relator_match;
+
+// GAP-1 item-3b assembly: chains B2 (relator match) onto item-3a (lemma_ceer_limit_commutation),
+// the L0.5 bridge, and GAP-3 (faithful+sound) into the conditional axiom-removal chain
+// ceer_group_equiv ⟺ equiv(h3_pres,...). Conditional on the GAP-2 ceer_realizes hypothesis.
+// See ceer_fp_conditional.rs.
+#[cfg(verus_keep_ghost)] pub mod ceer_fp_conditional;
