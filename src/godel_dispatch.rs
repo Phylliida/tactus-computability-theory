@@ -46,7 +46,8 @@ pub proof fn lemma_sim_step(rm_k: RegisterMachine, c_k: Configuration)
         rm_k.instructions[c_k.pc as int] !== Instruction::Halt,
     ensures
         exists|g: nat|
-            run(rm_k_to_rm2(rm_k), rm2_config_enc(rm_k.instructions, c_k), g)
+            1 <= g
+            && run(rm_k_to_rm2(rm_k), rm2_config_enc(rm_k.instructions, c_k), g)
                 == rm2_config_enc(rm_k.instructions, step(rm_k, c_k).unwrap()),
 {
     let instrs = rm_k.instructions;
@@ -71,7 +72,8 @@ pub proof fn lemma_sim_step(rm_k: RegisterMachine, c_k: Configuration)
             lemma_inc_block_layout(instrs, pc, i);
             lemma_inc_sim(m2, enc, regs, i, start);
             let g = choose|g: nat|
-                run(m2, enc, g).pc == start + crate::godel::base(i) + 5
+                1 <= g
+                && run(m2, enc, g).pc == start + crate::godel::base(i) + 5
                 && run(m2, enc, g).registers[0] == godel_encode(regs.update(i as int, (regs[i as int] + 1) as nat))
                 && run(m2, enc, g).registers[1] == 0
                 && run(m2, enc, g).registers.len() == 2;
@@ -98,7 +100,8 @@ pub proof fn lemma_sim_step(rm_k: RegisterMachine, c_k: Configuration)
             lemma_decjump_block_layout(instrs, pc, i, t);
             lemma_decjump_sim(m2, enc, regs, i, start, target_block);
             let g = choose|g: nat|
-                run(m2, enc, g).registers.len() == 2
+                1 <= g
+                && run(m2, enc, g).registers.len() == 2
                 && run(m2, enc, g).registers[1] == 0
                 && (if regs[i as int] >= 1 {
                         run(m2, enc, g).pc == start + 3 * crate::godel::base(i) + 10
