@@ -34,7 +34,29 @@ verdict {halted-with-pair | still-running}.
 
 ## Brick order
 
-### B-L0.1 — fuel-instrumentation transform (the one genuinely-new brick)
+### B-L0.1 — fuel-instrumentation transform (the one genuinely-new brick) — ✅ DONE 2026-06-26 (7/0)
+
+**Built in `src/search_rm_sim.rs` (7 verified, 0 errors), exactly the design below.** The "2-instruction
+window" is realised as a **stride-2 layout**: `instrument_instructions(instrs, reg_offset, pc_offset,
+halted_pc, timeout_pc, fuel_reg, scratch)` puts the guard `DecJump{fuel_reg, timeout_pc}` at even slot
+`pc_offset+2i` and the remapped body at odd slot `pc_offset+2i+1`; DecJump targets `t` remap to
+`pc_offset+2t`, `Halt` → `DecJump{scratch, halted_pc}`, and `halted_pc = pc_offset + 2*len` unifies
+"fall off the end" with "jump to len". The toolkit (all consumed by B-L0.2):
+- **`instr_configs_agree(rm_sub, reg_offset, pc_offset, fuel_reg, scratch, phi, c_sub, c)`** — host `c`
+  tracks E-config `c_sub` *at the guard* of `c_sub.pc`, E-bank shifted by `reg_offset`, scratch held 0,
+  `phi` fuel left.  **`instrument_frame(...)`** — the structural side-conditions (layout match, bank/sink
+  disjointness, bounds, `halted_pc != timeout_pc`).
+- **`lemma_instrument_halts`** (⟸): `run_halts(E, c_sub, phi-1)` ⟹ reaches `halted_pc` within `2*phi`
+  steps carrying `run(E, c_sub, phi-1)`'s registers in the shifted bank. (The `phi-1` budget gives one
+  guard's slack so a `Halt`-instruction halt, which costs an extra guard vs a `pc==len` halt, still lands
+  on HALTED — the fuel-boundary fencepost, handled by being generous with fuel in the dovetail.)
+- **`lemma_instrument_reaches_sink`** (⟹): always reaches `halted_pc` or `timeout_pc` within `2*phi+1`
+  steps (totality), and **reaching `halted_pc` ⟹ `run_halts(E, c_sub, phi)` ∧ E-bank == `run(E,c_sub,phi)`**
+  (soundness — a HALTED verdict reflects a genuine declaration). This is the ⟹ direction's workhorse.
+- Helpers `lemma_instrument_estep` (guard+body = 2 host steps advance 1 E-step), `lemma_instrument_halt_instr`,
+  `lemma_instrument_guard_timeout`, `lemma_run_add` (run composition `run(m,c,a+b)==run(m,run(m,c,a),b)`).
+
+*(Original design, for reference:)*
 `instrument(E) : RegisterMachine` adds a dedicated `fuel` register and, before each original step,
 guards it: conceptually each original `pc` becomes a 2-instruction window
 ```
@@ -53,15 +75,47 @@ This is the bounded analogue of `lemma_embed_reaches_target`; the per-step lemma
 Reuse `embed_instructions` shifting machinery for the target remap; the guard is the new content.
 
 ### B-L0.2 — the dovetail driver
-Outer loop over `T = 0,1,2,…` (a bound register, only ever incremented — its loop-backs use a zero
-scratch, fine at `RM(k)`). Inner loop over `s = 0..T`. Each inner iteration:
-1. **reset** the `E`-bank to `init(E, s)` (clear bank via copy-to-scratch loops, set reg0 := s) and set
-   `fuel := T`;
-2. run `instrument(E)` (embedded via `embed_instructions`) using B-L0.1 → lands in `HALTED` or `TIMEOUT`;
-3. if `HALTED`: compare `(reg1,reg2)` against the decoded `(a,b)` (equality via destructive-compare
-   gadgets); on `{reg1,reg2} == {a,b}` jump to the machine's global `Halt`. Else continue the inner loop.
-After `s == T`, `T += 1`, repeat. Reuse `copy_instrs`/`triple_dist_instrs` for bank setup + comparison;
-`pair`/`unpair1`/`unpair2` (pairing.rs) to decode `(a,b)` from the input once at entry.
+
+> **⚠ DESIGN SHARPENED 2026-06-26 (correcting the original note).** The original step 3 said "compare
+> against the *decoded* `(a,b)` … `unpair1`/`unpair2` to decode `(a,b)` from the input." But
+> `pairing.rs`'s `pair`/`unpair1`/`unpair2` are **spec functions (math), NOT register-machine
+> subroutines** — and *unpairing* on an RM is the harder direction (inverse-triangular row search).
+> **Avoid it entirely by comparing in the FORWARD direction.** Since `pair` is injective
+> (`lemma_pair_injective`) and the input is `pair(a,b)`:
+>
+>   `{reg1,reg2} == {a,b}`  ⟺  `pair(reg1,reg2) == input`  ∨  `pair(reg2,reg1) == input`.
+>
+> So **re-pair E's declared output and compare to the preserved input** — needing only the *forward*
+> `pair` (a couple of accumulation loops, no search) + a destructive nat-equality loop. No unpairing.
+
+The driver `search_rm(e)` is one `RM(k)` machine (`k` = E-bank `ne` + the registers below). The input
+`pair(a,b)` lands in reg 0; **first copy it to a preserved register `inp`** (it is never decoded).
+Outer loop over `T = 0,1,2,…` (a bound register, only ever incremented — its back-edges use a guaranteed-0
+scratch as `DecJump{zero, top}`, exactly as `copy_instrs` does; fine at `RM(k)`). Inner loop over `s = 0..T`.
+Each inner iteration:
+1. **reset** the E-bank to `initial_config(E, s)` (clear the `ne`-register bank via copy-to-scratch
+   drains, then set bank-reg 0 := `s` by copying a preserved `s`-register) and set `fuel := T` (copy `T`);
+2. run `instrument(E)` (the B-L0.1 block, embedded at the driver's `pc_offset`) → lands on `halted_pc`
+   or `timeout_pc` (by `lemma_instrument_reaches_sink`, ≤ `2T+1` steps);
+3. on `halted_pc`: read the E-bank's `reg1,reg2`; **compute `pair(reg1,reg2)` and `pair(reg2,reg1)`**
+   into scratch, **destructive-compare each to a copy of `inp`**; on either match jump to the global
+   `Halt`. Else continue the inner loop.
+After `s == T`, `T += 1`, repeat. Reuse `copy_instrs`/`triple_dist_instrs` for bank setup + the
+preserve-copies; the new arithmetic is the **RM forward-`pair` subroutine** (B-L0.2a below).
+
+**B-L0.2a — RM forward-`pair` subroutine (the only genuinely-new arithmetic).** `pair(x,y) =
+triangular(x+y) + x`, `triangular(n) = n(n+1)/2 = Σ_{k≤n} k`. RM construction: `sum := x+y` (two drains),
+then `triangular` by an **outer countdown of a copy of `sum`** that, on iteration with running index `i`,
+adds `i` to the accumulator `t` (inner add via a distribute-and-restore of `i`, reusing the
+`triple_dist`/`copy` loop lemmas), then `pair := t + x`. Correctness proven against the spec `pair`/
+`triangular` with the existing `pairing.rs` lemmas. This is self-contained and reusable; build it FIRST.
+
+**B-L0.2b — bank reset + nat-equality** are straight `copy_instrs`-style loops (drain-to-scratch with a
+guaranteed-0 back-edge register); equality = drain both, equal iff both empty together.
+
+**B-L0.2c — loop assembly + `machine_wf`**: lay out the phases in disjoint pc-windows (à la
+`tm_assemble`/`multi_output_machine`), each gadget keyed in its own window; the outer/inner loop control
+via `DecJump{zero, window_top}` back-edges.
 
 ### B-L0.3 — assembly + the halts-iff
 `lemma_search_rm_halts_iff`: `halts(search_rm(e), pair(a,b)) ⟺ declared_equiv(e,a,b)`.
