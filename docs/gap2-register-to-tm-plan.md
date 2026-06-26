@@ -102,6 +102,67 @@ Euclid is bounded, self-contained, low-risk (check `vstd::arithmetic` first, pro
 L1 is **not on the critical path** — the L2 TM gadget library below is needed identically regardless, so
 build L2 first and settle the Euclid lemma when L1 is reached.
 
+#### ✅ L1 NUMBER-THEORY FOUNDATION DONE 2026-06-26 (this session, additive, full crate 477/0).
+
+The Euclid obligation is discharged — and **primality is dodged entirely**. Two new modules, both
+fully verified, no verifier escape hatches:
+- **`src/number_theory.rs` (36/0)** — the reusable coprimality core: `gcd` (Euclid), `ext_gcd`/
+  `lemma_bezout` (Bézout, ported from the verified `verus-fixed-point` Z3 `number_theory.rs`), and the
+  three derived facts the Gödel proof consumes: `lemma_coprime_mul` (multiplicative, via "multiply one
+  Bézout eq by `c`" to dodge the degree-3 product identity Lean's `nonlinear_arith` chokes on),
+  `lemma_coprime_pow`, `lemma_coprime_not_divides` (`a≥2` coprime to `x` ⟹ `a∤x`). Plus generic
+  divisibility plumbing (`lemma_mod_self`/`lemma_divides_mul`/`lemma_divides_trans`).
+- **`src/godel.rs` (15/0, verified first try)** — the **Sylvester/Euclid pairwise-coprime base**
+  `base(0)=2, base(j)=1+∏_{i<j}base(i)`, the encoding `godel(regs)=∏ base(j)^{regs[j]}`, and the headline
+  **`lemma_godel_div_iff`**: for `i<regs.len()`, `base(i) | godel(regs) ⟺ regs[i] ≥ 1` (the `DecJump`
+  zero-test arithmetic). The base is pairwise coprime because `base(j) ≡ 1 (mod base(i))` for `i<j`
+  (`base(i) | ∏_{i<j}base(i)`), so coprimality is a one-liner — NO `nth_prime`/primality/injectivity.
+
+Lean-backend lessons banked: `nonlinear_arith` proves ring identities up to ~degree-2 substitution (the
+ported `lemma_divides_linear_combination` works) but NOT a raw degree-3 product identity — decompose;
+`(x*y) as int == (x as int)*(y as int)` needs a PLAIN assert (not inside `by(nonlinear_arith)`, which
+loses the cast); `vstd::arithmetic::div_mod` (`lemma_fundamental_div_mod{,_converse}`, `lemma_small_mod`)
+all work; `lemma_fundamental_div_mod_converse` wants `x == q*d + r` (q·d order, commute if needed).
+
+#### ⚠⚠ L1 MACHINE BLOCKER — the 2-counter unconditional-jump gap (CO-DESIGN GATE, 2026-06-26).
+
+**Before building the multiply/divide gadgets, a foundational obstruction was found + rigorously
+confirmed (independently + companion port 8051):** `machine.rs`'s instruction set is
+`Inc{r}` (control falls to `pc+1`, NO goto field) / `DecJump{r,target}` / `Halt`. The ONLY backward
+control transfer is `DecJump(r,L)`, which **decrements `r`** on the `r>0` branch. So an unconditional
+`goto L` is realizable ONLY as `DecJump(z,L)` with `z` **guaranteed 0** at that point. **Counting
+argument:** any loop running `T` times takes its back-edge `T` times; if that back-edge is `DecJump(z,L)`
+it needs `z≡0` (else it decrements live data / exits forward). A multiply/divide loop (and even a plain
+`move C1→C2`) has back-edges where **both** `C1` and `C2` are generally nonzero — so neither can be the
+zero register. **Hence `{Inc→+1, DecJump}` with exactly 2 registers cannot implement
+move/multiply/divide; every nontrivial loop needs a 3rd always-zero scratch (2 data + 1 goto-register).**
+This is exactly why the existing `copy_instrs`/`triple_dist_instrs` infra uses a dedicated zero scratch
+(reg 3). The classical "2-counter machines are universal" result uses Minsky's RICHER set
+(`INC(r,goto)`, `JZDEC(r,goto0,goto1)` with explicit successors) where gotos are free — strictly
+stronger than `machine.rs`.
+
+**Why this is a real gate (not a free fix):** the whole downstream pipeline `RM(2) → 2-block TM → modular
+machine` is **intrinsically 2-coordinate** — the Aanderaa–Cohen modular machine operates on a *pair*
+`(α,β)`/`(u,v)` and has exactly two tape blocks. So the companion's first instinct (add a **3rd tape
+block** for the goto-register) **breaks the modular target** (`tm_to_modmachine`/`lemma_tm_h0_iff`,
+frozen + verified, assume 2 coordinates). The goto-register carries no *data*, only *control* — and
+control is the TM **state**, not a tape coordinate. So the dimensionally-honest fix keeps data
+2-dimensional and enriches control flow. Candidate resolutions (Danielle's call — touches frozen verified
+`rm_to_tm` + `machine.rs`):
+  - **(R-ii) Add an unconditional `Jump{target}` to `Instruction`** + one trivial TM state-jump
+    quintuple-window in `tm_assemble.rs`. Clean semantics, no extra block/coordinate; cost = the enum
+    variant ripples through every `match` on `Instruction` (`step`/`machine_wf`/`lemma_step_preserves_*`,
+    `embed_instructions`, all `tm_*` dispatch). Mechanical but wide.
+  - **(R-iii) Zero-register convention:** `rm_to_tm` accepts `num_regs=3` but treats reg 2 (provably
+    never `Inc`'d) as a pure goto-register compiled to a TM state-jump with NO tape block (TM stays
+    2-block, modular stays 2-coord). No enum change; cost = `rm_to_tm`'s contract must carry the
+    "reg 2 never incremented / always 0" invariant, slightly breaking RM↔TM state uniformity.
+  - **(R-i) [REJECTED] 3-block tape** — breaks the 2-coordinate modular machine downstream.
+
+**Recommendation to surface: R-ii or R-iii** (both keep the modular pipeline 2-coordinate). NOT taken
+solo — modifying the frozen, verified `rm_to_tm`/`machine.rs` is a co-design decision. **The L1
+number-theory foundation above is independent of this choice and stands regardless.**
+
 ### L2 (2-counter → TM) — the universal foundation, build FIRST
 
 Parametric-in-layout gadget library over the unary-separator tape (k=2 is the special case; the gadgets
@@ -184,8 +245,19 @@ identify `mm_in_H0(mm, enc(a,b)) ⟺ declared_equiv(e,a,b)` and discharge `ceer_
 trampoline), B5.1 `tm_walk_right.rs` (right walk loops), B5.2 `tm_right_gadgets.rs` (peek/inc/dec
 right mirrors), B5.3 `tm_assemble.rs` (`rm_to_tm` + `tm_wf`), B5.4/B5.5 `tm_sim.rs`
 (`lemma_sim_step`), **B6 (this session)**: `tm_cleanup.rs` (cleanup phases A/B/C + `lemma_sim_halt`),
-`tm_run_sim.rs` (run induction + the halting iff `lemma_rm_tm_origin_iff`). **NEXT =**
-L1 (k→2 Gödel, the one Euclid lemma), L0 (search_rm dovetailer), G2-F (wire `config_encode`/`enc` +
+`tm_run_sim.rs` (run induction + the halting iff `lemma_rm_tm_origin_iff`).
+
+**Status update 2026-06-26 (this session):** **L1 number-theory foundation DONE** (`number_theory.rs`
+36/0 + `godel.rs` 15/0, full crate 477/0 — `lemma_godel_div_iff`, Sylvester-coprime base, no primality;
+see the L1 §). **A blocker was found for the L1 *machine*:** the `{Inc→+1, DecJump}` 2-register
+instruction set cannot loop without a 3rd always-zero goto-register, but the pipeline is intrinsically
+2-coordinate — see the **L1 MACHINE BLOCKER** § above (co-design gate, Danielle's call: R-ii add `Jump`,
+or R-iii zero-register convention; both keep the modular target 2-coordinate). **NEXT =**
+(1) resolve the L1 machine blocker with Danielle (R-ii / R-iii), then build the multiply/divide gadgets
+consuming `lemma_godel_div_iff`; OR (2) **L0 (search_rm dovetailer) is UNBLOCKED** — it builds an
+`RM(k)` with as many scratch registers as it wants (reuses the `multi_output`/`embed_instructions` infra),
+so it does not hit the 2-counter gate; its own subtlety is the fuel-instrumented *bounded* simulation
+(plain embed-and-run hangs on non-halting enumerator stages). Then G2-F (wire `config_encode`/`enc` +
 discharge `ceer_realizes`).
 
 ### B6 architecture (the run simulation + halting iff — read before L0/L1/G2-F)
