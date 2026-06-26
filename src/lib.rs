@@ -117,6 +117,11 @@
 // arithmetic). See godel.rs.
 #[cfg(verus_keep_ghost)] pub mod godel;
 
+// GAP-2 / L1 k→2 reduction gadgets (M1 move, M2 multiply/divide/div-test): register-machine loops
+// over {Inc, DecJump, Jump} with NO free scratch — every back-edge is a `Jump` (R-ii). The 2-counter
+// analogues of multi_output_primitives' copy/dist loops. See docs/gap2-register-to-tm-plan.md.
+#[cfg(verus_keep_ghost)] pub mod godel_gadgets;
+
 // GAP-2 / L0 brick B-L0.1: fuel-instrumented bounded simulation. `instrument` guards each original
 // instruction with a `DecJump{fuel, TIMEOUT}` so a run always returns within `fuel` steps with a
 // HALTED-or-TIMEOUT verdict (a non-halting enumerator stage cannot wedge the dovetail). The bounded

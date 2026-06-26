@@ -203,6 +203,52 @@ touches `rm_to_tm`'s contract. **Either way `rm_to_tm`/`machine.rs` get un-froze
 Until it's taken, **L0 (`search_rm`) is the unblocked path** (it builds an `RM(k)` with free scratch, so it
 never needs the 2-register back-edge) — see `gap2-l0-search-rm-plan.md`.
 
+#### ✅ R-ii DONE 2026-06-26 — `Jump{target}` added, full crate 554/0 (commit `de7796f`).
+
+Danielle took the co-design call (port 8051): **R-ii GO**, `target <= len` in `machine_wf`. `Jump`'s TM
+gadget `jump_act` is a bit-for-bit `halt_act` clone routing `entry(pc)→entry(target)` (reuses
+`lemma_bounce_left`); `lemma_sim_jump` mirrors `lemma_sim_halt`. Embed/instrument map `Jump→DecJump{scratch}`
+to keep relocated machines Jump-free. Parser quirk: struct literal `Instruction::Jump{target}` in `requires`
+→ `mk_jump(target)` spec constructor. `machine.rs`/`rm_to_tm` un-frozen + re-verified, no escape hatches.
+
+#### ✅ k→2 GADGET DESIGN LOCKED 2026-06-26 — textbook-faithful (S–S Lemma before Thm 10.2).
+
+The S–S Lemma (lines 992–1013 of the paper) gives multiply / divide / **non-destructive** divisibility-test
+using `N+1` registers from the basic set `{P (=Inc), D (=dec), J(n) (test), J (uncond)}`. For 2-counter (10.2)
+`N=1`: **`C1` = the Gödel register `∏ base(i)^{r_i}`** (Sylvester base from `godel.rs`), **`C2`** = the single
+`+1` scratch. **All derived ops come from our `{Inc, DecJump, Jump}`** — R-ii's `Jump` is exactly the missing
+primitive (S–S derive `J` uncond from `{P,D,test}` via the compensated subroutine; our *fused* `DecJump`
+couldn't, so we added `J` directly).
+
+**The restoration concern (Danielle) is resolved by the textbook's FACTORING, not by an undo:** S–S do NOT use
+a fused test-and-divide (which builds the quotient in `(n)` and must undo it on the not-divisible path).
+Instead:
+- **`Div?((n),k)[E1]` — non-destructive divisibility test.** Move `(n)→(n+1)`, then walk `(n+1)` down while
+  **rebuilding `(n)` via `Inc` per decrement**, in groups of `k`. The *first* decrement of a group hitting
+  zero ⟹ divisible (exit `E1`); a *mid-group* zero ⟹ not divisible (exit 0). On **both** exits `(n)=N` is
+  restored. The verdict is carried purely in WHICH exit — no quotient is left in `(n)`, so nothing to undo.
+- **`(n)÷k` — separate destructive divide**, invoked ONLY on the divisible branch.
+
+So `DecJump(r_i, target)` translates to `[Div?(C1,base(i))[do_div]; Jump(target); do_div: C1÷=base(i);
+continue]` — on the not-divisible (`r_i=0`) branch `C1` is already intact and `Jump(target)` preserves it.
+`Inc(r_i)` translates to `C1 × base(i)`. `Halt→Halt`, `Jump→Jump`.
+
+**Gadgets from `{Inc, DecJump, Jump}` (all loops use `Jump` for the unconditional back-edge):**
+- **move `(n)→(n+1)`**: `loop: DecJump(n, done); Inc(n+1); Jump(loop); done:` (consumes `n` into `n+1`).
+- **multiply `(n)×k`**: `move (n)→(n+1)`; `loop2: DecJump(n+1, done2); Inc(n)×k; Jump(loop2); done2:`.
+- **divide `(n)÷k`** (divisible only): `move (n)→(n+1)`; `loop: [DecJump(n+1, done)]×k; Inc(n); Jump(loop)`.
+- **`Div?((n),k)[E1]`** (non-destructive): `move (n)→(n+1)`; `tloop: DecJump(n+1, E1); Inc(n);
+  [DecJump(n+1, not_div); Inc(n)]×(k-1); Jump(tloop)`. (`E1` = divisible; `not_div` = exit 0.)
+
+**Gadget lemmas are PARAMETRIC in `k`** (induction over the counter / over `k`), instantiated at `k=base(i)` —
+so `base(i)`'s (doubly-exponential, Sylvester) *magnitude* never enters the proofs; only `k` as a symbol +
+the `godel.rs` value lemmas (`lemma_godel_inc/dec/div_iff`). Brick order: **M1** move + multiply + lemmas →
+**M2** divide + non-destructive `Div?` + lemmas → **M3** per-instruction block translation → **M4** assemble
+`rm_k_to_rm2` + `machine_wf` → **M5** one-step sim (`C1 = godel(regs)` invariant, consumes godel lemmas) →
+**M6** run-sim + halts-iff (`halts(rm_k, input) ⟺ halts(rm2, godel(initial_config))`). Then **G2-F** wires
+`config_encode` + discharges `ceer_realizes`. The induction follows `search_rm_arith`'s copy/double_dist
+loop-lemma style (decreasing-fuel inner loop, recurrence per group).
+
 ### L2 (2-counter → TM) — the universal foundation, build FIRST
 
 Parametric-in-layout gadget library over the unary-separator tape (k=2 is the special case; the gadgets
