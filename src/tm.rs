@@ -45,12 +45,18 @@ pub struct TmConfig {
 }
 
 /// A single quintuple is well-formed for a TM with alphabet bound `n`, modulus `m`:
-/// scanned/written symbols are real symbols (`≤ n`), states lie strictly in `n+1..m-1`.
+/// scanned/written symbols are real symbols (`≤ n`), the **current** state lies strictly in
+/// `n+1..m-1`. The **next** state `q2` is only bounded `< m` (NOT `≥ n+1`): a quintuple may step
+/// *into* state `0`, which is exactly the halt transition the `rm_to_tm` cleanup uses to reach
+/// `tm_origin() = (0,0,0,0)` (state `0` is terminal because no quintuple's *current* state is `0`).
+/// Nothing downstream needs `q2 ≥ n+1`: the modular residue separation and determinism
+/// (`tm_modular::lemma_tm_modmachine_wf`) use only the current `q ≥ n+1` / scanned `≤ n`, and the
+/// quad bound `c = a2·m + q2 < m²` needs only `q2 < m`.
 pub open spec fn quint_wf(qt: Quintuple, n: nat, m: nat) -> bool {
     &&& qt.a <= n
     &&& qt.a2 <= n
     &&& n + 1 <= qt.q < m
-    &&& n + 1 <= qt.q2 < m
+    &&& qt.q2 < m
 }
 
 /// Well-formedness of a TM: `m > 1`, `0 < n < m`, every quintuple well-formed, and **deterministic**
