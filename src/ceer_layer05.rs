@@ -21,6 +21,12 @@ use verus_group_theory::symbol::*;
 use verus_group_theory::word::{Word, empty_word, word_valid};
 use verus_group_theory::cohen_layer05::{decls_family_valid, equiv_in_g_limit, equiv_in_c0_limit,
     lemma_c0_embeds_in_c_iff};
+use verus_group_theory::benign::apply_embedding;
+use verus_group_theory::miller_collapse::miller_collapse_emb;
+use verus_group_theory::miller_collapse_preserve::dbar;
+use verus_group_theory::miller_collapse_limit::{dbar_family_monotone, p_infty,
+    lemma_emb_slice_independent, lemma_seq_index_contains, lemma_limit_commutation};
+use verus_group_theory::pred_presentation::equiv_in_pred_presentation;
 
 verus! {
 
@@ -147,6 +153,122 @@ pub proof fn lemma_ceer_c0_embeds_in_c_iff(e: CEER, n: nat, w: CeerWord)
 {
     lemma_ceer_decls_family_valid(e);
     lemma_c0_embeds_in_c_iff(ceer_decls_fam(e), n, ceer_to_word(w));
+}
+
+// ===========================================================================
+// 5. Directedness (`dbar_family_monotone`) of the concrete CEER family, and the
+//    limit-commutation iff instantiated for it (GAP-1 item-3a, concrete).
+// ===========================================================================
+
+/// A non-empty contributed relator is *stable* across slices: once a stage `s` declares a pair
+/// that fits the `m1`-slice, it declares the SAME relator at every larger slice `m2 ≥ m1`.
+proof fn lemma_ceer_relator_at_stable(e: CEER, s: nat, m1: nat, m2: nat)
+    requires
+        ceer_relator_at(e, s, m1) != empty_word(),
+        m1 <= m2,
+    ensures
+        ceer_relator_at(e, s, m2) == ceer_relator_at(e, s, m1),
+{
+    match declared_pair(e, s) {
+        Some(pair) => {
+            // non-empty at m1 forces the fitting branch: pair.0 < m1 && pair.1 < m1
+            if !(pair.0 < m1 && pair.1 < m1) {
+                assert(ceer_relator_at(e, s, m1) == empty_word());
+            }
+            assert(pair.0 < m1 && pair.1 < m1);
+            // a, b < m1 <= m2, so the m2 evaluation also takes the fitting branch with the same pair
+            assert(pair.0 < m2 && pair.1 < m2);
+        },
+        None => {
+            assert(ceer_relator_at(e, s, m1) == empty_word());
+        },
+    }
+}
+
+/// **DIRECTEDNESS of the CEER family.** A non-empty collapsed relator visible at slice `m1` is
+/// visible at every larger slice `m2 ≥ m1`. The empty/trivial relator is excluded by the weakened
+/// `dbar_family_monotone` (it is administrative padding, not slice-monotone — see the group-theory
+/// `dbar_family_monotone` doc). The genuine relators `u_a·u_b⁻¹` are slice-independent
+/// (`lemma_emb_slice_independent`), hence stable.
+proof fn lemma_ceer_dbar_mono_at(e: CEER, m1: nat, m2: nat, r: Word)
+    requires
+        r != empty_word(),
+        m1 <= m2,
+        dbar(m1, ceer_decls_fam(e)(m1)).contains(r),
+    ensures
+        dbar(m2, ceer_decls_fam(e)(m2)).contains(r),
+{
+    let fam = ceer_decls_fam(e);
+    assert(fam(m1) == ceer_decls_fam_at(e, m1));
+    assert(fam(m2) == ceer_decls_fam_at(e, m2));
+    let d1 = dbar(m1, fam(m1));
+    let emb1 = miller_collapse_emb(m1, 0, 1);
+    let emb2 = miller_collapse_emb(m2, 0, 1);
+
+    // 1. unfold contains: pick a witness index s into d1
+    assert(d1.len() == m1);
+    let s = choose|s: int| 0 <= s < d1.len() && d1[s] == r;
+    assert(0 <= s < d1.len() && d1[s] == r);
+    let rel1 = ceer_relator_at(e, s as nat, m1);
+    assert(d1[s] == apply_embedding(emb1, rel1));
+
+    // 2. r != empty ⟹ rel1 != empty (apply_embedding maps empty to empty)
+    assert(rel1 != empty_word()) by {
+        if rel1 == empty_word() {
+            assert(apply_embedding(emb1, empty_word()) == empty_word());
+        }
+    }
+
+    // 3. the relator is the same at m2, and is valid over the m1-slice
+    lemma_ceer_relator_at_stable(e, s as nat, m1, m2);
+    assert(ceer_relator_at(e, s as nat, m2) == rel1);
+    lemma_ceer_relator_at_valid(e, s as nat, m1);   // word_valid(rel1, m1)
+
+    // 4. slice independence: apply_embedding(emb2, rel1) == apply_embedding(emb1, rel1) == r
+    lemma_emb_slice_independent(m1, m2, rel1);
+    assert(apply_embedding(emb2, rel1) == apply_embedding(emb1, rel1));
+
+    // 5. d2[s] == r, and s < m1 <= m2 is a valid index ⟹ d2.contains(r)
+    let d2 = dbar(m2, fam(m2));
+    assert(d2.len() == m2);
+    assert(0 <= s < m2);
+    assert(d2[s] == apply_embedding(emb2, ceer_relator_at(e, s as nat, m2)));
+    assert(d2[s] == r);
+    lemma_seq_index_contains(d2, s);
+}
+
+/// The CEER declared-relator family is directed (`dbar_family_monotone`) — the second hypothesis
+/// of `lemma_limit_commutation`, now TRUE & provable thanks to the empty-relator-robust weakening.
+pub proof fn lemma_ceer_dbar_family_monotone(e: CEER)
+    ensures
+        dbar_family_monotone(ceer_decls_fam(e)),
+{
+    let fam = ceer_decls_fam(e);
+    assert forall|m1: nat, m2: nat, r: Word|
+        #![trigger dbar(m1, fam(m1)).contains(r), dbar(m2, fam(m2)).contains(r)]
+        r != empty_word() && m1 <= m2 && dbar(m1, fam(m1)).contains(r)
+        implies dbar(m2, fam(m2)).contains(r) by {
+        lemma_ceer_dbar_mono_at(e, m1, m2, r);
+    }
+}
+
+/// **GAP-1 ITEM-3a, INSTANTIATED FOR THE CEER GROUP.** The limit-commutation iff for the concrete
+/// CEER declared-relator family: triviality of a CEER word in the direct-limit Miller group `C`
+/// equals triviality of its Miller-collapse image in the fixed-`{a,t}` union presentation
+/// `P_∞ = ⟨a,t | ⋃_M D̄_M⟩`. Both family hypotheses (`decls_family_valid`, `dbar_family_monotone`)
+/// are discharged for `ceer_decls_fam(e)`; this leaves only the machine-gated relator-set match
+/// `⋃_M D̄_M ↔ is_S_canonical(mm,…)` (item-3b, needs GAP-2's modular machine).
+pub proof fn lemma_ceer_limit_commutation(e: CEER, n: nat, w: CeerWord)
+    requires
+        word_valid(ceer_to_word(w), n),
+    ensures
+        equiv_in_g_limit(ceer_decls_fam(e), n, ceer_to_word(w), empty_word())
+            <==> equiv_in_pred_presentation(p_infty(ceer_decls_fam(e)),
+                    apply_embedding(miller_collapse_emb(n, 0, 1), ceer_to_word(w)), empty_word()),
+{
+    lemma_ceer_decls_family_valid(e);
+    lemma_ceer_dbar_family_monotone(e);
+    lemma_limit_commutation(ceer_decls_fam(e), n, ceer_to_word(w));
 }
 
 } // verus!
