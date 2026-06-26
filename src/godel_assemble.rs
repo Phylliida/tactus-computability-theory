@@ -444,4 +444,121 @@ pub proof fn lemma_decjump_block_layout(instrs: Seq<Instruction>, pc: nat, i: na
     lemma_decjump_div_run(instrs, pc, i, t, start);
 }
 
+//  ============================================================
+//  Well-formedness of the assembled machine.
+//  ============================================================
+
+/// An RM(2) instruction is well-formed against total length `len`: registers `< 2`, targets `≤ len`.
+pub open spec fn instr_wf2(instr: Instruction, len: nat) -> bool {
+    match instr {
+        Instruction::Inc { register } => register < 2,
+        Instruction::DecJump { register, target } => register < 2 && target <= len,
+        Instruction::Jump { target } => target <= len,
+        Instruction::Halt => true,
+    }
+}
+
+/// Every instruction in block `pc` is well-formed against the total RM(2) length. Registers are only
+/// `0`/`1`; internal/fall-through targets are `≤ block_start(pc+1)`, the remapped external target is
+/// `block_start(t) ≤ total` (`t ≤ rm_k.len()` from `machine_wf`).
+proof fn lemma_block_wf(rm_k: RegisterMachine, pc: nat)
+    requires
+        machine_wf(rm_k),
+        pc < rm_k.instructions.len(),
+    ensures
+        forall|o: int| 0 <= o < block_size(rm_k.instructions[pc as int])
+            ==> instr_wf2(#[trigger] block_instrs(rm_k.instructions, pc)[o],
+                          block_start(rm_k.instructions, rm_k.instructions.len())),
+{
+    let instrs = rm_k.instructions;
+    let total = block_start(instrs, instrs.len());
+    let start = block_start(instrs, pc);
+    reveal(machine_wf);
+    lemma_block_start_step(instrs, pc);                              //  block_start(pc+1) == start + size
+    lemma_block_start_le(instrs, (pc + 1) as nat, instrs.len());     //  block_start(pc+1) <= total
+    lemma_block_instrs_len(instrs, pc);
+    match instrs[pc as int] {
+        Instruction::Inc { register } => {
+            assert(block_instrs(instrs, pc) == inc_block(register, start));
+            assert forall|o: int| 0 <= o < block_size(instrs[pc as int])
+                implies instr_wf2(#[trigger] block_instrs(instrs, pc)[o], total) by {
+            }
+        },
+        Instruction::DecJump { register, target } => {
+            assert(target <= instrs.len());
+            lemma_block_start_le(instrs, target, instrs.len());     //  block_start(target) <= total
+            assert(block_instrs(instrs, pc) == decjump_block(register, start, block_start(instrs, target)));
+            assert forall|o: int| 0 <= o < block_size(instrs[pc as int])
+                implies instr_wf2(#[trigger] block_instrs(instrs, pc)[o], total) by {
+            }
+        },
+        Instruction::Jump { target } => {
+            assert(target <= instrs.len());
+            lemma_block_start_le(instrs, target, instrs.len());
+            assert(block_instrs(instrs, pc) == seq![mk_jump(block_start(instrs, target))]);
+        },
+        Instruction::Halt => {
+            assert(block_instrs(instrs, pc) == seq![Instruction::Halt]);
+        },
+    }
+}
+
+/// Every instruction in the prefix of `n` blocks is well-formed against the total RM(2) length.
+proof fn lemma_rm2_prefix_wf(rm_k: RegisterMachine, n: nat)
+    requires
+        machine_wf(rm_k),
+        n <= rm_k.instructions.len(),
+    ensures
+        forall|idx: int| 0 <= idx < rm2_prefix(rm_k.instructions, n).len()
+            ==> instr_wf2(#[trigger] rm2_prefix(rm_k.instructions, n)[idx],
+                          block_start(rm_k.instructions, rm_k.instructions.len())),
+    decreases n,
+{
+    let instrs = rm_k.instructions;
+    let total = block_start(instrs, instrs.len());
+    if n == 0 {
+    } else {
+        let prev = rm2_prefix(instrs, (n - 1) as nat);
+        let blk = block_instrs(instrs, (n - 1) as nat);
+        assert(rm2_prefix(instrs, n) == prev + blk) by { assert(n == (n - 1) + 1); }
+        lemma_rm2_prefix_wf(rm_k, (n - 1) as nat);
+        lemma_rm2_prefix_len(instrs, (n - 1) as nat);       //  prev.len() == block_start(n-1)
+        lemma_block_instrs_len(instrs, (n - 1) as nat);     //  blk.len() == block_size
+        lemma_block_wf(rm_k, (n - 1) as nat);
+        assert forall|idx: int| 0 <= idx < rm2_prefix(instrs, n).len()
+            implies instr_wf2(#[trigger] rm2_prefix(instrs, n)[idx], total) by {
+            if idx < prev.len() {
+                assert((prev + blk)[idx] == prev[idx]);
+            } else {
+                assert((prev + blk)[idx] == blk[idx - prev.len()]);
+            }
+        }
+    }
+}
+
+/// **`machine_wf` of the assembled RM(2) machine.** `num_regs = 2 > 0`; every instruction is
+/// well-formed against the total length.
+pub proof fn lemma_rm_k_to_rm2_wf(rm_k: RegisterMachine)
+    requires
+        machine_wf(rm_k),
+    ensures
+        machine_wf(rm_k_to_rm2(rm_k)),
+{
+    let instrs = rm_k.instructions;
+    let m2 = rm_k_to_rm2(rm_k);
+    let total = block_start(instrs, instrs.len());
+    lemma_rm2_prefix_wf(rm_k, instrs.len());
+    lemma_rm2_len(instrs);     //  m2.instructions.len() == total
+    reveal(machine_wf);
+    assert forall|i: int| 0 <= i < m2.instructions.len()
+        implies (match #[trigger] m2.instructions[i] {
+            Instruction::Inc { register } => register < m2.num_regs,
+            Instruction::DecJump { register, target } => register < m2.num_regs && target <= m2.instructions.len(),
+            Instruction::Jump { target } => target <= m2.instructions.len(),
+            Instruction::Halt => true,
+        }) by {
+        assert(instr_wf2(m2.instructions[i], total));
+    }
+}
+
 } //  verus!
