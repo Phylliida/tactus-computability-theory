@@ -117,6 +117,13 @@
 // arithmetic). See godel.rs.
 #[cfg(verus_keep_ghost)] pub mod godel;
 
+// GAP-2 / L0 brick B-L0.1: fuel-instrumented bounded simulation. `instrument` guards each original
+// instruction with a `DecJump{fuel, TIMEOUT}` so a run always returns within `fuel` steps with a
+// HALTED-or-TIMEOUT verdict (a non-halting enumerator stage cannot wedge the dovetail). The bounded
+// analogue of multi_output_primitives::lemma_embed_reaches_target. See
+// docs/gap2-l0-search-rm-plan.md and search_rm_sim.rs.
+#[cfg(verus_keep_ghost)] pub mod search_rm_sim;
+
 // GAP-2 interface skeleton: the register->modular machine reduction (Aanderaa-Cohen Thm 2),
 // supplying the `mm` whose H0 realizes the CEER declared pairs. Type-level plumbing + the
 // reduction target; the simulation-correctness proofs are the deferred GAP-2 impl. See
