@@ -142,6 +142,11 @@
 // jump targets through it, and prove the layout-match (`lemma_block_at`) + `machine_wf`. See godel_assemble.rs.
 #[cfg(verus_keep_ghost)] pub mod godel_assemble;
 
+// GAP-2 / L1 k→2 reduction M5-dispatch: the one-step simulation. Dispatches on the RM(k) instruction
+// at the current pc, picks the matching M5 per-instruction sim, and shows the assembled RM(2) machine
+// runs from rm2_config_enc(c) to rm2_config_enc(step(c)). See godel_dispatch.rs.
+#[cfg(verus_keep_ghost)] pub mod godel_dispatch;
+
 // GAP-2 / L0 brick B-L0.1: fuel-instrumented bounded simulation. `instrument` guards each original
 // instruction with a `DecJump{fuel, TIMEOUT}` so a run always returns within `fuel` steps with a
 // HALTED-or-TIMEOUT verdict (a non-halting enumerator stage cannot wedge the dovetail). The bounded
