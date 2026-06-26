@@ -12,7 +12,7 @@ use crate::search_rm_inner::*;
 use crate::search_rm_arith::{lemma_run_add, lemma_double_dist_inner, lemma_run_preserves_len};
 use crate::multi_output_primitives::{mk_inc, mk_dj, lemma_copy_loop_inner, lemma_not_halted_means_not_run_halts};
 use crate::search_rm_compare::lemma_clear_loop;
-use crate::conditional_halt::{lemma_run_halts_split, lemma_run_split};
+use crate::conditional_halt::lemma_run_halts_split;
 
 verus! {
 
