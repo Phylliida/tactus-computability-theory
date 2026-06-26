@@ -133,6 +133,7 @@ pub open spec fn instrument_frame(
     &&& (fuel_reg < reg_offset || fuel_reg >= reg_offset + rm_sub.num_regs)
     &&& (scratch < reg_offset || scratch >= reg_offset + rm_sub.num_regs)
     &&& fuel_reg != scratch
+    &&& halted_pc != timeout_pc
 }
 
 //  ============================================================
@@ -522,6 +523,171 @@ pub proof fn lemma_instrument_halts(
         assert(run(m, c, g).pc == halted_pc);
         assert(forall|r: int| 0 <= r < rm_sub.num_regs as int ==>
             run(m, c, g).registers[(r + reg_offset) as int] == halt_cfg.registers[r]);
+    }
+}
+
+//  ============================================================
+//  Guard firing on empty fuel ⇒ TIMEOUT
+//  ============================================================
+
+///  When the budget is exhausted (`phi == 0`) and the tracked E-config is parked on a guard
+///  (`c_sub.pc < len`), one host step (the guard) jumps to `timeout_pc`.
+pub proof fn lemma_instrument_guard_timeout(
+    rm_sub: RegisterMachine, m: RegisterMachine,
+    reg_offset: nat, pc_offset: nat, halted_pc: nat, timeout_pc: nat,
+    fuel_reg: nat, scratch: nat,
+    c_sub: Configuration, c: Configuration,
+)
+    requires
+        c_sub.pc < rm_sub.instructions.len(),
+        instr_configs_agree(rm_sub, reg_offset, pc_offset, fuel_reg, scratch, 0, c_sub, c),
+        c.registers.len() == m.num_regs,
+        instrument_frame(rm_sub, m, reg_offset, pc_offset, halted_pc, timeout_pc, fuel_reg, scratch),
+    ensures
+        run(m, c, 1).pc == timeout_pc,
+        run(m, c, 1).registers == c.registers,
+        run(m, c, 1).registers.len() == m.num_regs,
+{
+    let len = rm_sub.instructions.len();
+    let p = c_sub.pc;
+    let instrs_block = instrument_instructions(
+        rm_sub.instructions, reg_offset, pc_offset, halted_pc, timeout_pc, fuel_reg, scratch);
+    assert(2 * p < 2 * len);
+    assert(m.instructions[(pc_offset + 2 * p) as int] == instrs_block[2 * p as int]);
+    assert((2 * p) % 2 == 0);
+    assert(instrs_block[2 * p as int] == Instruction::DecJump { register: fuel_reg, target: timeout_pc });
+    assert(c.pc == pc_offset + 2 * p);
+    assert(c.pc < m.instructions.len());
+    assert(c.registers[fuel_reg as int] == 0);
+    assert(!is_halted(m, c));
+    let c1 = step(m, c).unwrap();
+    assert(c1.pc == timeout_pc);
+    assert(c1.registers == c.registers);
+    lemma_run_unfold_step(m, c, 1);
+    assert(run(m, c, 1) == c1);
+}
+
+//  ============================================================
+//  ⟹ direction: instrument always reaches a sink, and HALTED is reached only via a genuine E-halt
+//  ============================================================
+
+///  Running the instrumented host from a matching config always reaches one of the two sinks within
+///  `2*phi + 1` steps, and **if it reaches `halted_pc` then `E` genuinely halted within `phi` steps**,
+///  carrying that halt config's registers in the shifted bank. This is the soundness the dovetail's
+///  ⟹ direction needs (a HALTED verdict reflects a real declaration) together with totality (the
+///  inner loop always terminates with a verdict).
+#[verifier::rlimit(4000)]
+pub proof fn lemma_instrument_reaches_sink(
+    rm_sub: RegisterMachine, m: RegisterMachine,
+    reg_offset: nat, pc_offset: nat, halted_pc: nat, timeout_pc: nat,
+    fuel_reg: nat, scratch: nat,
+    c_sub: Configuration, c: Configuration, phi: nat,
+)
+    requires
+        machine_wf(rm_sub),
+        config_wf(rm_sub, c_sub),
+        instr_configs_agree(rm_sub, reg_offset, pc_offset, fuel_reg, scratch, phi, c_sub, c),
+        c.registers.len() == m.num_regs,
+        instrument_frame(rm_sub, m, reg_offset, pc_offset, halted_pc, timeout_pc, fuel_reg, scratch),
+    ensures
+        exists|g: nat| g <= 2 * phi + 1
+            && (#[trigger] run(m, c, g).pc == halted_pc || run(m, c, g).pc == timeout_pc)
+            && run(m, c, g).registers.len() == m.num_regs
+            && (run(m, c, g).pc == halted_pc ==>
+                    run_halts(rm_sub, c_sub, phi)
+                    && (forall|r: int| 0 <= r < rm_sub.num_regs as int ==>
+                            #[trigger] run(m, c, g).registers[(r + reg_offset) as int]
+                                == run(rm_sub, c_sub, phi).registers[r])),
+    decreases phi,
+{
+    reveal(machine_wf);
+    let len = rm_sub.instructions.len();
+
+    if is_halted(rm_sub, c_sub) {
+        lemma_halted_run_identity(rm_sub, c_sub, phi);
+        lemma_halted_run_halts(rm_sub, c_sub, phi);
+        if c_sub.pc >= len {
+            assert(c_sub.pc == len);
+            assert(c.pc == halted_pc);
+            let g: nat = 0;
+            assert(run(m, c, g) == c);
+            assert(run(m, c, g).pc == halted_pc);
+            assert(run(m, c, g).pc == halted_pc ==>
+                run_halts(rm_sub, c_sub, phi)
+                && (forall|r: int| 0 <= r < rm_sub.num_regs as int ==>
+                        run(m, c, g).registers[(r + reg_offset) as int]
+                            == run(rm_sub, c_sub, phi).registers[r]));
+            assert(g <= 2 * phi + 1);
+        } else {
+            assert(rm_sub.instructions[c_sub.pc as int] is Halt) by {
+                assert(step(rm_sub, c_sub) is None);
+            }
+            if phi >= 1 {
+                lemma_instrument_halt_instr(rm_sub, m, reg_offset, pc_offset, halted_pc, timeout_pc,
+                    fuel_reg, scratch, c_sub, c, phi);
+                let g: nat = 2;
+                assert(run(m, c, g).pc == halted_pc);
+                assert(run(m, c, g).pc == halted_pc ==>
+                    run_halts(rm_sub, c_sub, phi)
+                    && (forall|r: int| 0 <= r < rm_sub.num_regs as int ==>
+                            run(m, c, g).registers[(r + reg_offset) as int]
+                                == run(rm_sub, c_sub, phi).registers[r]));
+                assert(g <= 2 * phi + 1);
+            } else {
+                assert(phi == 0);
+                lemma_instrument_guard_timeout(rm_sub, m, reg_offset, pc_offset, halted_pc, timeout_pc,
+                    fuel_reg, scratch, c_sub, c);
+                let g: nat = 1;
+                assert(run(m, c, g).pc == timeout_pc);
+                assert(g <= 2 * phi + 1);
+            }
+        }
+    } else {
+        //  c_sub not halted ⇒ c_sub.pc < len (there is a guard)
+        assert(c_sub.pc < len) by { assert(step(rm_sub, c_sub) is Some); }
+        if phi == 0 {
+            lemma_instrument_guard_timeout(rm_sub, m, reg_offset, pc_offset, halted_pc, timeout_pc,
+                fuel_reg, scratch, c_sub, c);
+            let g: nat = 1;
+            assert(run(m, c, g).pc == timeout_pc);
+            assert(g <= 2 * phi + 1);
+        } else {
+            lemma_instrument_estep(rm_sub, m, reg_offset, pc_offset, halted_pc, timeout_pc,
+                fuel_reg, scratch, c_sub, c, phi);
+            let s_sub = step(rm_sub, c_sub).unwrap();
+            let c2 = run(m, c, 2);
+            lemma_instrument_reaches_sink(rm_sub, m, reg_offset, pc_offset, halted_pc, timeout_pc,
+                fuel_reg, scratch, s_sub, c2, (phi - 1) as nat);
+            let g_inner = choose|g: nat| g <= 2 * (phi - 1) + 1
+                && (run(m, c2, g).pc == halted_pc || run(m, c2, g).pc == timeout_pc)
+                && run(m, c2, g).registers.len() == m.num_regs
+                && (run(m, c2, g).pc == halted_pc ==>
+                        run_halts(rm_sub, s_sub, (phi - 1) as nat)
+                        && (forall|r: int| 0 <= r < rm_sub.num_regs as int ==>
+                                #[trigger] run(m, c2, g).registers[(r + reg_offset) as int]
+                                    == run(rm_sub, s_sub, (phi - 1) as nat).registers[r]));
+            lemma_run_add(m, c, 2, g_inner);
+            let g: nat = (2 + g_inner) as nat;
+            assert(run(m, c, g) == run(m, c2, g_inner));
+            assert(g <= 2 * phi + 1) by { assert(g_inner <= 2 * (phi - 1) + 1); }
+            //  soundness compose: halted ⇒ run_halts(c_sub,phi) ∧ bank == run(c_sub,phi)
+            assert(run(m, c, g).pc == halted_pc ==>
+                run_halts(rm_sub, c_sub, phi)
+                && (forall|r: int| 0 <= r < rm_sub.num_regs as int ==>
+                        run(m, c, g).registers[(r + reg_offset) as int]
+                            == run(rm_sub, c_sub, phi).registers[r]))
+            by {
+                if run(m, c, g).pc == halted_pc {
+                    assert(run(m, c2, g_inner).pc == halted_pc);
+                    assert(run_halts(rm_sub, s_sub, (phi - 1) as nat));
+                    //  run_halts(s_sub, phi-1) ∧ !is_halted(c_sub) ⇒ run_halts(c_sub, phi)
+                    assert(run_halts(rm_sub, c_sub, phi));
+                    //  run(c_sub, phi) == run(s_sub, phi-1)
+                    lemma_run_unfold_step(rm_sub, c_sub, phi);
+                    assert(run(rm_sub, c_sub, phi) == run(rm_sub, s_sub, (phi - 1) as nat));
+                }
+            }
+        }
     }
 }
 
