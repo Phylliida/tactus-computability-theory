@@ -50,12 +50,17 @@ pub open spec fn srm_numregs(e: CEER) -> nat { 29 + srm_ne(e) }
 
 pub open spec fn srm_it(e: CEER) -> nat { 8 }                                 //  INNER_TOP
 pub open spec fn srm_b1(e: CEER) -> nat { 9 }                                 //  clear E-bank base
-pub open spec fn srm_clrii1(e: CEER) -> nat { 9 + 2 * srm_ne(e) }
-pub open spec fn srm_clrii2(e: CEER) -> nat { 11 + 2 * srm_ne(e) }
-pub open spec fn srm_b2(e: CEER) -> nat { 13 + 2 * srm_ne(e) }                //  load scnt -> E[0]
-pub open spec fn srm_b3(e: CEER) -> nat { 20 + 2 * srm_ne(e) }                //  set fuel := T+1
-pub open spec fn srm_instr_pc(e: CEER) -> nat { 30 + 2 * srm_ne(e) }          //  instrument base
-pub open spec fn srm_cmp(e: CEER) -> nat { 30 + 2 * srm_ne(e) + 2 * srm_ni(e) }  //  halted_pc / CMP
+//  6 register clears at 9+2ne, 11+2ne, ..., 19+2ne for regs 13,16,17,20,23,24
+//  (ii1, p1, ic1, ii2, p2, ic2 — the registers a pair/eq leaves dirty across iterations).
+pub open spec fn srm_clr(e: CEER, k: nat) -> nat { 9 + 2 * srm_ne(e) + 2 * k }
+pub open spec fn srm_clr_reg(k: nat) -> nat {
+    if k == 0 { 13 } else if k == 1 { 16 } else if k == 2 { 17 }
+    else if k == 3 { 20 } else if k == 4 { 23 } else { 24 }
+}
+pub open spec fn srm_b2(e: CEER) -> nat { 21 + 2 * srm_ne(e) }                //  load scnt -> E[0]
+pub open spec fn srm_b3(e: CEER) -> nat { 28 + 2 * srm_ne(e) }                //  set fuel := T+1
+pub open spec fn srm_instr_pc(e: CEER) -> nat { 38 + 2 * srm_ne(e) }          //  instrument base
+pub open spec fn srm_cmp(e: CEER) -> nat { 38 + 2 * srm_ne(e) + 2 * srm_ni(e) }  //  halted_pc / CMP
 pub open spec fn srm_cont(e: CEER) -> nat { srm_cmp(e) + 80 }                 //  timeout_pc / CONT_INNER
 pub open spec fn srm_ie(e: CEER) -> nat { srm_cont(e) + 2 }                   //  INNER_EXIT / DISPATCH
 pub open spec fn srm_oc(e: CEER) -> nat { srm_ie(e) + 2 }                     //  OUTER_CONT
@@ -110,20 +115,24 @@ pub open spec fn srm_instr(e: CEER, i: int) -> Instruction {
     else if i < 9 { mk_dj(5, ie as nat) }
     //  --- clear E-bank [9, 9+2ne) ---
     else if i < 9 + 2 * ne { clear_bank_instrs(29, ne, 1, 9)[i - 9] }
-    //  --- clear ii1, ii2 ---
+    //  --- clear ii1(13), p1(16), ic1(17), ii2(20), p2(23), ic2(24) ---
     else if i < 11 + 2 * ne { clear_instrs(13, 1, (9 + 2 * ne) as nat)[i - (9 + 2 * ne)] }
-    else if i < 13 + 2 * ne { clear_instrs(20, 1, (11 + 2 * ne) as nat)[i - (11 + 2 * ne)] }
+    else if i < 13 + 2 * ne { clear_instrs(16, 1, (11 + 2 * ne) as nat)[i - (11 + 2 * ne)] }
+    else if i < 15 + 2 * ne { clear_instrs(17, 1, (13 + 2 * ne) as nat)[i - (13 + 2 * ne)] }
+    else if i < 17 + 2 * ne { clear_instrs(20, 1, (15 + 2 * ne) as nat)[i - (15 + 2 * ne)] }
+    else if i < 19 + 2 * ne { clear_instrs(23, 1, (17 + 2 * ne) as nat)[i - (17 + 2 * ne)] }
+    else if i < 21 + 2 * ne { clear_instrs(24, 1, (19 + 2 * ne) as nat)[i - (19 + 2 * ne)] }
     //  --- B2: load scnt -> E[0], restore scnt ---
-    else if i < 17 + 2 * ne { double_dist_instrs(4, 29, 25, 1, (13 + 2 * ne) as nat)[i - (13 + 2 * ne)] }
-    else if i < 20 + 2 * ne { copy_instrs(25, 4, 1, (17 + 2 * ne) as nat)[i - (17 + 2 * ne)] }
+    else if i < 25 + 2 * ne { double_dist_instrs(4, 29, 25, 1, (21 + 2 * ne) as nat)[i - (21 + 2 * ne)] }
+    else if i < 28 + 2 * ne { copy_instrs(25, 4, 1, (25 + 2 * ne) as nat)[i - (25 + 2 * ne)] }
     //  --- B3: clear fuel, Treg -> fuel, Inc (fuel := T+1), restore Treg ---
-    else if i < 22 + 2 * ne { clear_instrs(2, 1, (20 + 2 * ne) as nat)[i - (20 + 2 * ne)] }
-    else if i < 26 + 2 * ne { double_dist_instrs(3, 2, 26, 1, (22 + 2 * ne) as nat)[i - (22 + 2 * ne)] }
-    else if i < 27 + 2 * ne { mk_inc(2) }
-    else if i < 30 + 2 * ne { copy_instrs(26, 3, 1, (27 + 2 * ne) as nat)[i - (27 + 2 * ne)] }
-    //  --- instrument(E) [30+2ne, cmp) ---
+    else if i < 30 + 2 * ne { clear_instrs(2, 1, (28 + 2 * ne) as nat)[i - (28 + 2 * ne)] }
+    else if i < 34 + 2 * ne { double_dist_instrs(3, 2, 26, 1, (30 + 2 * ne) as nat)[i - (30 + 2 * ne)] }
+    else if i < 35 + 2 * ne { mk_inc(2) }
+    else if i < 38 + 2 * ne { copy_instrs(26, 3, 1, (35 + 2 * ne) as nat)[i - (35 + 2 * ne)] }
+    //  --- instrument(E) [38+2ne, cmp) ---
     else if i < cmp {
-        instrument_instructions(e.enumerator.instructions, 29, srm_instr_pc(e), cmp, cont, 2, 1)[i - (30 + 2 * ne)]
+        instrument_instructions(e.enumerator.instructions, 29, srm_instr_pc(e), cmp, cont, 2, 1)[i - (38 + 2 * ne)]
     }
     //  --- CMP comparison block [cmp, cmp+80) ---
     else if i < cmp + 4 { double_dist_instrs(30, 7, 8, 1, cmp)[i - cmp] }
@@ -258,12 +267,12 @@ proof fn lemma_srm_instr_wf(e: CEER, i: int)
             lemma_clear_bank_block_wf(29, ne, 1, 9, nr, tot);
             assert(instr_wf(clear_bank_instrs(29, ne, 1, 9)[i - 9], nr, tot));
         }
-    } else if i < 30 + 2 * ne {
+    } else if i < 38 + 2 * ne {
         //  clears, B2, B3 — small fixed gadgets, targets manifestly <= tot
     } else if i < cmp {
         lemma_instrument_block_wf(e, nr, tot);
         assert(instr_wf(instrument_instructions(e.enumerator.instructions, 29, srm_instr_pc(e),
-            cmp, srm_cont(e), 2, 1)[i - (30 + 2 * ne)], nr, tot));
+            cmp, srm_cont(e), 2, 1)[i - (38 + 2 * ne)], nr, tot));
     } else if i < cmp + 80 {
         //  CMP comparison block — fixed gadgets (incl. pair_sub_instrs), targets within [cmp, cmp+80] <= tot
     } else {
