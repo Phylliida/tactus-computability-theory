@@ -137,6 +137,11 @@
 // DecJump=Div?+divide/jump, Jump=jump). Parametric in addresses. See godel_sim.rs.
 #[cfg(verus_keep_ghost)] pub mod godel_sim;
 
+// GAP-2 / L1 k→2 reduction M4: assemble `rm_k_to_rm2` — lay the per-instruction RM(2) blocks
+// (godel_blocks/godel_sim) end-to-end via a non-uniform prefix-sum address map (`block_start`), remap
+// jump targets through it, and prove the layout-match (`lemma_block_at`) + `machine_wf`. See godel_assemble.rs.
+#[cfg(verus_keep_ghost)] pub mod godel_assemble;
+
 // GAP-2 / L0 brick B-L0.1: fuel-instrumented bounded simulation. `instrument` guards each original
 // instruction with a `DecJump{fuel, TIMEOUT}` so a run always returns within `fuel` steps with a
 // HALTED-or-TIMEOUT verdict (a non-halting enumerator stage cannot wedge the dovetail). The bounded
