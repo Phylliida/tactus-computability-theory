@@ -7,10 +7,96 @@ use crate::machine::*;
 use crate::ceer::{CEER, ceer_wf, declared_pair};
 use crate::search_rm::*;
 use crate::search_rm_inner::*;
-use crate::search_rm_arith::lemma_run_add;
-use crate::multi_output_primitives::mk_dj;
+use crate::search_rm_arith::{lemma_run_add, lemma_double_dist_inner, lemma_run_preserves_len};
+use crate::multi_output_primitives::{mk_inc, mk_dj, lemma_copy_loop_inner};
+use crate::search_rm_compare::lemma_clear_loop;
 
 verus! {
+
+//  ============================================================
+//  Outer-loop top predicate + SETUP phase
+//  ============================================================
+
+///  At OUTER_TOP (pc 0) for bound T: Treg=T, scnt=cnt=result=0, zero=0, inp=inp_v, temps clean
+///  (E-bank/fuel may be dirty — cleared at INNER_TOP).
+pub open spec fn srm_at_outer_top(e: CEER, c: Configuration, inp_v: nat, t_v: nat) -> bool {
+    &&& c.pc == 0
+    &&& c.registers.len() == srm_numregs(e)
+    &&& c.registers[0] == inp_v
+    &&& c.registers[1] == 0
+    &&& c.registers[3] == t_v
+    &&& c.registers[4] == 0
+    &&& c.registers[5] == 0
+    &&& c.registers[6] == 0
+    &&& srm_temps_top(c)
+}
+
+///  SETUP: cnt := T+1 via double_dist(Treg->cnt,bakA); copy(bakA->Treg); Inc cnt.  OUTER_TOP -> INNER_TOP.
+#[verifier::rlimit(10000)]
+pub proof fn lemma_srm_phase_setup(e: CEER, c: Configuration, inp_v: nat, t_v: nat)
+    requires
+        ceer_wf(e),
+        srm_at_outer_top(e, c, inp_v, t_v),
+    ensures
+        exists|g: nat|
+            #[trigger] run(search_rm(e), c, g).pc == 8
+            && srm_at_top(e, run(search_rm(e), c, g), inp_v, t_v, 0, (t_v + 1) as nat, 0),
+{
+    let m = search_rm(e);
+    let nr = srm_numregs(e);
+    //  double_dist(3 -> 5, 25, sp=0): cnt:=T, bakA:=T, Treg:=0
+    lemma_srm_outer_index(e, 0); lemma_srm_outer_index(e, 1);
+    lemma_srm_outer_index(e, 2); lemma_srm_outer_index(e, 3);
+    assert(m.instructions[0] == mk_dj(3, 4));
+    assert(m.instructions[1] == mk_inc(5));
+    assert(m.instructions[2] == mk_inc(25));
+    assert(m.instructions[3] == mk_dj(1, 0));
+    lemma_double_dist_inner(m, c, 3, 5, 25, 1, 0, 0, 0, t_v);
+    let g1: nat = (4 * t_v + 1) as nat;
+    let c1 = run(m, c, g1);
+    lemma_run_preserves_len(m, c, g1);
+    assert(c1.pc == 4);
+    assert(c1.registers[5] == t_v && c1.registers[25] == t_v && c1.registers[3] == 0);
+    assert(c1.registers[1] == 0) by { assert(1 != 3 && 1 != 5 && 1 != 25); }
+
+    //  copy(25 -> 3, sp=4): Treg:=T, bakA:=0
+    lemma_srm_outer_index(e, 4); lemma_srm_outer_index(e, 5); lemma_srm_outer_index(e, 6);
+    assert(m.instructions[4] == mk_dj(25, 4 + 3));
+    assert(m.instructions[5] == mk_inc(3));
+    assert(m.instructions[6] == mk_dj(1, 4));
+    lemma_copy_loop_inner(m, c1, 25, 3, 1, 4, t_v, 0, t_v);
+    let g2: nat = (3 * t_v + 1) as nat;
+    let c2 = run(m, c1, g2);
+    lemma_run_preserves_len(m, c1, g2);
+    assert(c2.pc == 7);
+    assert(c2.registers[3] == t_v && c2.registers[25] == 0);
+    assert(c2.registers[5] == t_v) by { assert(5 != 25 && 5 != 3); }
+
+    //  Inc cnt(5) @7: cnt := T+1
+    lemma_srm_outer_index(e, 7);
+    assert(m.instructions[7] == mk_inc(5));
+    assert(!is_halted(m, c2));
+    let c3 = step(m, c2).unwrap();
+    assert(c3.pc == 8);
+    assert(c3.registers == c2.registers.update(5, (t_v + 1) as nat));
+    assert(run(m, c2, 1) == c3) by { lemma_outer_run_unfold(m, c2, 1); }
+
+    //  compose + postcondition
+    lemma_run_add(m, c1, g2, 1);
+    lemma_run_add(m, c, g1, (g2 + 1) as nat);
+    let g: nat = (g1 + g2 + 1) as nat;
+    assert(run(m, c, g) == c3);
+    assert(c3.registers[5] == t_v + 1);
+    //  every reg except {3(Treg),5(cnt),25(bakA)} preserved c -> c3
+    assert forall|r: int| 0 <= r < nr as int && r != 3 && r != 5 && r != 25 implies c3.registers[r] == c.registers[r] by {
+        assert(c1.registers[r] == c.registers[r]);
+        assert(c2.registers[r] == c1.registers[r]);
+        assert(c3.registers[r] == c2.registers[r]);
+    }
+    assert(srm_ctrl(e, c3, inp_v, t_v, 0, (t_v + 1) as nat, 0));
+    assert(srm_temps_top(c3));
+    assert(srm_at_top(e, c3, inp_v, t_v, 0, (t_v + 1) as nat, 0));
+}
 
 //  ============================================================
 //  lemma_inner_body — one inner iteration: INNER_TOP(cnt>0) -> next INNER_TOP
