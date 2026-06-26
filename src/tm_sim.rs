@@ -15,7 +15,7 @@
 use vstd::prelude::*;
 use vstd::arithmetic::div_mod::lemma_fundamental_div_mod_converse;
 use verus_group_theory::machine_group::Dir;
-use crate::machine::{RegisterMachine, Instruction, machine_wf};
+use crate::machine::{RegisterMachine, Instruction, Configuration, machine_wf, config_wf, step};
 use crate::multi_output_primitives::{mk_inc, mk_dj};
 use crate::tm::{Tm, TmConfig, tm_run};
 use crate::tm_two_counter::two_counter_config;
@@ -390,6 +390,94 @@ pub proof fn lemma_sim_decjump_right(rm: RegisterMachine, pc: nat, t: nat, c1: n
         let cfg_jmp = two_counter_config(c1, c2, entry(t), tm.m);
         assert(tm_run(tm, cfg0, 2) == cfg_jmp);
         lemma_tm_reaches_intro(tm, cfg0, cfg_jmp, 2);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The unified one-step simulation.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// **One 2-counter step ↔ one gadget run.** If the register machine `rm` (a 2-counter machine) takes
+/// a non-halting step from `c` to `c' = step(rm,c)`, then the assembled TM `rm_to_tm(rm)` reaches the
+/// encoded `c'` from the encoded `c`. Dispatches on the instruction at `c.pc` to the per-instruction
+/// gadget simulations. The hook B6 chains along the whole 2-counter run (then cleanup → origin).
+pub proof fn lemma_sim_step(rm: RegisterMachine, c: Configuration)
+    requires
+        machine_wf(rm),
+        rm.num_regs == 2,
+        config_wf(rm, c),
+        step(rm, c) is Some,
+    ensures
+        tm_reaches(rm_to_tm(rm),
+            two_counter_config(c.registers[0], c.registers[1], entry(c.pc), tm_mod(rm.instructions.len())),
+            two_counter_config(step(rm, c).unwrap().registers[0], step(rm, c).unwrap().registers[1],
+                entry(step(rm, c).unwrap().pc), tm_mod(rm.instructions.len()))),
+{
+    reveal(machine_wf);
+    let len = rm.instructions.len();
+    let pc = c.pc;
+    let c1 = c.registers[0];
+    let c2 = c.registers[1];
+    let cprime = step(rm, c).unwrap();
+    // step is Some ⟹ pc < len and the instruction is not Halt.
+    assert(pc < len);
+    assert(c.registers.len() == 2);   // config_wf
+    let instr = rm.instructions[pc as int];
+    match instr {
+        Instruction::Inc { register } => {
+            assert(register < 2);   // machine_wf + num_regs == 2
+            // step: Some(pc+1, registers.update(register, registers[register]+1)).
+            assert(cprime.pc == pc + 1);
+            assert(cprime.registers == c.registers.update(register as int, (c.registers[register as int] + 1) as nat));
+            if register == 0 {
+                assert(rm.instructions[pc as int] == mk_inc(0));
+                lemma_sim_inc_left(rm, pc, c1, c2);
+                assert(cprime.registers[0] == c1 + 1);
+                assert(cprime.registers[1] == c2);
+            } else {
+                assert(register == 1);
+                assert(rm.instructions[pc as int] == mk_inc(1));
+                lemma_sim_inc_right(rm, pc, c1, c2);
+                assert(cprime.registers[0] == c1);
+                assert(cprime.registers[1] == c2 + 1);
+            }
+            assert(cprime.pc == pc + 1);
+        },
+        Instruction::DecJump { register, target } => {
+            assert(register < 2);
+            if register == 0 {
+                assert(rm.instructions[pc as int] == mk_dj(0, target));
+                lemma_sim_decjump_left(rm, pc, target, c1, c2);
+                if c1 > 0 {
+                    assert(cprime.pc == pc + 1);
+                    assert(cprime.registers == c.registers.update(0, (c1 - 1) as nat));
+                    assert(cprime.registers[0] == c1 - 1);
+                    assert(cprime.registers[1] == c2);
+                } else {
+                    assert(cprime.pc == target);
+                    assert(cprime.registers == c.registers);
+                    assert(cprime.registers[0] == c1 && cprime.registers[1] == c2);
+                }
+            } else {
+                assert(register == 1);
+                assert(rm.instructions[pc as int] == mk_dj(1, target));
+                lemma_sim_decjump_right(rm, pc, target, c1, c2);
+                if c2 > 0 {
+                    assert(cprime.pc == pc + 1);
+                    assert(cprime.registers == c.registers.update(1, (c2 - 1) as nat));
+                    assert(cprime.registers[0] == c1);
+                    assert(cprime.registers[1] == c2 - 1);
+                } else {
+                    assert(cprime.pc == target);
+                    assert(cprime.registers == c.registers);
+                    assert(cprime.registers[0] == c1 && cprime.registers[1] == c2);
+                }
+            }
+        },
+        Instruction::Halt => {
+            assert(step(rm, c) is None);   // contradicts step is Some
+            assert(false);
+        },
     }
 }
 
