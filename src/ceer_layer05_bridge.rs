@@ -23,7 +23,7 @@ use verus_group_theory::presentation::{Presentation, DerivationStep, get_relator
     derivation_produces, Derivation, derivation_valid, equiv_in_presentation};
 use verus_group_theory::reduction::has_cancellation_at;
 use verus_group_theory::cohen_layer05_probe::c0_slice;
-use verus_group_theory::cohen_layer05::equiv_in_c0_limit;
+use verus_group_theory::cohen_layer05::{equiv_in_c0_limit, equiv_in_g_limit};
 
 verus! {
 
@@ -575,6 +575,397 @@ pub proof fn lemma_ceer_group_equiv_implies_c0_limit(e: CEER, n: nat, w: CeerWor
     assert(ceer_decls_fam(e)(big_m) == ceer_decls_fam_at(e, big_m));
     assert(slice == c0_slice(big_m, ceer_decls_fam(e)(big_m)));
     assert(equiv_in_c0_limit(ceer_decls_fam(e), n, ceer_to_word(w), empty_word()));
+}
+
+// ===========================================================================
+// PART 5. The BACKWARD bridge (faithfulness): equiv_in_c0_limit -> ceer_group_equiv.
+//   The inverse translation. Since ceer_sym_to_sym is a bijection, every presentation Word lifts
+//   uniquely to a CeerWord; a presentation derivation in the slice lifts to a CEER derivation
+//   (inert empty-relator steps lift to zero CEER steps).
+// ===========================================================================
+
+/// Inverse of `ceer_sym_to_sym`.
+pub open spec fn sym_to_ceer_sym(s: Symbol) -> CeerSymbol {
+    match s {
+        Symbol::Gen(i) => CeerSymbol::Gen { index: i },
+        Symbol::Inv(i) => CeerSymbol::Inv { index: i },
+    }
+}
+
+/// Lift a presentation word back to a CEER word.
+pub open spec fn word_to_ceer(w: Word) -> CeerWord {
+    Seq::new(w.len(), |i: int| sym_to_ceer_sym(w[i]))
+}
+
+/// `sym_to_ceer_sym` undoes `ceer_sym_to_sym`.
+pub proof fn lemma_sym_roundtrip(s: CeerSymbol)
+    ensures
+        sym_to_ceer_sym(ceer_sym_to_sym(s)) == s,
+{
+}
+
+/// `ceer_sym_to_sym` undoes `sym_to_ceer_sym`.
+pub proof fn lemma_sym_roundtrip2(s: Symbol)
+    ensures
+        ceer_sym_to_sym(sym_to_ceer_sym(s)) == s,
+{
+}
+
+/// `word_to_ceer` undoes `ceer_to_word`.
+pub proof fn lemma_word_roundtrip(w: CeerWord)
+    ensures
+        word_to_ceer(ceer_to_word(w)) =~= w,
+{
+    assert forall|i: int| 0 <= i < w.len() implies word_to_ceer(ceer_to_word(w))[i] == w[i] by {
+        lemma_ceer_to_word_index(w, i);
+        lemma_sym_roundtrip(w[i]);
+    }
+}
+
+/// `ceer_to_word` undoes `word_to_ceer`.
+pub proof fn lemma_word_roundtrip2(w: Word)
+    ensures
+        ceer_to_word(word_to_ceer(w)) =~= w,
+{
+    assert forall|i: int| 0 <= i < w.len() implies ceer_to_word(word_to_ceer(w))[i] == w[i] by {
+        lemma_ceer_to_word_index(word_to_ceer(w), i);
+        lemma_sym_roundtrip2(w[i]);
+    }
+}
+
+/// `word_to_ceer` acts pointwise.
+pub proof fn lemma_word_to_ceer_index(w: Word, i: int)
+    requires
+        0 <= i < w.len(),
+    ensures
+        word_to_ceer(w)[i] == sym_to_ceer_sym(w[i]),
+{
+}
+
+/// `word_to_ceer` commutes with concatenation.
+pub proof fn lemma_word_to_ceer_concat(a: Word, b: Word)
+    ensures
+        word_to_ceer(a + b) =~= word_to_ceer(a) + word_to_ceer(b),
+{
+    assert forall|i: int| 0 <= i < word_to_ceer(a + b).len() implies
+        word_to_ceer(a + b)[i] == (word_to_ceer(a) + word_to_ceer(b))[i] by {
+        if i < a.len() {
+            assert((a + b)[i] == a[i]);
+        } else {
+            assert((a + b)[i] == b[i - a.len()]);
+        }
+    }
+}
+
+/// `word_to_ceer` commutes with subrange.
+pub proof fn lemma_word_to_ceer_subrange(w: Word, i: int, j: int)
+    requires
+        0 <= i <= j <= w.len(),
+    ensures
+        word_to_ceer(w.subrange(i, j)) =~= word_to_ceer(w).subrange(i, j),
+{
+    assert forall|k: int| 0 <= k < (j - i) implies
+        word_to_ceer(w.subrange(i, j))[k] == word_to_ceer(w).subrange(i, j)[k] by {
+        assert(w.subrange(i, j)[k] == w[i + k]);
+    }
+}
+
+/// `sym_to_ceer_sym` commutes with inversion.
+pub proof fn lemma_sym_to_ceer_inverse(s: Symbol)
+    ensures
+        sym_to_ceer_sym(inverse_symbol(s)) == inverse_ceer_symbol(sym_to_ceer_sym(s)),
+{
+}
+
+/// A real (non-inert) declared relator sits at slice index `idx` iff the enumerator declared a
+/// pair there both of whose indices fit below `big_m`.
+pub open spec fn slice_real_at(e: CEER, idx: nat, big_m: nat) -> bool {
+    match declared_pair(e, idx) {
+        Some(pair) => pair.0 < big_m && pair.1 < big_m,
+        None => false,
+    }
+}
+
+/// `inverse_word` of the empty word is empty.
+pub proof fn lemma_inverse_word_empty()
+    ensures
+        inverse_word(empty_word()) =~= empty_word(),
+{
+}
+
+/// Equal presentation words lift to equal CEER words.
+pub proof fn lemma_word_eq_ceer(w: Word, w1: Word)
+    requires
+        w =~= w1,
+    ensures
+        word_to_ceer(w) =~= word_to_ceer(w1),
+{
+}
+
+/// A single valid CEER step witnesses a group equivalence.
+pub proof fn lemma_one_step_equiv(e: CEER, cw: CeerWord, end: CeerWord, s: CeerGroupStep)
+    requires
+        ceer_step_valid(e, cw, s),
+        apply_ceer_step(cw, s) =~= end,
+    ensures
+        ceer_group_equiv(e, cw, end),
+{
+    let steps = seq![s];
+    assert(steps.len() == 1);
+    assert(steps.first() == s);
+    assert(steps.drop_first() =~= Seq::<CeerGroupStep>::empty());
+    assert(ceer_derivation_valid(e, apply_ceer_step(cw, s), end, steps.drop_first()));
+    assert(ceer_derivation_valid(e, cw, end, steps));
+}
+
+/// The real-relator RelatorInsert case of `lemma_untranslate_step`.
+pub proof fn lemma_relator_insert_real(e: CEER, big_m: nat, w: Word, position: int,
+    relator_index: nat, inverted: bool, w1: Word)
+    requires
+        apply_step(c0_slice_of(e, big_m), w,
+            DerivationStep::RelatorInsert { position, relator_index, inverted }) == Some(w1),
+        slice_real_at(e, relator_index, big_m),
+    ensures
+        ceer_group_equiv(e, word_to_ceer(w), word_to_ceer(w1)),
+{
+    let slice = c0_slice_of(e, big_m);
+    let cw = word_to_ceer(w);
+    let r = get_relator(slice, relator_index, inverted);
+    let p0 = declared_pair(e, relator_index).unwrap().0;
+    let p1 = declared_pair(e, relator_index).unwrap().1;
+    assert(declared_pair(e, relator_index) == Some((p0, p1)));
+    assert(p0 < big_m && p1 < big_m);
+    assert(slice.relators[relator_index as int] == ceer_relator_at(e, relator_index, big_m));
+    assert(ceer_relator_at(e, relator_index, big_m) =~= ceer_to_word(ceer_relator(p0, p1)));
+    lemma_ceer_relator_translate(p0, p1);
+    assert(w1 =~= w.subrange(0, position) + r + w.subrange(position, w.len() as int));
+    // pick the CEER relator pair so its translation equals r.
+    let (a, b): (nat, nat) = if inverted { (p1, p0) } else { (p0, p1) };
+    if inverted {
+        lemma_inverse_word_two(Symbol::Gen(p0), Symbol::Inv(p1));
+        lemma_ceer_relator_translate(p1, p0);
+        assert(r =~= ceer_to_word(ceer_relator(p1, p0)));
+    } else {
+        assert(r =~= ceer_to_word(ceer_relator(p0, p1)));
+    }
+    assert(stage_declares(e, relator_index, a, b));
+    assert(r =~= ceer_to_word(ceer_relator(a, b)));
+    lemma_word_roundtrip(ceer_relator(a, b));
+    assert(word_to_ceer(r) =~= ceer_relator(a, b));
+    let s = CeerGroupStep::RelatorInsert { position: position as nat, a, b, stage: relator_index };
+    lemma_word_to_ceer_subrange(w, 0, position);
+    lemma_word_to_ceer_subrange(w, position, w.len() as int);
+    lemma_word_to_ceer_concat(w.subrange(0, position), r);
+    lemma_word_to_ceer_concat(w.subrange(0, position) + r, w.subrange(position, w.len() as int));
+    assert(ceer_step_valid(e, cw, s));
+    assert(apply_ceer_step(cw, s) =~= word_to_ceer(w1));
+    lemma_one_step_equiv(e, cw, word_to_ceer(w1), s);
+}
+
+/// The real-relator RelatorDelete case of `lemma_untranslate_step`.
+pub proof fn lemma_relator_delete_real(e: CEER, big_m: nat, w: Word, position: int,
+    relator_index: nat, inverted: bool, w1: Word)
+    requires
+        apply_step(c0_slice_of(e, big_m), w,
+            DerivationStep::RelatorDelete { position, relator_index, inverted }) == Some(w1),
+        slice_real_at(e, relator_index, big_m),
+    ensures
+        ceer_group_equiv(e, word_to_ceer(w), word_to_ceer(w1)),
+{
+    let slice = c0_slice_of(e, big_m);
+    let cw = word_to_ceer(w);
+    let r = get_relator(slice, relator_index, inverted);
+    let p0 = declared_pair(e, relator_index).unwrap().0;
+    let p1 = declared_pair(e, relator_index).unwrap().1;
+    assert(declared_pair(e, relator_index) == Some((p0, p1)));
+    assert(p0 < big_m && p1 < big_m);
+    assert(slice.relators[relator_index as int] == ceer_relator_at(e, relator_index, big_m));
+    assert(ceer_relator_at(e, relator_index, big_m) =~= ceer_to_word(ceer_relator(p0, p1)));
+    lemma_ceer_relator_translate(p0, p1);
+    let (a, b): (nat, nat) = if inverted { (p1, p0) } else { (p0, p1) };
+    if inverted {
+        lemma_inverse_word_two(Symbol::Gen(p0), Symbol::Inv(p1));
+        lemma_ceer_relator_translate(p1, p0);
+        assert(r =~= ceer_to_word(ceer_relator(p1, p0)));
+    } else {
+        assert(r =~= ceer_to_word(ceer_relator(p0, p1)));
+    }
+    assert(stage_declares(e, relator_index, a, b));
+    assert(r =~= ceer_to_word(ceer_relator(a, b)));
+    assert(r =~= seq![Symbol::Gen(a), Symbol::Inv(b)]);
+    assert(r.len() == 2);
+    // apply_step success => 0<=pos, pos+2<=w.len(), w[pos..pos+2]==r, w1 = w[0..pos]+w[pos+2..].
+    assert(w.subrange(position, position + 2) =~= r);
+    assert(w1 =~= w.subrange(0, position) + w.subrange(position + 2, w.len() as int));
+    lemma_word_to_ceer_index(w, position);
+    lemma_word_to_ceer_index(w, position + 1);
+    // cw[pos] == Gen{a}, cw[pos+1] == Inv{b}
+    assert(w[position] == Symbol::Gen(a));
+    assert(w[position + 1] == Symbol::Inv(b));
+    let s = CeerGroupStep::RelatorDelete { position: position as nat, a, b, stage: relator_index };
+    lemma_word_to_ceer_subrange(w, 0, position);
+    lemma_word_to_ceer_subrange(w, position + 2, w.len() as int);
+    lemma_word_to_ceer_concat(w.subrange(0, position), w.subrange(position + 2, w.len() as int));
+    assert(ceer_step_valid(e, cw, s));
+    assert(apply_ceer_step(cw, s) =~= word_to_ceer(w1));
+    lemma_one_step_equiv(e, cw, word_to_ceer(w1), s);
+}
+
+/// **The per-step REVERSE correspondence.** A single valid presentation step in the slice yields a
+/// CEER equivalence between the lifts of its endpoints (inert empty-relator steps are no-ops).
+pub proof fn lemma_untranslate_step(e: CEER, big_m: nat, w: Word, dstep: DerivationStep, w1: Word)
+    requires
+        apply_step(c0_slice_of(e, big_m), w, dstep) == Some(w1),
+    ensures
+        ceer_group_equiv(e, word_to_ceer(w), word_to_ceer(w1)),
+{
+    let slice = c0_slice_of(e, big_m);
+    let cw = word_to_ceer(w);
+    assert(slice.num_generators == big_m);
+    assert(slice.relators.len() == big_m);
+    match dstep {
+        DerivationStep::FreeReduce { position } => {
+            // has_cancellation_at(w, position); w1 = reduce_at(w, position).
+            assert(has_cancellation_at(w, position));
+            let s = CeerGroupStep::FreeReduce { position: position as nat };
+            lemma_word_to_ceer_index(w, position);
+            lemma_word_to_ceer_index(w, position + 1);
+            lemma_is_inverse_pair_translate(cw[position], cw[position + 1]);
+            lemma_sym_roundtrip2(w[position]);
+            lemma_sym_roundtrip2(w[position + 1]);
+            lemma_word_to_ceer_subrange(w, 0, position);
+            lemma_word_to_ceer_subrange(w, position + 2, w.len() as int);
+            lemma_word_to_ceer_concat(w.subrange(0, position), w.subrange(position + 2, w.len() as int));
+            assert(ceer_step_valid(e, cw, s));
+            assert(apply_ceer_step(cw, s) =~= word_to_ceer(w1));
+            lemma_one_step_equiv(e, cw, word_to_ceer(w1), s);
+        },
+        DerivationStep::FreeExpand { position, symbol } => {
+            let s = CeerGroupStep::FreeExpand { position: position as nat, sym: sym_to_ceer_sym(symbol) };
+            lemma_sym_to_ceer_inverse(symbol);
+            let pair_p = Seq::new(1, |_i: int| symbol) + Seq::new(1, |_i: int| inverse_symbol(symbol));
+            assert(w1 =~= w.subrange(0, position) + pair_p + w.subrange(position, w.len() as int));
+            lemma_word_to_ceer_subrange(w, 0, position);
+            lemma_word_to_ceer_subrange(w, position, w.len() as int);
+            lemma_word_to_ceer_concat(w.subrange(0, position), pair_p);
+            lemma_word_to_ceer_concat(w.subrange(0, position) + pair_p,
+                w.subrange(position, w.len() as int));
+            let cpair = seq![sym_to_ceer_sym(symbol), inverse_ceer_symbol(sym_to_ceer_sym(symbol))];
+            assert(word_to_ceer(pair_p) =~= cpair);
+            // apply_ceer_step inserts cpair at the lifted position; line both sides up explicitly.
+            assert(apply_ceer_step(cw, s)
+                =~= cw.subrange(0, position) + cpair + cw.subrange(position, cw.len() as int));
+            assert(word_to_ceer(w1)
+                =~= word_to_ceer(w.subrange(0, position)) + word_to_ceer(pair_p)
+                    + word_to_ceer(w.subrange(position, w.len() as int)));
+            assert(ceer_step_valid(e, cw, s));
+            assert(apply_ceer_step(cw, s) =~= word_to_ceer(w1));
+            lemma_one_step_equiv(e, cw, word_to_ceer(w1), s);
+        },
+        DerivationStep::RelatorInsert { position, relator_index, inverted } => {
+            let r = get_relator(slice, relator_index, inverted);
+            assert(w1 =~= w.subrange(0, position) + r + w.subrange(position, w.len() as int));
+            assert(slice.relators[relator_index as int] == ceer_relator_at(e, relator_index, big_m));
+            if slice_real_at(e, relator_index, big_m) {
+                lemma_relator_insert_real(e, big_m, w, position, relator_index, inverted, w1);
+            } else {
+                // inert: ceer_relator_at = empty -> r = empty -> w1 = w.
+                assert(ceer_relator_at(e, relator_index, big_m) =~= empty_word());
+                assert(r =~= empty_word()) by { if inverted { lemma_inverse_word_empty(); } }
+                assert(w1 =~= w);
+                lemma_word_eq_ceer(w, w1);
+                lemma_ceer_group_equiv_reflexive(e, cw);
+            }
+        },
+        DerivationStep::RelatorDelete { position, relator_index, inverted } => {
+            let r = get_relator(slice, relator_index, inverted);
+            assert(slice.relators[relator_index as int] == ceer_relator_at(e, relator_index, big_m));
+            if slice_real_at(e, relator_index, big_m) {
+                lemma_relator_delete_real(e, big_m, w, position, relator_index, inverted, w1);
+            } else {
+                // inert: r = empty, rlen = 0 -> w1 = w[0..pos] + w[pos..] = w.
+                assert(ceer_relator_at(e, relator_index, big_m) =~= empty_word());
+                assert(r =~= empty_word()) by { if inverted { lemma_inverse_word_empty(); } }
+                assert(r.len() == 0);
+                assert(w1 =~= w.subrange(0, position) + w.subrange(position, w.len() as int));
+                assert(w1 =~= w);
+                lemma_word_eq_ceer(w, w1);
+                lemma_ceer_group_equiv_reflexive(e, cw);
+            }
+        },
+    }
+}
+
+// ===========================================================================
+// PART 6. Reverse induction + the backward bridge + the native iff.
+// ===========================================================================
+
+/// **The reverse derivation induction.** A presentation derivation in the slice lifts to a CEER
+/// equivalence between its endpoints.
+pub proof fn lemma_untranslate_derivation(e: CEER, big_m: nat, w: Word, end: Word,
+    dsteps: Seq<DerivationStep>)
+    requires
+        derivation_produces(c0_slice_of(e, big_m), dsteps, w) == Some(end),
+    ensures
+        ceer_group_equiv(e, word_to_ceer(w), word_to_ceer(end)),
+    decreases dsteps.len(),
+{
+    let slice = c0_slice_of(e, big_m);
+    if dsteps.len() == 0 {
+        assert(end =~= w);
+        lemma_word_eq_ceer(w, end);
+        lemma_ceer_group_equiv_reflexive(e, word_to_ceer(w));
+    } else {
+        let first = dsteps.first();
+        // derivation continues only through a successful first step.
+        assert(apply_step(slice, w, first) is Some);
+        let w1 = apply_step(slice, w, first).unwrap();
+        assert(apply_step(slice, w, first) == Some(w1));
+        assert(derivation_produces(slice, dsteps.drop_first(), w1) == Some(end));
+        lemma_untranslate_step(e, big_m, w, first, w1);
+        lemma_untranslate_derivation(e, big_m, w1, end, dsteps.drop_first());
+        lemma_ceer_group_equiv_transitive(e, word_to_ceer(w), word_to_ceer(w1), word_to_ceer(end));
+    }
+}
+
+/// **THE BACKWARD BRIDGE (faithfulness).** If a CEER word's translation is trivial in the
+/// direct-limit C₀ over the concrete CEER family, then the word is trivial in the CEER group.
+pub proof fn lemma_c0_limit_implies_ceer_group_equiv(e: CEER, n: nat, w: CeerWord)
+    requires
+        equiv_in_c0_limit(ceer_decls_fam(e), n, ceer_to_word(w), empty_word()),
+    ensures
+        ceer_group_equiv(e, w, Seq::<CeerSymbol>::empty()),
+{
+    let big_m = choose|big_m: nat| n <= big_m
+        && equiv_in_presentation(#[trigger] c0_slice(big_m, ceer_decls_fam(e)(big_m)), ceer_to_word(w), empty_word());
+    assert(ceer_decls_fam(e)(big_m) == ceer_decls_fam_at(e, big_m));
+    let slice = c0_slice_of(e, big_m);
+    assert(slice == c0_slice(big_m, ceer_decls_fam(e)(big_m)));
+    let d = choose|d: Derivation| derivation_valid(slice, d, ceer_to_word(w), empty_word());
+    lemma_untranslate_derivation(e, big_m, ceer_to_word(w), empty_word(), d.steps);
+    // lift endpoints back: word_to_ceer(ceer_to_word(w)) = w; word_to_ceer(empty) = empty CEER word.
+    lemma_word_roundtrip(w);
+    assert(word_to_ceer(empty_word()) =~= Seq::<CeerSymbol>::empty());
+}
+
+/// **THE NATIVE LAYER-0.5 EMBEDDING IFF.** For a CEER word `w` with generators below `n`,
+/// triviality in the CEER group is EQUIVALENT to triviality in the direct-limit finitely generated
+/// recursively-presented Miller group `C` — both over the concrete CEER declared-relator family.
+/// This states `C₀ ↪ C` faithfully, in the CEER group's own terms (via `lemma_ceer_c0_embeds_in_c_iff`).
+pub proof fn lemma_ceer_native_embeds_in_c_iff(e: CEER, n: nat, w: CeerWord)
+    requires
+        word_valid(ceer_to_word(w), n),
+    ensures
+        ceer_group_equiv(e, w, Seq::<CeerSymbol>::empty())
+            <==> equiv_in_g_limit(ceer_decls_fam(e), n, ceer_to_word(w), empty_word()),
+{
+    lemma_ceer_c0_embeds_in_c_iff(e, n, w);
+    if ceer_group_equiv(e, w, Seq::<CeerSymbol>::empty()) {
+        lemma_ceer_group_equiv_implies_c0_limit(e, n, w);
+    }
+    if equiv_in_g_limit(ceer_decls_fam(e), n, ceer_to_word(w), empty_word()) {
+        lemma_c0_limit_implies_ceer_group_equiv(e, n, w);
+    }
 }
 
 } // verus!
