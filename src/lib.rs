@@ -44,6 +44,10 @@
 // determinism well-formedness. See tm_modular.rs.
 #[cfg(verus_keep_ghost)] pub mod tm_modular;
 
+// GAP-2 brick G2-D (forward): the H0 correspondence -- a TM run reaching the origin config lands
+// the modular machine in H0, by chaining lemma_step_preserves_h0 along the run. See tm_h0.rs.
+#[cfg(verus_keep_ghost)] pub mod tm_h0;
+
 // GAP-2 interface skeleton: the register->modular machine reduction (Aanderaa-Cohen Thm 2),
 // supplying the `mm` whose H0 realizes the CEER declared pairs. Type-level plumbing + the
 // reduction target; the simulation-correctness proofs are the deferred GAP-2 impl. See
