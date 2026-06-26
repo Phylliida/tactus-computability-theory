@@ -58,12 +58,29 @@ and `C_halt = (0,0,0,0)` ⟹ `mm_in_H0(rep(C₀)) ⟺ T accepts`. **The H₀ dir
   in `quads_of` via `lemma_quads_of_index`.
 - **G2-D — terminal corresp. + H₀ corresp.** `lemma_tm_terminal_iff` (needs digit-invariant, c.a≤n);
   `lemma_mm_terminal_origin`; induction `lemma_run_sim` ⟹ `mm_in_H0(rep1(C₀)) ⟺ tm_halts_at(tm,C₀,origin)`.
-- **G2-E (dragon, deferred) — register → TM** (ref [18]): build `rm_to_tm(rm)` (registers in unary on
-  tape, Inc/DecJump as quintuple gadgets), proving `rm halts ⟺ tm reaches blank/state-0`. + the dovetail
-  **search RM** `search_rm(e)` (input `enc(a,b)`, halts ⟺ `declared_equiv(e,a,b)`) using existing RM-comp
-  infra (`multi_output_machine`). Then `ceer_to_modmachine(e) := tm_to_modmachine(rm_to_tm(search_rm(e)))`.
+- **G2-E (dragon, deferred) — register → TM** (ref [18], the genuine new formalism, ~90% of remaining
+  GAP-2 effort; companion-confirmed 2026-06-26). **Key simplification found this session:** my TM's
+  `(u,v)` ARE two base-`m` stacks (`tm_step` pushes/pops the low digit), so the modular machine is a
+  **2-stack machine** and register→TM = **register → 2-counter machine** (counter = a unary stack:
+  inc=push a `1`-symbol, dec=pop, zero-test = top digit is blank; each ≈ 1 TM quintuple). Route
+  (Minsky 1967, *Computation: Finite and Infinite Machines* — anchor, do NOT reinvent):
+  - **register (k regs) → 2-counter via Gödel encoding**: one counter holds `2^{r0}·3^{r1}·5^{r2}·…`,
+    the other is scratch. `Inc(rᵢ)` = multiply by `pᵢ`; `DecJump(rᵢ,t)` = divisibility-test + divide by
+    `pᵢ`. `multiply(C,p)`/`divide(C,p)` are the canonical 2-counter subroutines (the bulk; prove
+    correctness + termination + scratch-restored-to-0, preserving the Gödel invariant `C = ∏ pᵢ^{rᵢ}`).
+    Structure: a **bisimulation** — one RM step ↔ N counter steps. (Possible lighter alt: register →
+    multi-stack (1 reg = 1 stack, trivial) → 2-stack via an interleaving encoding — cleaner inductive
+    invariants than primes, but less standard for the modular equivalence; evaluate before committing.)
+  - **2-counter → TM**: each counter is a `(u or v)` stack; map counter ops to `tm_step`. Need the TM to
+    **clean up to the origin config `(0,0,0,0)`** on accept (the "halts on blank tape" condition).
+  - the dovetail **search RM** `search_rm(e)` (input `enc(a,b)`, halts ⟺ `declared_equiv(e,a,b)`) built
+    with the existing `multi_output_machine`/`multi_output_primitives` RM-composition infra. Then
+    `ceer_to_modmachine(e) := tm_to_modmachine(rm_to_tm(search_rm(e)))`.
 - **G2-F — wire `enc` to the word-numbering + discharge `ceer_realizes`** (the `decode∘ρ` packaging is
-  GAP-1's, already proven; only `enc = decode∘ρ(relator)` identification remains).
+  GAP-1's, already proven; apply `lemma_tm_h0_iff` + identify `enc(a,b) = decode∘ρ(collapsed relator)`
+  + the search-RM correctness, giving `mm_in_H0(mm, enc(a,b)) ⟺ declared_equiv(e,a,b)`).
 
-This session: **G2-A, G2-B, G2-C** (the verified clean core); the rest is future, co-design-gated (G2-E
-is the dragon). Nothing here uses assume/admit/external_body.
+**Status 2026-06-26:** **G2-A..G2-D COMPLETE & VERIFIED** (the clean half — TM→modular simulation +
+full H₀ iff, `lemma_tm_h0_iff`). G2-E (register→2-counter→TM) + G2-F remain — the deferred,
+co-design-gated dragon. Nothing here uses verifier escape hatches; `ceer_realizes` stays a sound
+`requires`-hypothesis until G2-E/F land.
