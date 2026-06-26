@@ -86,6 +86,10 @@
 // u<->v, L<->R mirrors of tm_walk.rs, for the right counter c2 (in v). See tm_walk_right.rs.
 #[cfg(verus_keep_ghost)] pub mod tm_walk_right;
 
+// GAP-2-E brick B5.2: the right-counter gadgets (lemma_peek_right / inc_right / dec_right) -- u<->v,
+// L<->R mirrors of the peek/inc/dec gadgets, operating on c2 (in v). See tm_right_gadgets.rs.
+#[cfg(verus_keep_ghost)] pub mod tm_right_gadgets;
+
 // GAP-2 interface skeleton: the register->modular machine reduction (Aanderaa-Cohen Thm 2),
 // supplying the `mm` whose H0 realizes the CEER declared pairs. Type-level plumbing + the
 // reduction target; the simulation-correctness proofs are the deferred GAP-2 impl. See
