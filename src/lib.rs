@@ -52,6 +52,11 @@
 // + terminal correspondence; backward induction on the modular step count. See tm_h0_bwd.rs.
 #[cfg(verus_keep_ghost)] pub mod tm_h0_bwd;
 
+// GAP-2-E brick B0: tm_run composition lemmas (split/terminal-identity/halts-at bridges) — the
+// run-algebra foundation for the register->TM simulation gadgets. See tm_run_lemmas.rs /
+// docs/gap2-register-to-tm-plan.md.
+#[cfg(verus_keep_ghost)] pub mod tm_run_lemmas;
+
 // GAP-2 interface skeleton: the register->modular machine reduction (Aanderaa-Cohen Thm 2),
 // supplying the `mm` whose H0 realizes the CEER declared pairs. Type-level plumbing + the
 // reduction target; the simulation-correctness proofs are the deferred GAP-2 impl. See
