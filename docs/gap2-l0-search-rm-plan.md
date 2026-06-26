@@ -114,12 +114,33 @@ adds `i` to the accumulator `t` (inner add via a distribute-and-restore of `i`, 
 `triple_dist`/`copy` loop lemmas), then `pair := t + x`. Correctness proven against the spec `pair`/
 `triangular` with the existing `pairing.rs` lemmas. This is self-contained and reusable; build it FIRST.
 
-**B-L0.2b — bank reset + nat-equality** are straight `copy_instrs`-style loops (drain-to-scratch with a
-guaranteed-0 back-edge register); equality = drain both, equal iff both empty together.
+**B-L0.2b — bank reset + nat-equality — ✅ GADGETS DONE 2026-06-26 (`src/search_rm_compare.rs`, 3/0).**
+`lemma_eq_test_loop` (`eq_test_instrs(a,b,zero,neq,sp)`: destructive compare, reaches `sp+5` iff `(a)==(b)`,
+else `neq`) + `lemma_clear_loop` (`clear_instrs(r,zero,sp)`: drain `r` to 0 in `2v+1` steps). Bank reset =
+`clear` each E-bank register + `copy` a preserved `s` into bank-reg-0.
 
-**B-L0.2c — loop assembly + `machine_wf`**: lay out the phases in disjoint pc-windows (à la
-`tm_assemble`/`multi_output_machine`), each gadget keyed in its own window; the outer/inner loop control
-via `DecJump{zero, window_top}` back-edges.
+> **✅ GADGET TOOLKIT COMPLETE.** Everything the dovetail assembly chains is now built + verified:
+> `instrument` (B-L0.1), forward `pair` (B-L0.2a), `eq_test` + `clear` (B-L0.2b), plus the existing
+> `copy_instrs`/`triple_dist_instrs`/`double_dist_instrs`. **The ONLY remaining L0 work is the assembly
+> (B-L0.2c + B-L0.3) — no new gadget arithmetic.**
+
+**B-L0.2c — loop assembly + `machine_wf`** (the remaining hard phase): lay out the phases in disjoint
+pc-windows (à la `tm_assemble`/`multi_output_machine`), each gadget keyed in its own window; the outer/inner
+loop control via `DecJump{zero, window_top}` back-edges. Suggested proof architecture (mirrors
+`lemma_embed_reaches_target` / the tm_run_sim run-inductions):
+- **Register map** (one `RM(k)`): E-bank `[E0..E0+ne)`; `fuel`, `zero` (the instrument's); `inp` (preserved
+  input); `Treg`, `sreg` (loop counters); `skeep` (preserved copy of `s` for the bank reset); plus the
+  `pair` working set (`xk,nc,i,t,ibak,p`) and the two `eq_test` operands (`pc1`, a copy of `inp`). All
+  distinct — bundle distinctness in a `search_rm_regs_wf` spec like `pair_subroutine_frame`'s `all_distinct9`.
+- **`lemma_inner_iter`** (one `(T,s)` pass, NOT a loop — a straight-line chain): from a config at the inner
+  window top with bank/fuel set for `(s, T)`, chain `clear`×ne + `copy(skeep→E0)` (reset) → set `fuel:=T`
+  → `lemma_instrument_reaches_sink` → on `halted_pc`, `lemma_pair_subroutine` ×2 + `lemma_eq_test_loop` ×2 →
+  reach global `Halt` iff the pair matches, else the inner back-edge. Chain via `lemma_run_add` (the
+  toolkit's existential step-counts compose exactly as in `lemma_pair_subroutine`). Reuse the soundness
+  arm of `lemma_instrument_reaches_sink` (`halted_pc ⇒ run_halts(E,init(s),T) ∧ bank==run(...)`).
+- **`machine_wf`**: every `(state,scanned)`… no — for an RM it is just: `num_regs>0` + every Inc/DecJump
+  register `< num_regs` + every DecJump target `≤ len`. All targets are manifest window offsets ⇒ a
+  `Seq::new`-indexed `gen`-style constructor with a per-index bound lemma (cf. `tm_assemble`'s `lemma_gen_key`).
 
 ### B-L0.3 — assembly + the halts-iff
 `lemma_search_rm_halts_iff`: `halts(search_rm(e), pair(a,b)) ⟺ declared_equiv(e,a,b)`.
@@ -128,6 +149,12 @@ via `DecJump{zero, window_top}` back-edges.
   (Monotonicity of `run_halts` in fuel gives `T ≥ f₀ ⟹ halted within T`.)
 - **(⟹)** a halt of `search_rm` happened at some `(T,s)` reaching `HALTED` with a matching pair ⟹
   `run_halts(E, init(s), T)` ∧ pair matches ⟹ `stage_declares(e,s,a,b)` ⟹ `declared_equiv`.
+- **The comparison↔declaration link** (the compare-by-repairing correctness): the gadget reaches the
+  match-exit iff `pair(reg1,reg2)==inp ∨ pair(reg2,reg1)==inp`. With `inp == pair(a,b)`,
+  `lemma_pair_injective` turns each disjunct into `(reg1,reg2)==(a,b)` resp. `(reg2,reg1)==(a,b)`, i.e.
+  exactly `stage_declares`'s `(reg1==a∧reg2==b) ∨ (reg1==b∧reg2==a)`. The HALTED soundness gives
+  `(reg1,reg2) == declared_pair(e,s)` (via `lemma_declared_pair_well_defined` tying the chosen-fuel halt
+  to the `T`-fuel halt), closing the iff.
 
 ## Reuse map (already verified, in this crate)
 - `machine.rs`: `run`/`run_halts`/`step`/`machine_wf`/`config_wf`, monotonicity (`lemma_run_monotone`),
