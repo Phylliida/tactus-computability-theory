@@ -153,11 +153,15 @@ are written once and reused). Bottom-up brick order (companion's priority):
   L↔R mirror (walk via R-moves through `v`).
 
   **Status: inc (B3) DONE & verified (`tm_inc.rs lemma_inc`, 5 verified). Dec (B4) = this design, next.**
-- **B5 per-instruction simulation** : assemble Inc/DecJump quintuple blocks (relocated like
-  `embed_instructions`), prove one 2-counter step ↔ one gadget run; thread `tm_wf` determinism.
+- **B5 per-instruction simulation — ✅ DONE & verified (full crate 400/0).** See the B5 status
+  block below for the architecture. `lemma_sim_step` (`tm_sim.rs`): one non-halting 2-counter step
+  ↔ one gadget run, `tm_reaches(rm_to_tm(R2), enc(c), enc(step(c)))`.
 - **B6 run simulation + cleanup** : induct over the 2-counter run; on halt, the cleanup phase
   (`dec` both to 0, blank the separator, state→0) reaches `tm_origin()`. Gives
-  `rm2_halts(R2,in) ⟺ ∃fuel. tm_halts_at(rm_to_tm(R2), C(in), origin, fuel)`.
+  `rm2_halts(R2,in) ⟺ ∃fuel. tm_halts_at(rm_to_tm(R2), C(in), origin, fuel)`. **The cleanup quintuples
+  are ALREADY built into `rm_to_tm` (the `pc==len` window, `cleanup_act` in `tm_assemble.rs`): phase A
+  dec `c1`→0, phase B dec `c2`→0, phase C blank-separator → origin. B6 only proves they reach origin
+  (correctness) + the run induction; the constructor is frozen.**
 
 ### G2-F (wiring, after L0–L2)
 
@@ -174,15 +178,57 @@ identify `mm_in_H0(mm, enc(a,b)) ⟺ declared_equiv(e,a,b)` and discharge `ceer_
 - Work in `(u,v)` arithmetic with repunit formulas + decreasing-fuel loop lemmas (no separate tape-seq
   abstraction) — matches the verified `multi_output_primitives` copy-loop style.
 
-**Status 2026-06-26:** design locked. **DONE & verified, all committed, purely additive (no edits to
-existing modules); full crate 334/0:** B0 `tm_run_lemmas.rs` (run-split/halts-at bridges), B1
-`tm_two_counter.rs` (layout + repunit + wf), gadget infra + B2 `tm_gadget.rs` (`lemma_tm_step_picks` +
-bounded peek), B3 `tm_walk.rs` (both walk loops) + `tm_inc.rs` (`lemma_inc`), **B4 `tm_dec.rs`
-(`lemma_dec`)**. **The full gadget library is complete** — peek + inc + dec over the two-counter layout.
-**NEXT = B5** (assemble per-instruction Inc/DecJump quintuple blocks into the full `rm_to_tm(R2)` TM with
-state allocation — the `build_multi_output` analog; DecJump folds the B2 peek; thread `tm_wf` determinism;
-prove one RM(2) step ↔ one gadget run), then B6 (run sim + cleanup-to-origin), L1 (k→2 Gödel, the one
-Euclid lemma), L0 (search_rm dovetailer), G2-F (wire `config_encode`/`enc` + discharge `ceer_realizes`).
+**Status 2026-06-26:** design locked. **DONE & verified, all committed, purely additive; full crate
+400/0:** B0 `tm_run_lemmas.rs`, B1 `tm_two_counter.rs`, gadget infra + B2 `tm_gadget.rs`, B3
+`tm_walk.rs`+`tm_inc.rs`, B4 `tm_dec.rs`, **B5 (this session)**: B5.0 `tm_bounce.rs` (exit-routing
+trampoline), B5.1 `tm_walk_right.rs` (right walk loops), B5.2 `tm_right_gadgets.rs` (peek/inc/dec
+right mirrors), B5.3 `tm_assemble.rs` (`rm_to_tm` + `tm_wf`), B5.4/B5.5 `tm_sim.rs`
+(`lemma_sim_step`). **NEXT = B6** (run induction + prove the already-built cleanup reaches origin),
+L1 (k→2 Gödel, the one Euclid lemma), L0 (search_rm dovetailer), G2-F (wire `config_encode`/`enc` +
+discharge `ceer_realizes`).
+
+### ⚠ FOUNDATION FIX (this session, committed): `quint_wf` q2 bound weakened
+
+`quint_wf` originally required `n+1 ≤ q2 < m` for the **next**-state field. That made
+`tm_origin()=(0,0,0,0)` unreachable (`apply_quint` sets `q := q2`; reaching state 0 needs `q2=0`),
+so `tm_halts_at(.,origin,.)` — hence the whole `lemma_tm_h0_iff` reduction — was vacuous for any
+`tm_wf` TM. **Fix:** drop the `n+1 ≤ q2` lower bound, keep `q2 < m`. State 0 stays terminal via the
+**current**-state `q ≥ n+1` (`lemma_origin_tm_terminal`); no contract proof used `q2 ≥ n+1` (only
+`lemma_tm_config_wf_step` asserted it incidentally — needs only `q2 < m`). The cleanup's final
+blank-separator quintuple `(CC, 2, 0, 0, R)` uses `q2=0`.
+
+### B5 architecture (the `rm_to_tm` assembly — read before B6)
+
+`rm_to_tm(R2)` (a 2-counter machine: `num_regs=2`, reg 0 = left counter `c1` in `u`, reg 1 = right
+counter `c2` in `v`) is one **uniform** layout (`tm_assemble.rs`):
+- `n = 2` (alphabet 0=blank,1=mark,2=separator). `entry(pc) = 3 + 16·pc`. `m = tm_mod(len) =
+  19 + 16·len` where `len = R2.instructions.len()`.
+- Every program position `pc ∈ [0, len]` owns a **16-state window** `[entry(pc), entry(pc)+16)` and
+  contributes **exactly 48 = 16·3 quintuples**, one per `(state-offset, scanned-symbol)` ∈
+  `[0,16)×{0,1,2}`. `quints = Seq::new(48·(len+1), |idx| gen(R2, idx))`,
+  `gen`: `pc=idx/48, off=(idx%48)/3, sym=(idx%48)%3`, quintuple `= mk_quint(entry(pc)+off, sym,
+  pos_act(R2,pc,off,sym)…)`. Real gadget transitions fill the slots they use; the rest are inert
+  dummies `(entry+off, sym, sym, entry, L)` keyed at their own `(off,sym)` (never on-trajectory).
+- Instruction gadgets at `pc<len` (`inc_left/right_act`, `decjump_left/right_act`, `halt_act`), the
+  **cleanup** at `pc=len` (`cleanup_act`).
+- **Window → state offsets** (gadgets reuse the existing left + new right gadgets + bounce):
+  - **Inc** (off 0–2): s0=walk(entry), s1=back/bounce-entry, s2=bounce-mid. exit→`entry(pc+1)`.
+  - **DecJump** (off 0–5): s0=peek-entry, s1=peek-branch (pos→s2, zero→`entry(target)`), s2=dec-walk,
+    s3=dec-disc, s4=dec-back/bounce-entry, s5=bounce-mid. exit→`entry(pc+1)`.
+  - **Halt** (off 0–1): a left bounce routing `entry(pc) → entry(len)` (cleanup entry).
+  - **Cleanup** (off 0–12): phase A (0–5) peek+dec-left loop `c1`→0; phase B (6–11) peek+dec-right
+    loop `c2`→0; phase C (12) `(CC,2,0,0,R)` → `tm_origin()`.
+- **`tm_wf` (`lemma_rm_to_tm_wf`)**: `quint_wf` per quintuple (state `=entry(pc)+off` and scanned
+  `=sym` are MANIFEST in `gen`; written symbol / next state bounded by `lemma_act_bounds`);
+  **determinism** by recovering the flat index from `(q,a)` via pure div/mod (stride 16 > max offset
+  15) — fully decoupled from the gadget table via `lemma_gen_key`.
+- **B5.4/B5.5 (`tm_sim.rs`)**: `tm_reaches` (∃fuel run, transitive via run-split) + `lemma_quint_at`
+  (extract the quintuple at flat index `pc·48+off·3+sym`) + four per-instruction sims + the unified
+  `lemma_sim_step`. **B6 entry points**: chain `lemma_sim_step` along the 2-counter run with
+  `lemma_tm_reaches_trans`; then prove `tm_reaches(two_counter_config(0,0,entry(len)), tm_origin())`
+  (cleanup correctness, the dec-loops + blank-sep) and convert via
+  `tm_run_lemmas::lemma_tm_run_reaches_halts_at` (origin is terminal: `lemma_origin_tm_terminal`).
+  Init config: `config_encode` (G2-F) picks `two_counter_config(c1_in, 0, entry(0))`.
 Lessons banked for the next builder:
 - `tm_run(.,1)==X` unfolds need an explicit `assert(tm_run(.,0)==X)` hint right before (Z3 is
   context-sensitive — adding/removing asserts elsewhere can flip these; keep the hints).
