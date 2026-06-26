@@ -11,8 +11,9 @@
 
 use vstd::prelude::*;
 use verus_group_theory::machine_group::Dir;
+use verus_group_theory::word_numbering::lemma_div_mod_step;
 use crate::tm::{Tm, TmConfig, tm_wf, tm_step, tm_run};
-use crate::tm_two_counter::{repunit_m, lemma_repunit_div_mod, lemma_repunit_zero};
+use crate::tm_two_counter::{repunit_m, lemma_repunit_div_mod, lemma_repunit_step, lemma_repunit_zero};
 use crate::tm_gadget::{mk_quint, lemma_tm_step_picks};
 
 verus! {
@@ -90,6 +91,68 @@ pub proof fn lemma_walk_left_inner(tm: Tm, c: TmConfig, q_walk: nat, j0: nat, i1
         lemma_pile_ones_shift(c.v, j0, m);   // pile_ones(c.v*m+1, j0) == pile_ones(c.v, j0+1)
         // tm_run(c, j0+1) == tm_run(c_next, j0).
         assert(tm_run(tm, c, (j0 + 1) as nat) == tm_run(tm, c_next, j0));
+    }
+}
+
+/// Popping the low one of a nonempty pile: `pile_ones(W, k) % m == 1` and `/ m == pile_ones(W, k−1)`.
+pub proof fn lemma_pile_ones_div_mod(w: nat, k: nat, m: nat)
+    requires
+        m > 1,
+        k >= 1,
+    ensures
+        pile_ones(w, k, m) % m == 1,
+        pile_ones(w, k, m) / m == pile_ones(w, (k - 1) as nat, m),
+{
+    let x = pile_ones(w, (k - 1) as nat, m);
+    assert(pile_ones(w, k, m) == x * m + 1);   // unfold (k ≥ 1)
+    lemma_div_mod_step(x, m, 1);               // (x*m+1)/m == x, %m == 1
+}
+
+/// **The walk-back ones-loop** (the mirror of `lemma_walk_left_inner`). From a config in state
+/// `q_back` scanning a `1`, with `k0` ones already reconstructed in `u` (`u == repunit_m(k0)`) and a
+/// pile of `rem0` ones sitting above `W` in `v` (`v == pile_ones(W, rem0)`), the
+/// `(q_back, 1, 1, q_back, R)` step fires `rem0 + 1` times — writing each `1` back onto `u` and popping
+/// the pile — landing `u == repunit_m(k0 + rem0 + 1)` with the head on `W`'s low cell (`a == W % m`,
+/// `v == W / m`). For the inc gadget `W = repunit(c2)·m + 2`, so the head lands on the separator.
+pub proof fn lemma_walk_back_inner(tm: Tm, c: TmConfig, q_back: nat, k0: nat, rem0: nat, w: nat, i1b: int)
+    requires
+        tm_wf(tm),
+        0 <= i1b < tm.quints.len(),
+        tm.quints[i1b] == mk_quint(q_back, 1, 1, q_back, Dir::R),
+        c.u == repunit_m(k0, tm.m),
+        c.v == pile_ones(w, rem0, tm.m),
+        c.a == 1,
+        c.q == q_back,
+    ensures
+        tm_run(tm, c, (rem0 + 1) as nat)
+            == (TmConfig { u: repunit_m((k0 + rem0 + 1) as nat, tm.m), v: w / tm.m, a: w % tm.m, q: q_back }),
+    decreases rem0,
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 1);
+    lemma_tm_step_picks(tm, c, i1b);
+    let c_next = (TmConfig { u: c.u * m + 1, v: c.v / m, a: c.v % m, q: q_back });
+    assert(tm_step(tm, c) == Some(c_next));   // apply_quint R with a2 == 1
+    // c_next.u == repunit(k0+1).
+    lemma_repunit_step(k0, m);
+    assert(repunit_m(k0, m) * m == m * repunit_m(k0, m)) by(nonlinear_arith);
+    assert(c_next.u == repunit_m((k0 + 1) as nat, m));
+    if rem0 == 0 {
+        // c.v == pile_ones(w, 0) == w; c_next == (repunit(k0+1), w/m, w%m, q_back).
+        assert(pile_ones(w, 0, m) == w);
+        assert(c_next == (TmConfig { u: repunit_m((k0 + 1) as nat, m), v: w / m, a: w % m, q: q_back }));
+        assert(tm_run(tm, c_next, 0) == c_next);
+        assert(tm_run(tm, c, 1) == c_next);
+    } else {
+        // pop a pile-one: c.v % m == 1, c.v / m == pile_ones(w, rem0-1).
+        lemma_pile_ones_div_mod(w, rem0, m);
+        assert(c_next.a == 1);
+        assert(c_next.v == pile_ones(w, (rem0 - 1) as nat, m));
+        lemma_walk_back_inner(tm, c_next, q_back, (k0 + 1) as nat, (rem0 - 1) as nat, w, i1b);
+        // IH: tm_run(c_next, rem0) == (repunit((k0+1)+(rem0-1)+1), w/m, w%m, q_back).
+        assert(((k0 + 1) + (rem0 - 1) + 1) as nat == (k0 + rem0 + 1) as nat);
+        assert(tm_run(tm, c, (rem0 + 1) as nat) == tm_run(tm, c_next, rem0));
     }
 }
 
