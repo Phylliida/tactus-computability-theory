@@ -335,4 +335,63 @@ pub proof fn lemma_coprime_not_divides(a: nat, x: nat)
     }
 }
 
+// ── Generic divisibility plumbing (nat; internal int via the free %/cast bridge) ──
+
+/// `d % d == 0` for `d > 0`.
+pub proof fn lemma_mod_self(d: nat)
+    requires d > 0,
+    ensures d % d == 0,
+{
+    let di = d as int;
+    assert(di == 1 * di + 0) by(nonlinear_arith);
+    lemma_fundamental_div_mod_converse(di, di, 1, 0);
+    assert(d % d == 0);
+}
+
+/// `d | x ⟹ d | x*y` (both factor orders).
+pub proof fn lemma_divides_mul(d: nat, x: nat, y: nat)
+    requires d > 0, x % d == 0,
+    ensures (x * y) % d == 0, (y * x) % d == 0,
+{
+    let di = d as int;
+    let xi = x as int;
+    let yi = y as int;
+    assert(xi % di == 0);                       // same term as x % d == 0
+    lemma_fundamental_div_mod(xi, di);          // xi == di*(xi/di) + xi%di
+    let k = xi / di;
+    assert(xi == di * k) by(nonlinear_arith)
+        requires xi == di * (xi / di) + xi % di, xi % di == 0, k == xi / di;
+    assert(xi * yi == (k * yi) * di) by(nonlinear_arith) requires xi == di * k;
+    lemma_fundamental_div_mod_converse(xi * yi, di, k * yi, 0);
+    assert((xi * yi) % di == 0);
+    assert((x * y) as int == xi * yi);          // cast distributes
+    assert((x * y) % d == 0);
+    assert((y * x) as int == yi * xi);          // cast distributes
+    assert(yi * xi == xi * yi) by(nonlinear_arith);
+    assert((y * x) % d == 0);
+}
+
+/// Divisibility is transitive: `a | b ∧ b | c ⟹ a | c`.
+pub proof fn lemma_divides_trans(a: nat, b: nat, c: nat)
+    requires a > 0, b > 0, b % a == 0, c % b == 0,
+    ensures c % a == 0,
+{
+    let ai = a as int;
+    let bi = b as int;
+    let ci = c as int;
+    assert(bi % ai == 0);
+    assert(ci % bi == 0);
+    lemma_fundamental_div_mod(bi, ai);
+    let k = bi / ai;
+    assert(bi == ai * k) by(nonlinear_arith)
+        requires bi == ai * (bi / ai) + bi % ai, bi % ai == 0, k == bi / ai;
+    lemma_fundamental_div_mod(ci, bi);
+    let m = ci / bi;
+    assert(ci == bi * m) by(nonlinear_arith)
+        requires ci == bi * (ci / bi) + ci % bi, ci % bi == 0, m == ci / bi;
+    assert(ci == (k * m) * ai) by(nonlinear_arith) requires ci == bi * m, bi == ai * k;
+    lemma_fundamental_div_mod_converse(ci, ai, k * m, 0);
+    assert(c % a == 0);
+}
+
 } // verus!
