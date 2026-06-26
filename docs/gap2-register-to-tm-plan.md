@@ -317,6 +317,50 @@ its inversion, cf. `tm_assemble.rs`'s uniform 16-windows — here variable. Like
 + a subrange lemma than a flat `Seq::new` dispatch) → M5-dispatch (pick the per-instruction sim by the
 RM(k) instruction at `pc`) → M6 (chain along the run + halts-iff) → G2-F.
 
+#### ✅ M4 + M5-dispatch + M6 + MACHINE-CONTENT CORE DONE 2026-06-26 — full crate 642/0.
+The entire k→2 *halting equivalence* AND its composition through the whole pipeline are machine-checked.
+Purely additive, no assume/admit/external_body. (See `[[project_gap2_k2_m4_m6_complete]]` memory for the
+detailed map.)
+- **M4 `godel_assemble.rs` (18/0):** `block_size`/`block_start` non-uniform prefix-sum address map;
+  `inc_block`/`decjump_block` offset-indexed `Seq::new` blocks; `rm2_prefix` concat **recursing on block
+  COUNT n (threading the full `instrs`)** — NOT `drop_last` (keeps forward+backward remapped targets
+  consistent). `lemma_block_at`/`lemma_block_at_full` = the layout-match; `lemma_inc/decjump/jump_block_layout`
+  = per-instruction extraction (DecJump parity via `lemma_fundamental_div_mod_converse`, NOT nonlinear on
+  `as nat`). `lemma_rm_k_to_rm2_wf` = `machine_wf` (per-block wf lifted over the prefix concat).
+- **M5-dispatch `godel_dispatch.rs` (1/0):** `rm2_config_enc(instrs,c) = {pc: block_start(c.pc),
+  registers: [godel_encode(regs), 0]}`; `lemma_sim_step` dispatches Inc/DecJump/Jump → matching M5 sim →
+  RM(2) reaches `rm2_config_enc(step(c))`. Existential carries `1<=g` (godel_sim strengthened for this).
+- **M6 `godel_run.rs` (9/0):** `lemma_block_size_pos`/`_strict`, `lemma_enc_halted_fwd`/`_not_halted`,
+  `lemma_sim_run` (forward chain), `lemma_godel_fwd`/`_bwd` (backward inducts on RM(2) fuel, uses `g>=1`
+  to bound DecJump-on-zero self-loops). **HEADLINE `lemma_godel_halts_iff`**: `(∃F. run_halts(rm_k,c,F))
+  ⟺ (∃g. run_halts(rm_k_to_rm2(rm_k), rm2_config_enc(instrs,c), g))`.
+- **Machine-content core `godel_modular.rs` (4/0):** `lemma_rm_k_halts_iff_mm_in_H0` composes the THREE
+  halting iffs (`godel_halts_iff` ∘ `tm_run_sim::lemma_rm_tm_origin_iff` ∘ `tm_h0_bwd::lemma_tm_h0_iff`)
+  → **`RM(k)` halts ⟺ `mm_in_H0(tm_to_modmachine(rm_to_tm(rm_k_to_rm2(rm_k))), rep1(ctm,m).0, rep1(ctm,m).1)`**
+  — the whole `RM(k)→RM(2)→TM→ModMachine` pipeline collapsed into one iff. Self-contained, no placeholder
+  resolution needed. (+ config-wf bridges `lemma_rm2_config_wf`, `lemma_rm_config_enc_wf`.)
+
+#### ⏭ G2-F REMAINING (the final discharge — DESIGN-GATED, hand to Danielle).
+`lemma_rm_k_halts_iff_mm_in_H0` is exactly the machine content `ceer_realizes`/`mm_realizes_declared` need.
+What's left is soundness-critical wiring on the `modular_reduction.rs` PLACEHOLDERS (that file is an
+"authorized interface session, do NOT close the reduction here" — gated). Precise bricks:
+1. **Replace the placeholders** `ceer_to_modmachine(e)` (`= ModMachine{m:2,n:1,quads:[]}` trivial),
+   `config_encode(rm,c)` (`= (0,0)`), `rm_modulus(rm)` (provisional `> 1`) with the REAL composition:
+   `ceer_to_modmachine(e) = tm_to_modmachine(rm_to_tm(rm_k_to_rm2(e.enumerator)))`, `config_encode`/`enc`
+   aligned to `rep1(rm_config_enc(rm2, rm2_config_enc(instrs, init_for(a,b))), m)`. **enc-vs-rep1 alignment
+   is the design crux** (and `m = (rm_to_tm(rm2)).m = tm_mod(...)` vs the word-numbering modulus).
+2. **`lemma_ceer_modmachine_wf`** — `mod_machine_wf` of the real `mm` (tm_to_modmachine of a wf TM; check
+   for an existing lemma in `tm_modular`/`tm_h0`).
+3. **`lemma_modmachine_realizes`** — `mm_realizes_declared`: compose `lemma_rm_k_halts_iff_mm_in_H0` (with
+   `c_k = init config for (a,b)`) with the **search_rm/enumerator halts ⟺ `declared_equiv(e,a,b)`** semantics
+   (`lemma_search_rm_halts_iff` exists). Needs `e.enumerator` halting on the `(a,b)` input encoding.
+4. **Bridge `mm_realizes_declared` (pair/`declared_equiv` form) → `ceer_realizes`** (word-number/family-relator
+   form with FWD+BWD exactness over `decode_word(cb_of(mm),2,m,rho(...))`, `ceer_relator_match.rs:81`) — via the
+   GAP-1 word-numbering bridge. Then `ceer_fp_conditional` drops `axiom_ceer_fp_embedding` (`ceer_benign.rs:67`).
+
+Bricks 1/3/4 are design decisions on soundness-critical placeholders (the FINAL axiom discharge) — co-design
+with Danielle before editing `modular_reduction.rs`.
+
 #### M3 design (per-instruction block-simulation lemmas — the live frontier)
 RM(2): `reg 0 = C1 = godel_encode(regs)`, `reg 1 = C2` (scratch, `=0` between blocks). Each RM(k)
 instruction → an RM(2) BLOCK. The block-sim lemmas should be **parametric in the block's start +
