@@ -127,6 +127,11 @@
 // verdict in the exit pc). Consumes godel.rs's value lemmas at M3. See docs/gap2-register-to-tm-plan.md.
 #[cfg(verus_keep_ghost)] pub mod godel_gadgets2;
 
+// GAP-2 / L1 k→2 reduction M3 block compositions: move + back-loop = the three RM(2) ops
+// (multiply C1·=base(i) / divide C1/=base(i) / non-destructive divtest k|C1) at the value level.
+// Parametric in k + block addresses; M5 plugs in the Gödel invariant. See godel_blocks.rs.
+#[cfg(verus_keep_ghost)] pub mod godel_blocks;
+
 // GAP-2 / L0 brick B-L0.1: fuel-instrumented bounded simulation. `instrument` guards each original
 // instruction with a `DecJump{fuel, TIMEOUT}` so a run always returns within `fuel` steps with a
 // HALTED-or-TIMEOUT verdict (a non-halting enumerator stage cannot wedge the dovetail). The bounded
