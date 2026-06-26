@@ -929,6 +929,183 @@ pub proof fn lemma_srm_phase_c1(
     }
 }
 
+//  ============================================================
+//  Phase C2 — orientation 2 compare (pair(d2,d1) vs inp).  cmp+44 -> CONT.
+//  ============================================================
+
+///  At cmp+44 with an explicit result `r1` (decouples from match1): d1B/d2B hold d1/d2, srm_c1_zero.
+pub open spec fn srm_at_c44(e: CEER, c: Configuration, inp_v: nat, t_v: nat, s_v: nat, cnt_v: nat, r1: nat) -> bool {
+    &&& c.pc == srm_cmp(e) + 44
+    &&& srm_ctrl(e, c, inp_v, t_v, s_v, cnt_v, r1)
+    &&& c.registers[8] == srm_decl1(e, s_v, t_v)
+    &&& c.registers[10] == srm_decl2(e, s_v, t_v)
+    &&& srm_c1_zero(c)
+}
+
+///  At CONT after the full CMP comparison: result final, all working temps zero (srm_temps_top).
+pub open spec fn srm_at_cont(e: CEER, c: Configuration, inp_v: nat, t_v: nat, s_v: nat, cnt_v: nat, r_final: nat) -> bool {
+    &&& c.pc == srm_cont(e)
+    &&& srm_ctrl(e, c, inp_v, t_v, s_v, cnt_v, r_final)
+    &&& srm_temps_top(c)
+}
+
+#[verifier::rlimit(10000)]
+pub proof fn lemma_srm_phase_c2(
+    e: CEER, c: Configuration, inp_v: nat, t_v: nat, s_v: nat, cnt_v: nat, r1: nat,
+)
+    requires
+        ceer_wf(e),
+        srm_at_c44(e, c, inp_v, t_v, s_v, cnt_v, r1),
+    ensures
+        exists|g: nat|
+            #[trigger] run(search_rm(e), c, g).pc == srm_cont(e)
+            && srm_at_cont(e, run(search_rm(e), c, g), inp_v, t_v, s_v, cnt_v,
+                    if srm_match2(e, s_v, t_v, inp_v) { (r1 + 1) as nat } else { r1 }),
+{
+    reveal(ceer_wf);
+    let m = search_rm(e);
+    let nr = srm_numregs(e);
+    let cmp = srm_cmp(e);
+    let d1 = srm_decl1(e, s_v, t_v);
+    let d2 = srm_decl2(e, s_v, t_v);
+
+    //  --- o2 pair_subroutine(10,8 -> 23) : p2 := pair(d2, d1) ---
+    lemma_srm_o2_pair_frame(e);
+    lemma_pair_subroutine(m, c, 10, 8, 18, 19, 20, 21, 22, 1, 23, (cmp + 44) as nat, d2, d1);
+    let gp = choose|g: nat|
+        run(m, c, g).pc == (cmp + 44) + 23
+        && run(m, c, g).registers[23] == pair(d2, d1)
+        && run(m, c, g).registers.len() == m.num_regs
+        && run(m, c, g).registers[10] == 0
+        && run(m, c, g).registers[8] == 0
+        && run(m, c, g).registers[18] == 0
+        && run(m, c, g).registers[19] == 0
+        && run(m, c, g).registers[21] == 0
+        && run(m, c, g).registers[22] == 0
+        && (forall|r: int| 0 <= r < m.num_regs as int
+                && r != 10 && r != 8 && r != 18 && r != 19 && r != 20 && r != 21 && r != 22 && r != 23
+                ==> #[trigger] run(m, c, g).registers[r] == c.registers[r]);
+    let cp = run(m, c, gp);
+    assert(cp.pc == cmp + 67);
+    assert(cp.registers[23] == pair(d2, d1));
+    assert(cp.registers[10] == 0 && cp.registers[8] == 0 && cp.registers[18] == 0
+        && cp.registers[19] == 0 && cp.registers[21] == 0 && cp.registers[22] == 0);
+    assert(cp.registers[0] == inp_v) by { assert(0 != 10 && 0 != 8 && 0 != 18 && 0 != 19 && 0 != 20 && 0 != 21 && 0 != 22 && 0 != 23); }
+    assert(cp.registers[24] == 0) by { assert(24 != 10 && 24 != 8 && 24 != 18 && 24 != 19 && 24 != 20 && 24 != 21 && 24 != 22 && 24 != 23); }
+    assert(cp.registers[28] == 0) by { assert(28 != 10 && 28 != 8 && 28 != 18 && 28 != 19 && 28 != 20 && 28 != 21 && 28 != 22 && 28 != 23); }
+    assert(cp.registers[1] == 0) by { assert(1 != 10 && 1 != 8 && 1 != 18 && 1 != 19 && 1 != 20 && 1 != 21 && 1 != 22 && 1 != 23); }
+
+    //  --- o2 load inp: double_dist(0 -> 24, 28) ; copy(28 -> 0) ---
+    lemma_srm_index(e, cmp as int + 67); lemma_srm_index(e, cmp as int + 68);
+    lemma_srm_index(e, cmp as int + 69); lemma_srm_index(e, cmp as int + 70);
+    assert(m.instructions[(cmp + 67) as int] == mk_dj(0, cmp + 67 + 4));
+    assert(m.instructions[(cmp + 68) as int] == mk_inc(24));
+    assert(m.instructions[(cmp + 69) as int] == mk_inc(28));
+    assert(m.instructions[(cmp + 70) as int] == mk_dj(1, cmp + 67));
+    lemma_double_dist_inner(m, cp, 0, 24, 28, 1, (cmp + 67) as nat, 0, 0, inp_v);
+    let gd: nat = (4 * inp_v + 1) as nat;
+    let cd = run(m, cp, gd);
+    lemma_run_preserves_len(m, cp, gd);
+    assert(cd.pc == cmp + 71);
+    assert(cd.registers[24] == inp_v && cd.registers[28] == inp_v);
+    assert(cd.registers[23] == pair(d2, d1)) by { assert(23 != 0 && 23 != 24 && 23 != 28); }
+    assert(cd.registers[1] == 0) by { assert(1 != 0 && 1 != 24 && 1 != 28); }
+
+    lemma_srm_index(e, cmp as int + 71); lemma_srm_index(e, cmp as int + 72); lemma_srm_index(e, cmp as int + 73);
+    assert(m.instructions[(cmp + 71) as int] == mk_dj(28, cmp + 71 + 3));
+    assert(m.instructions[(cmp + 72) as int] == mk_inc(0));
+    assert(m.instructions[(cmp + 73) as int] == mk_dj(1, cmp + 71));
+    lemma_copy_loop_inner(m, cd, 28, 0, 1, (cmp + 71) as nat, inp_v, 0, inp_v);
+    let gc: nat = (3 * inp_v + 1) as nat;
+    let cl = run(m, cd, gc);
+    lemma_run_preserves_len(m, cd, gc);
+    assert(cl.pc == cmp + 74);
+    assert(cl.registers[24] == inp_v) by { assert(24 != 28 && 24 != 0); }
+    assert(cl.registers[23] == pair(d2, d1)) by { assert(23 != 28 && 23 != 0); }
+    assert(cl.registers[1] == 0) by { assert(1 != 28 && 1 != 0); }
+    assert(cl.registers[0] == inp_v);
+    assert(cl.registers[28] == 0);   //  copy src (bakD) drained
+
+    //  --- o2 eq_test(23, 24, neq=cont=cmp+80, sp=cmp+74) ---
+    lemma_srm_index(e, cmp as int + 74); lemma_srm_index(e, cmp as int + 75); lemma_srm_index(e, cmp as int + 76);
+    lemma_srm_index(e, cmp as int + 77); lemma_srm_index(e, cmp as int + 78);
+    assert(eq_test_frame(m, 23, 24, 1, (cmp + 80) as nat, (cmp + 74) as nat));
+    lemma_eq_test_loop(m, cl, 23, 24, 1, (cmp + 80) as nat, (cmp + 74) as nat, pair(d2, d1), inp_v);
+    let ge = choose|g: nat|
+        run(m, cl, g).pc == eq_exit_pc(pair(d2, d1), inp_v, (cmp + 80) as nat, (cmp + 74) as nat)
+        && run(m, cl, g).registers[1] == 0
+        && run(m, cl, g).registers.len() == m.num_regs
+        && (forall|r: int| 0 <= r < m.num_regs as int && r != 23 && r != 24
+                ==> #[trigger] run(m, cl, g).registers[r] == cl.registers[r]);
+    let ce = run(m, cl, ge);
+    lemma_run_preserves_len(m, cl, ge);
+
+    //  --- common frame chain: ce[r] == c[r] for r outside {0,8,10,18,19,20,21,22,23,24,28} ---
+    assert forall|r: int| 0 <= r < nr as int
+        && r != 0 && r != 8 && r != 10 && r != 18 && r != 19 && r != 20 && r != 21 && r != 22
+        && r != 23 && r != 24 && r != 28
+        implies ce.registers[r] == c.registers[r] by {
+        assert(ce.registers[r] == cl.registers[r]);   //  eq frame (r != 23,24)
+        assert(cl.registers[r] == cd.registers[r]);   //  copy frame (r != 28,0)
+        assert(cd.registers[r] == cp.registers[r]);   //  dd frame (r != 0,24,28)
+        assert(cp.registers[r] == c.registers[r]);    //  pair frame (r outside o2 set)
+    }
+    //  ce zero facts for the o2-pair-drained regs (8,10,18,19,21,22) and o2 load (28) and bakD/ic2
+    assert forall|r: int| (r == 8 || r == 10 || r == 18 || r == 19 || r == 21 || r == 22)
+        implies ce.registers[r] == 0 by {
+        assert(ce.registers[r] == cl.registers[r]);
+        assert(cl.registers[r] == cd.registers[r]);
+        assert(cd.registers[r] == cp.registers[r]);
+    }
+    assert(ce.registers[6] == r1) by { assert(c.registers[6] == r1); }
+    assert(ce.registers[0] == inp_v) by { assert(ce.registers[0] == cl.registers[0]); }
+    assert(ce.registers[28] == 0) by { assert(ce.registers[28] == cl.registers[28]); }
+
+    //  --- conditional Inc result; both paths reach CONT ---
+    if srm_match2(e, s_v, t_v, inp_v) {
+        assert(pair(d2, d1) == inp_v);
+        assert(ce.pc == cmp + 79) by { assert(eq_exit_pc(pair(d2, d1), inp_v, (cmp + 80) as nat, (cmp + 74) as nat) == cmp + 79); }
+        lemma_srm_index(e, cmp as int + 79);
+        assert(m.instructions[(cmp + 79) as int] == mk_inc(6));
+        assert(!is_halted(m, ce));
+        let cinc = step(m, ce).unwrap();
+        assert(cinc.pc == cmp + 80);
+        assert(cinc.pc == srm_cont(e));
+        assert(cinc.registers == ce.registers.update(6, (ce.registers[6] + 1) as nat));
+        assert(run(m, ce, 1) == cinc) by { lemma_run_unfold(m, ce, 1); }
+        lemma_run_add(m, cl, ge, 1);
+        lemma_run_add(m, cd, gc, (ge + 1) as nat);
+        lemma_run_add(m, cp, gd, (gc + ge + 1) as nat);
+        lemma_run_add(m, c, gp, (gd + gc + ge + 1) as nat);
+        assert(run(m, c, (gp + gd + gc + ge + 1) as nat) == cinc);
+        assert(cinc.registers[6] == r1 + 1);
+        assert(srm_ctrl(e, cinc, inp_v, t_v, s_v, cnt_v, (r1 + 1) as nat)) by {
+            assert(cinc.registers[0] == inp_v) by { assert(ce.registers[0] == inp_v); }
+            assert(cinc.registers[1] == 0) by { assert(ce.registers[1] == 0); }
+            assert(cinc.registers[3] == t_v) by { assert(ce.registers[3] == c.registers[3]); }
+            assert(cinc.registers[4] == s_v) by { assert(ce.registers[4] == c.registers[4]); }
+            assert(cinc.registers[5] == cnt_v) by { assert(ce.registers[5] == c.registers[5]); }
+        }
+        assert(srm_temps_top(cinc));
+        assert(srm_at_cont(e, cinc, inp_v, t_v, s_v, cnt_v, (r1 + 1) as nat));
+    } else {
+        assert(pair(d2, d1) != inp_v);
+        assert(ce.pc == cmp + 80) by { assert(eq_exit_pc(pair(d2, d1), inp_v, (cmp + 80) as nat, (cmp + 74) as nat) == cmp + 80); }
+        assert(ce.pc == srm_cont(e));
+        lemma_run_add(m, cd, gc, ge);
+        lemma_run_add(m, cp, gd, (gc + ge) as nat);
+        lemma_run_add(m, c, gp, (gd + gc + ge) as nat);
+        assert(run(m, c, (gp + gd + gc + ge) as nat) == ce);
+        assert(srm_ctrl(e, ce, inp_v, t_v, s_v, cnt_v, r1)) by {
+            assert(ce.registers[3] == c.registers[3]);
+            assert(ce.registers[4] == c.registers[4]);
+            assert(ce.registers[5] == c.registers[5]);
+        }
+        assert(srm_temps_top(ce));
+        assert(srm_at_cont(e, ce, inp_v, t_v, s_v, cnt_v, r1));
+    }
+}
+
 ///  Local `run` unfold helper (private copy).
 proof fn lemma_run_unfold(m: RegisterMachine, c: Configuration, fuel: nat)
     requires !is_halted(m, c), fuel > 0,
