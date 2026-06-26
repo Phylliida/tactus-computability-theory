@@ -124,7 +124,7 @@ pub proof fn lemma_tm_config_wf_step(tm: Tm, c: TmConfig)
     lemma_matching_index_ok(tm, c);
     let qt = tm.quints[matching_index(tm, c)];
     assert(quint_wf(qt, n, m));
-    assert(qt.a2 <= n && n + 1 <= qt.q2 < m);
+    assert(qt.a2 <= n && qt.q2 < m);
     assert(m > 1);
     let c2 = apply_quint(qt, c, m);
     assert(tm_step(tm, c) == Some(c2));
