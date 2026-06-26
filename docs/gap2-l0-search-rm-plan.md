@@ -103,7 +103,11 @@ Each inner iteration:
 After `s == T`, `T += 1`, repeat. Reuse `copy_instrs`/`triple_dist_instrs` for bank setup + the
 preserve-copies; the new arithmetic is the **RM forward-`pair` subroutine** (B-L0.2a below).
 
-**B-L0.2a — RM forward-`pair` subroutine (the only genuinely-new arithmetic).** `pair(x,y) =
+**B-L0.2a — RM forward-`pair` subroutine — ✅ DONE 2026-06-26 (`src/search_rm_arith.rs`, 15/0).**
+`double_dist_instrs` (drain a register into two, independent accumulators) + `lemma_triangular_loop`
+(`t := triangular(n)` via outer countdown + inner `copy(i→ibak)`+`double_dist(ibak→t,i)`, `lemma_tri_step`
+recurrence) + `lemma_pair_subroutine` (`p := pair(x,y) = triangular(x+y)+x`, verified against spec
+`pairing::pair`). Reusable; consumed by B-L0.2's comparison. *(original design:)* `pair(x,y) =
 triangular(x+y) + x`, `triangular(n) = n(n+1)/2 = Σ_{k≤n} k`. RM construction: `sum := x+y` (two drains),
 then `triangular` by an **outer countdown of a copy of `sum`** that, on iteration with running index `i`,
 adds `i` to the accumulator `t` (inner add via a distribute-and-restore of `i`, reusing the
