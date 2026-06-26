@@ -123,6 +123,25 @@ else `neq`) + `lemma_clear_loop` (`clear_instrs(r,zero,sp)`: drain `r` to 0 in `
 > `instrument` (B-L0.1), forward `pair` (B-L0.2a), `eq_test` + `clear` (B-L0.2b), plus the existing
 > `copy_instrs`/`triple_dist_instrs`/`double_dist_instrs`. **The ONLY remaining L0 work is the assembly
 > (B-L0.2c + B-L0.3) — no new gadget arithmetic.**
+>
+> **✅✅ B-L0.2c + B-L0.3 COMPLETE 2026-06-26 — `lemma_search_rm_halts_iff` VERIFIED (full crate 550/0).**
+> `search_rm(e)` is built as ONE `RegisterMachine` (`src/search_rm.rs`, `Seq::new` region-dispatch rep —
+> the `+`-concat blew the Lean budget at ~6 deep accesses) with `machine_wf` (`lemma_search_rm_wf`).
+> Register map num_regs=29+ne: 0 inp,1 zero,2 fuel,3 Treg,4 scnt,5 cnt,6 result,7-10 d-backups,11-17 o1
+> work,18-24 o2 work,25-28 baks,29.. E-bank. The reset phase clears the 6 regs a pair/eq leaves dirty
+> across iterations (ii1/p1/ic1/ii2/p2/ic2 = 13/16/17/20/23/24). The proof is decomposed into small phase
+> lemmas (`src/search_rm_inner.rs`): R1 (guard+clear E-bank+clear 6) → R2a (load s→E[0]) → R2b
+> (fuel:=T+1) → I (instrument→CMP/CONT via `lemma_instrument_outcome`, the combined halts+reaches_sink) →
+> C0 (backup declared pair) → C1/C2 (two-orientation forward-`pair` compare + conditional Inc result) →
+> F (CONT loop), assembled into `lemma_inner_body`; then `lemma_inner_loop` (bounded loop over s, induct
+> on cnt). The outer loop (`src/search_rm_outer.rs`): SETUP (cnt:=T+1), `lemma_round_to_dispatch`,
+> dispatch (result>0→Halt, result==0→OUTER_CONT→next top), `lemma_outer_reaches` (⟸, induct on tw−t) +
+> `lemma_outer_loops` (⟹ contrapositive, round-peeling via `lemma_run_halts_split`), and the
+> `declared_match⟺stage_declares` bridge (pair injectivity). NO assume/admit/external_body. Several
+> base gadget lemmas strengthened along the way (reaches_sink frame+scratch==0; pair_subroutine exposes
+> x_in/y_in/xk/nc/t/ibak==0). **NEXT (separate, gated): G2-F wires `config_encode` + discharges
+> `ceer_realizes`, but needs the L1 register→2-counter reduction (the "dragon", blocked on Danielle's
+> R-ii instruction-set co-design call — see `gap2-register-to-tm-plan.md`).**
 
 **B-L0.2c — loop assembly + `machine_wf`** (the remaining hard phase): lay out the phases in disjoint
 pc-windows (à la `tm_assemble`/`multi_output_machine`), each gadget keyed in its own window; the outer/inner
