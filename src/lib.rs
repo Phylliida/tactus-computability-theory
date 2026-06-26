@@ -107,6 +107,11 @@
 // prove rm-halts ⟺ rm_to_tm reaches the origin (lemma_rm_tm_origin_iff). See tm_run_sim.rs.
 #[cfg(verus_keep_ghost)] pub mod tm_run_sim;
 
+// GAP-2 / L1 number-theory core: gcd + Bézout + the coprimality lemmas (multiplicative, powers,
+// non-divisibility) consumed by the Gödel k→2 encoding. Pairwise-coprime base ⇒ the DecJump
+// zero-test divisibility iff, dodging primality. See number_theory.rs.
+#[cfg(verus_keep_ghost)] pub mod number_theory;
+
 // GAP-2 interface skeleton: the register->modular machine reduction (Aanderaa-Cohen Thm 2),
 // supplying the `mm` whose H0 realizes the CEER declared pairs. Type-level plumbing + the
 // reduction target; the simulation-correctness proofs are the deferred GAP-2 impl. See
