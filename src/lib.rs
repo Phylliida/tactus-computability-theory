@@ -142,6 +142,10 @@
 // dovetail's inner body sees a single halt/timeout outcome (no witness mismatch). See search_rm_outcome.rs.
 #[cfg(verus_keep_ghost)] pub mod search_rm_outcome;
 
+// GAP-2 / L0 brick B-L0.2c: the dovetailing search machine `search_rm(e)` — one RegisterMachine whose
+// halting on `pair(a,b)` is `declared_equiv(e,a,b)`. Definition + offsets + machine_wf. See search_rm.rs.
+#[cfg(verus_keep_ghost)] pub mod search_rm;
+
 // GAP-2 interface skeleton: the register->modular machine reduction (Aanderaa-Cohen Thm 2),
 // supplying the `mm` whose H0 realizes the CEER declared pairs. Type-level plumbing + the
 // reduction target; the simulation-correctness proofs are the deferred GAP-2 impl. See
