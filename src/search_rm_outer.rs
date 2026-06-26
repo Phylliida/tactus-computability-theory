@@ -8,6 +8,7 @@ use crate::ceer::{CEER, ceer_wf, declared_pair};
 use crate::search_rm::*;
 use crate::search_rm_inner::*;
 use crate::search_rm_arith::lemma_run_add;
+use crate::multi_output_primitives::mk_dj;
 
 verus! {
 
@@ -139,6 +140,131 @@ pub proof fn lemma_inner_body(
         }
         assert(srm_at_top(e, c_f, inp_v, t_v, s1, cm1, c_f.registers[6]));
     }
+}
+
+//  ============================================================
+//  lemma_inner_loop — the bounded loop over s; INNER_TOP(cnt) -> INNER_EXIT
+//  ============================================================
+
+#[verifier::rlimit(20000)]
+pub proof fn lemma_inner_loop(
+    e: CEER, c: Configuration, inp_v: nat, t_v: nat, s0: nat, cnt_v: nat, r0: nat,
+)
+    requires
+        ceer_wf(e),
+        srm_at_top(e, c, inp_v, t_v, s0, cnt_v, r0),
+    ensures
+        exists|g: nat|
+            #[trigger] run(search_rm(e), c, g).pc == srm_ie(e)
+            && run(search_rm(e), c, g).registers.len() == srm_numregs(e)
+            && run(search_rm(e), c, g).registers[0] == inp_v
+            && run(search_rm(e), c, g).registers[3] == t_v
+            && run(search_rm(e), c, g).registers[1] == 0
+            && run(search_rm(e), c, g).registers[6] >= r0
+            && (run(search_rm(e), c, g).registers[6] > r0 ==>
+                    exists|s: nat| s0 <= s < s0 + cnt_v && declared_match(e, s, inp_v))
+            && ((exists|s: nat| s0 <= s < s0 + cnt_v
+                    && run_halts(e.enumerator, initial_config(e.enumerator, s), t_v)
+                    && declared_match(e, s, inp_v))
+                ==> run(search_rm(e), c, g).registers[6] > r0),
+    decreases cnt_v,
+{
+    let m = search_rm(e);
+    if cnt_v == 0 {
+        //  guard at pc 8: DecJump{cnt=5, ie}; cnt==0 ⇒ jump to ie
+        lemma_srm_outer_index(e, 8);
+        assert(m.instructions[8] == mk_dj(5, srm_ie(e)));
+        assert(c.registers[5] == 0);
+        assert(!is_halted(m, c));
+        let c1 = step(m, c).unwrap();
+        assert(c1.pc == srm_ie(e));
+        assert(c1.registers == c.registers);
+        assert(run(m, c, 1) == c1) by { lemma_outer_run_unfold(m, c, 1); }
+        assert(c1.registers[6] >= r0);
+        assert(c1.registers[6] > r0 ==> exists|s: nat| s0 <= s < s0 + cnt_v && declared_match(e, s, inp_v));
+        assert((exists|s: nat| s0 <= s < s0 + cnt_v
+            && run_halts(e.enumerator, initial_config(e.enumerator, s), t_v) && declared_match(e, s, inp_v))
+            ==> c1.registers[6] > r0);
+    } else {
+        //  one iteration via inner_body, then recurse
+        lemma_inner_body(e, c, inp_v, t_v, s0, cnt_v, r0);
+        let gb = choose|g: nat| run(m, c, g).pc == 8
+            && srm_at_top(e, run(m, c, g), inp_v, t_v, (s0 + 1) as nat, (cnt_v - 1) as nat, run(m, c, g).registers[6])
+            && run(m, c, g).registers[6] >= r0
+            && (run(m, c, g).registers[6] > r0 ==> declared_match(e, s0, inp_v))
+            && (run_halts(e.enumerator, initial_config(e.enumerator, s0), t_v) && declared_match(e, s0, inp_v)
+                    ==> run(m, c, g).registers[6] > r0);
+        let cn = run(m, c, gb);
+        let rp = cn.registers[6];
+
+        lemma_inner_loop(e, cn, inp_v, t_v, (s0 + 1) as nat, (cnt_v - 1) as nat, rp);
+        let gr = choose|g: nat|
+            run(m, cn, g).pc == srm_ie(e)
+            && run(m, cn, g).registers.len() == srm_numregs(e)
+            && run(m, cn, g).registers[0] == inp_v
+            && run(m, cn, g).registers[3] == t_v
+            && run(m, cn, g).registers[1] == 0
+            && run(m, cn, g).registers[6] >= rp
+            && (run(m, cn, g).registers[6] > rp ==>
+                    exists|s: nat| (s0 + 1) <= s < (s0 + 1) + (cnt_v - 1) && declared_match(e, s, inp_v))
+            && ((exists|s: nat| (s0 + 1) <= s < (s0 + 1) + (cnt_v - 1)
+                    && run_halts(e.enumerator, initial_config(e.enumerator, s), t_v)
+                    && declared_match(e, s, inp_v))
+                ==> run(m, cn, g).registers[6] > rp);
+        let cf = run(m, cn, gr);
+        lemma_run_add(m, c, gb, gr);
+        let g: nat = (gb + gr) as nat;
+        assert(run(m, c, g) == cf);
+        let rf = cf.registers[6];
+
+        assert(rf >= r0) by { assert(rp >= r0); }
+        //  SOUND
+        assert(rf > r0 ==> exists|s: nat| s0 <= s < s0 + cnt_v && declared_match(e, s, inp_v)) by {
+            if rf > r0 {
+                if rp > r0 {
+                    //  s0 declared
+                    assert(declared_match(e, s0, inp_v));
+                    assert(s0 <= s0 < s0 + cnt_v);
+                } else {
+                    assert(rp == r0);
+                    assert(rf > rp);
+                    let sw = choose|s: nat| (s0 + 1) <= s < (s0 + 1) + (cnt_v - 1) && declared_match(e, s, inp_v);
+                    assert(s0 <= sw < s0 + cnt_v);
+                    assert(declared_match(e, sw, inp_v));
+                }
+            }
+        }
+        //  COMPLETE
+        assert((exists|s: nat| s0 <= s < s0 + cnt_v
+            && run_halts(e.enumerator, initial_config(e.enumerator, s), t_v) && declared_match(e, s, inp_v))
+            ==> rf > r0) by {
+            if exists|s: nat| s0 <= s < s0 + cnt_v
+                && run_halts(e.enumerator, initial_config(e.enumerator, s), t_v) && declared_match(e, s, inp_v) {
+                let sw = choose|s: nat| s0 <= s < s0 + cnt_v
+                    && run_halts(e.enumerator, initial_config(e.enumerator, s), t_v) && declared_match(e, s, inp_v);
+                if sw == s0 {
+                    assert(rp > r0);
+                } else {
+                    assert((s0 + 1) <= sw < (s0 + 1) + (cnt_v - 1));
+                    assert(rf > rp);
+                }
+            }
+        }
+    }
+}
+
+///  Local index/unfold helpers for this module.
+proof fn lemma_srm_outer_index(e: CEER, i: int)
+    requires 0 <= i < srm_total(e),
+    ensures search_rm(e).instructions[i] == srm_instr(e, i),
+{
+    lemma_srm_index(e, i);
+}
+
+proof fn lemma_outer_run_unfold(m: RegisterMachine, c: Configuration, fuel: nat)
+    requires !is_halted(m, c), fuel > 0,
+    ensures run(m, c, fuel) == run(m, step(m, c).unwrap(), (fuel - 1) as nat),
+{
 }
 
 } //  verus!
