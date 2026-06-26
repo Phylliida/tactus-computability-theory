@@ -7,8 +7,10 @@ use crate::machine::*;
 use crate::ceer::{CEER, ceer_wf};
 use crate::multi_output_primitives::{mk_inc, mk_dj, lemma_copy_loop_inner};
 use crate::search_rm_clearbank::{clear_bank_instrs, lemma_clear_bank};
-use crate::search_rm_compare::lemma_clear_loop;
-use crate::search_rm_arith::{lemma_run_add, lemma_double_dist_inner, lemma_run_preserves_len};
+use crate::search_rm_compare::{lemma_clear_loop, lemma_eq_test_loop, eq_test_frame, eq_exit_pc};
+use crate::search_rm_arith::{lemma_run_add, lemma_double_dist_inner, lemma_run_preserves_len,
+    lemma_pair_subroutine, pair_subroutine_frame};
+use crate::pairing::pair;
 use crate::search_rm_sim::{instr_configs_agree, instrument_frame, instrument_instructions};
 use crate::search_rm_outcome::lemma_instrument_outcome;
 use crate::search_rm::*;
@@ -623,6 +625,66 @@ pub proof fn lemma_srm_phase_c0(
     assert(srm_ctrl(e, c2, inp_v, t_v, s_v, cnt_v, r_v));
     assert(srm_work_zero(c2));
     assert(srm_post_c0(e, c2, inp_v, t_v, s_v, cnt_v, r_v));
+}
+
+//  ============================================================
+//  Pair-subroutine layout frames (23 accesses each, isolated budget)
+//  ============================================================
+
+///  Call lemma_srm_index at all 23 offsets sp..sp+22.
+proof fn lemma_srm_index_23(e: CEER, sp: int)
+    requires 0 <= sp, sp + 23 <= srm_total(e),
+    ensures
+        search_rm(e).instructions[sp] == srm_instr(e, sp),
+        search_rm(e).instructions[sp + 1] == srm_instr(e, sp + 1),
+        search_rm(e).instructions[sp + 2] == srm_instr(e, sp + 2),
+        search_rm(e).instructions[sp + 3] == srm_instr(e, sp + 3),
+        search_rm(e).instructions[sp + 4] == srm_instr(e, sp + 4),
+        search_rm(e).instructions[sp + 5] == srm_instr(e, sp + 5),
+        search_rm(e).instructions[sp + 6] == srm_instr(e, sp + 6),
+        search_rm(e).instructions[sp + 7] == srm_instr(e, sp + 7),
+        search_rm(e).instructions[sp + 8] == srm_instr(e, sp + 8),
+        search_rm(e).instructions[sp + 9] == srm_instr(e, sp + 9),
+        search_rm(e).instructions[sp + 10] == srm_instr(e, sp + 10),
+        search_rm(e).instructions[sp + 11] == srm_instr(e, sp + 11),
+        search_rm(e).instructions[sp + 12] == srm_instr(e, sp + 12),
+        search_rm(e).instructions[sp + 13] == srm_instr(e, sp + 13),
+        search_rm(e).instructions[sp + 14] == srm_instr(e, sp + 14),
+        search_rm(e).instructions[sp + 15] == srm_instr(e, sp + 15),
+        search_rm(e).instructions[sp + 16] == srm_instr(e, sp + 16),
+        search_rm(e).instructions[sp + 17] == srm_instr(e, sp + 17),
+        search_rm(e).instructions[sp + 18] == srm_instr(e, sp + 18),
+        search_rm(e).instructions[sp + 19] == srm_instr(e, sp + 19),
+        search_rm(e).instructions[sp + 20] == srm_instr(e, sp + 20),
+        search_rm(e).instructions[sp + 21] == srm_instr(e, sp + 21),
+        search_rm(e).instructions[sp + 22] == srm_instr(e, sp + 22),
+{
+    lemma_srm_index(e, sp); lemma_srm_index(e, sp + 1); lemma_srm_index(e, sp + 2);
+    lemma_srm_index(e, sp + 3); lemma_srm_index(e, sp + 4); lemma_srm_index(e, sp + 5);
+    lemma_srm_index(e, sp + 6); lemma_srm_index(e, sp + 7); lemma_srm_index(e, sp + 8);
+    lemma_srm_index(e, sp + 9); lemma_srm_index(e, sp + 10); lemma_srm_index(e, sp + 11);
+    lemma_srm_index(e, sp + 12); lemma_srm_index(e, sp + 13); lemma_srm_index(e, sp + 14);
+    lemma_srm_index(e, sp + 15); lemma_srm_index(e, sp + 16); lemma_srm_index(e, sp + 17);
+    lemma_srm_index(e, sp + 18); lemma_srm_index(e, sp + 19); lemma_srm_index(e, sp + 20);
+    lemma_srm_index(e, sp + 21); lemma_srm_index(e, sp + 22);
+}
+
+#[verifier::rlimit(8000)]
+pub proof fn lemma_srm_o1_pair_frame(e: CEER)
+    requires ceer_wf(e),
+    ensures pair_subroutine_frame(search_rm(e), 7, 9, 11, 12, 13, 14, 15, 1, 16, srm_cmp(e) + 8),
+{
+    reveal(ceer_wf);
+    lemma_srm_index_23(e, (srm_cmp(e) + 8) as int);
+}
+
+#[verifier::rlimit(8000)]
+pub proof fn lemma_srm_o2_pair_frame(e: CEER)
+    requires ceer_wf(e),
+    ensures pair_subroutine_frame(search_rm(e), 10, 8, 18, 19, 20, 21, 22, 1, 23, srm_cmp(e) + 44),
+{
+    reveal(ceer_wf);
+    lemma_srm_index_23(e, (srm_cmp(e) + 44) as int);
 }
 
 ///  Local `run` unfold helper (private copy).
