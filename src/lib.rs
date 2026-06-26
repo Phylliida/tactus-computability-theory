@@ -69,6 +69,10 @@
 // of the inc/dec walk gadgets. See tm_walk.rs.
 #[cfg(verus_keep_ghost)] pub mod tm_walk;
 
+// GAP-2-E brick B3 (assembly): the inc gadget (lemma_inc) -- sep-peel + walk-left + turnaround +
+// walk-back, two_counter_config(c1,c2) -> (c1+1,c2) in 2(c1+1) steps. See tm_inc.rs.
+#[cfg(verus_keep_ghost)] pub mod tm_inc;
+
 // GAP-2 interface skeleton: the register->modular machine reduction (Aanderaa-Cohen Thm 2),
 // supplying the `mm` whose H0 realizes the CEER declared pairs. Type-level plumbing + the
 // reduction target; the simulation-correctness proofs are the deferred GAP-2 impl. See
