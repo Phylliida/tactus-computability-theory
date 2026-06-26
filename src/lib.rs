@@ -150,6 +150,10 @@
 // See search_rm_inner.rs.
 #[cfg(verus_keep_ghost)] pub mod search_rm_inner;
 
+// GAP-2 / L0 brick B-L0.2c/B-L0.3: assemble lemma_inner_body, the bounded inner loop, the outer
+// round, and the halts-iff. See search_rm_outer.rs.
+#[cfg(verus_keep_ghost)] pub mod search_rm_outer;
+
 // GAP-2 interface skeleton: the register->modular machine reduction (Aanderaa-Cohen Thm 2),
 // supplying the `mm` whose H0 realizes the CEER declared pairs. Type-level plumbing + the
 // reduction target; the simulation-correctness proofs are the deferred GAP-2 impl. See
