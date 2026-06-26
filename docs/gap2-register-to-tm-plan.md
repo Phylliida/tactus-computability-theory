@@ -249,6 +249,66 @@ the `godel.rs` value lemmas (`lemma_godel_inc/dec/div_iff`). Brick order: **M1**
 `config_encode` + discharges `ceer_realizes`. The induction follows `search_rm_arith`'s copy/double_dist
 loop-lemma style (decreasing-fuel inner loop, recurrence per group).
 
+#### ✅ M1 DONE 2026-06-26 — `godel_gadgets.rs` (17/0). move + multiply.
+`lemma_move_loop` (`[DecJump(src,start+3), Inc(dst), Jump(start)]`, drains `src→dst` in `3·rem+1`
+steps) + `lemma_mult_back_loop` (`[DecJump(src,start+k+2), Inc(dst)×k, Jump(start)]`, `dst += k·src`
+in `(k+2)·rem+1`) + helper `lemma_inc_block` (absolute-index trigger). Multiply `(n)×k` = `move
+(n)→(n+1)` then `mult_back`. `rem1 = remaining-1` bridge tames the `(k+2)·remaining` distribution for
+the Lean `nonlinear_arith`.
+
+#### ✅ M2 DONE 2026-06-26 — `godel_gadgets2.rs` (29/0), full crate 600/0. divide + non-destructive `Div?`.
+All parametric in `k`, additive, no assume/admit/external_body.
+- **`lemma_dec_block`** — `count` consecutive `DecJump(reg, target)` fall through when `reg ≥ count`,
+  subtracting `count` (the dual of M1's `lemma_inc_block`).
+- **`lemma_div_back_loop`** (destructive `÷k`, divisible branch) — `div_back_instrs` =
+  `[DecJump(src, done)×k, Inc(dst), Jump]` (`k+2` instrs). From `src = k·groups`, `dst = acc`, runs
+  `(k+2)·groups + 1` steps to `dst := acc + groups`, `src := 0`. Per iteration = `dec_block(k)` +
+  `Inc(dst)` + `Jump`. Clean closed-form fuel (parametrized by `groups`, NOT raw `src`, so the fuel
+  stays linear like M1's `mult_back`). Precondition `src = k·groups` (caller guarantees divisibility
+  via a prior `Div?` verdict).
+- **`lemma_pair_block`** (helper) — the inner `[DecJump(src, notdiv); Inc(dst)]×p` straight-line walk.
+  **Existential fuel** (`exists|g|`, triangular-loop style) since the exit depends on `v` vs `p`: if
+  `v ≥ p` all pairs fall through to `start_pos + 2p` (`src=v−p`, `dst=acc+p`); if `v < p` the
+  `(v+1)`-th DecJump hits zero → `notdiv_pc` (`src=0`, `dst=acc+v`). Induction on `p`; the recursive
+  layout bridge re-indexes the `2·j` foralls by `j ↦ j+1`.
+- **`lemma_divtest_back_loop`** (`Div?((src),k)[e1]`) — `divtest_back_instrs` (`2k+1` instrs):
+  `index 0 = DecJump(src, e1_pc)` (group head), `index 1 = Inc(dst)`, `index 2j/2j+1 =
+  DecJump(src, notdiv_pc)/Inc(dst)` for `j=1..k-1`, `index 2k = Jump(start_pc)`. **Existential fuel.**
+  From `src = remaining`, `dst = acc`: head zero ⇒ exit `e1_pc` (DIVISIBLE); else consume one group
+  (head + `lemma_pair_block(p=k−1)`), full group ⇒ `Jump` back and recurse on `remaining−k`, partial
+  group ⇒ exit `notdiv_pc`. **Verdict** = exit pc, `e1_pc ⟺ remaining % k == 0`, restoring
+  `dst := acc + remaining`, `src := 0` on BOTH exits (non-destructive). Residue invariant via
+  **`lemma_mod_sub_k`** (`(x−k) % k == x % k`, from `lemma_fundamental_div_mod{,_converse}`).
+- **Lessons:** linear identities over `let`-bound nats (`(acc+k)+rem_k == acc+remaining` where
+  `rem_k=(remaining−k) as nat`) must be **plain asserts**, NOT `by(nonlinear_arith) requires …` — the
+  by-block context drops the `let`-bindings. `nat − nat` in a spec/ensures is `int`; cast with
+  `(x − k) as nat` (guarded by `x ≥ k`) to keep the type `nat` for `% k`.
+
+**NEXT = M3** (per-instruction block translation, see below) → M4 (assemble) → M5/M6 → G2-F.
+
+#### M3 design (per-instruction block-simulation lemmas — the live frontier)
+RM(2): `reg 0 = C1 = godel_encode(regs)`, `reg 1 = C2` (scratch, `=0` between blocks). Each RM(k)
+instruction → an RM(2) BLOCK. The block-sim lemmas should be **parametric in the block's start +
+exit addresses** (like `tm_sim.rs`'s per-instruction sims that take addresses + a local instruction
+match), so they DECOUPLE from M4's global address map. Per instruction:
+- **`Inc(r_i) → C1 × base(i)`** = `move (C1→C2)` [M1 `lemma_move_loop`, src=0,dst=1] then `mult_back
+  (C2→C1) ×base(i)` [M1 `lemma_mult_back_loop`, src=1,dst=0,k=base(i)]. Net `C1 := base(i)·C1`,
+  `C2 := 0`. Consumes `lemma_godel_inc` ⇒ `C1' = godel(regs[r_i++])`. Exit → next block.
+- **`DecJump(r_i, t) → [Div?(C1, base(i))[do_div]; Jump(t-block); do_div: C1 ÷= base(i); → next]`** =
+  `Div?` [M2 `lemma_divtest_back_loop`, after a `move (C1→C2)` so src=1,dst=0] — its verdict
+  `C1 % base(i) == 0 ⟺ r_i ≥ 1` (M2 + `lemma_godel_div_iff`). Divisible ⇒ `do_div` divide
+  `C1 ÷= base(i)` [`move` + M2 `lemma_div_back_loop`, groups = C1/base(i)] ⇒ `C1' = godel(regs[r_i--])`,
+  exit → next block. Not-divisible (`r_i=0`) ⇒ `Jump(t-block)`, `C1` already intact.
+  **Note:** `Div?`/`divide` each begin with their OWN `move (C1→C2)`; `Div?` restores `C1` so the
+  subsequent `divide`'s `move` sees the intact `C1`. Need `godel(regs) = base(i)·godel(regs[r_i−1])`
+  groups-form for `div_back` (`lemma_godel_dec` gives exactly `godel = base(i)·godel(dec)`, so
+  `groups = godel(dec)`, `C1 = base(i)·groups` ✓).
+- **`Jump(t) → Jump(t-block)`**, **`Halt → Halt`** (trivial 1-instr blocks).
+M4 lays the blocks out with a **prefix-sum address map** `block_start(pc)` (variable block sizes —
+the `Inc`/`DecJump` blocks are `Θ(base(i))` instrs; that's fine, the reduction's OUTPUT is just large,
+never executed) and discharges each block's local instruction-match precondition (the `lemma_quint_at`
+analog). M5 chains the block sims along the run (`lemma_sim_step → lemma_sim_run`); M6 = halts-iff.
+
 ### L2 (2-counter → TM) — the universal foundation, build FIRST
 
 Parametric-in-layout gadget library over the unary-separator tape (k=2 is the special case; the gadgets
