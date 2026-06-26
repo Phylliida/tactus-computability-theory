@@ -79,7 +79,8 @@ pub proof fn lemma_inc_sim(
         c.registers[1] == 0,
     ensures
         exists|g: nat|
-            run(m, c, g).pc == start_pc + base(i) + 5
+            1 <= g
+            && run(m, c, g).pc == start_pc + base(i) + 5
             && run(m, c, g).registers[0] == godel_encode(regs.update(i as int, (regs[i as int] + 1) as nat))
             && run(m, c, g).registers[1] == 0
             && run(m, c, g).registers.len() == 2,
@@ -89,6 +90,7 @@ pub proof fn lemma_inc_sim(
     lemma_multiply_block(m, c, k, start_pc, v);   // C1 := k·v, fuel (k+5)v+2.
     lemma_godel_inc(regs, i);                     // godel(regs[r_i++]) == base(i)·godel(regs) == k·v.
     let g: nat = ((k + 5) * v + 2) as nat;
+    assert(1 <= g);
     assert(run(m, c, g).registers[0] == k * v);
     assert(k * v == godel_encode(regs.update(i as int, (regs[i as int] + 1) as nat)));
 }
@@ -139,7 +141,8 @@ pub proof fn lemma_decjump_sim(
         c.registers[1] == 0,
     ensures
         exists|g: nat|
-            run(m, c, g).registers.len() == 2
+            1 <= g
+            && run(m, c, g).registers.len() == 2
             && run(m, c, g).registers[1] == 0
             && (if regs[i as int] >= 1 {
                     run(m, c, g).pc == start_pc + 3 * base(i) + 10
@@ -177,6 +180,7 @@ pub proof fn lemma_decjump_sim(
         //  divide block: do_div_pc = start_pc+2k+5; its layout fields match the requires (see below).
         lemma_divide_block(m, c_dt, k, do_div_pc, groups);
         let f_div: nat = ((3 * (k * groups) + 1) + ((k + 2) * groups + 1)) as nat;
+        assert(f_div >= 1);
         let c_div = run(m, c_dt, f_div);
         assert(do_div_pc + k + 5 == start_pc + 3 * k + 10);
         assert(c_div.pc == start_pc + 3 * k + 10);
@@ -185,6 +189,7 @@ pub proof fn lemma_decjump_sim(
         assert(c_div.registers.len() == 2);
         lemma_run_add(m, c, g_dt, f_div);
         let g: nat = (g_dt + f_div) as nat;
+        assert(1 <= g);
         assert(run(m, c, g) == c_div);
         assert(run(m, c, g).registers[0] == godel_encode(regs.update(i as int, (regs[i as int] - 1) as nat)));
     } else {
@@ -204,6 +209,7 @@ pub proof fn lemma_decjump_sim(
         assert(run(m, c_dt, 1) == c_jmp);
         lemma_run_add(m, c, g_dt, 1);
         let g: nat = (g_dt + 1) as nat;
+        assert(1 <= g);
         assert(run(m, c, g) == c_jmp);
         assert(run(m, c, g).registers[0] == v);
         assert(v == godel_encode(regs));
