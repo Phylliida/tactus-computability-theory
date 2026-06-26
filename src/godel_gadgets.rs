@@ -30,6 +30,66 @@ proof fn lemma_run_unfold_step(m: RegisterMachine, c: Configuration, fuel: nat)
 {
 }
 
+/// Run-composition: `run(m,c,a+b) == run(m, run(m,c,a), b)`.
+proof fn lemma_run_add(m: RegisterMachine, c: Configuration, a: nat, b: nat)
+    ensures
+        run(m, c, (a + b) as nat) == run(m, run(m, c, a), b),
+    decreases a,
+{
+    if a == 0 {
+    } else if is_halted(m, c) {
+        lemma_halted_run_identity(m, c, a);
+        lemma_halted_run_identity(m, c, (a + b) as nat);
+        lemma_halted_run_identity(m, c, b);
+    } else {
+        let next = step(m, c).unwrap();
+        lemma_run_add(m, next, (a - 1) as nat, b);
+        assert((a - 1) + b == (a + b) - 1);
+    }
+}
+
+//  ============================================================
+//  A straight-line block of `count` Inc(reg) instructions adds `count` to `reg`.
+//  ============================================================
+
+/// Running `count` consecutive `Inc(reg)` instructions from `start_pc` adds `count` to `reg`
+/// (all other registers unchanged), advancing the pc to `start_pc + count`.
+pub proof fn lemma_inc_block(
+    m: RegisterMachine, c: Configuration, reg: nat, count: nat, start_pc: nat,
+)
+    requires
+        start_pc + count <= m.instructions.len(),
+        forall|i: int| start_pc <= i < start_pc + count ==> #[trigger] m.instructions[i] == mk_inc(reg),
+        c.pc == start_pc,
+        c.registers.len() == m.num_regs,
+        reg < m.num_regs,
+    ensures
+        run(m, c, count).pc == start_pc + count,
+        run(m, c, count).registers[reg as int] == c.registers[reg as int] + count,
+        forall|r: int| 0 <= r < m.num_regs as int && r != reg as int
+            ==> run(m, c, count).registers[r] == c.registers[r],
+    decreases count,
+{
+    if count == 0 {
+        assert(run(m, c, 0) == c);
+    } else {
+        assert(m.instructions[start_pc as int] == mk_inc(reg));   // trigger at i = start_pc
+        assert(!is_halted(m, c));
+        lemma_run_unfold_step(m, c, count);
+        let c1 = step(m, c).unwrap();   // Inc(reg): reg++, pc = start_pc+1.
+        assert(c1.pc == start_pc + 1);
+        assert(c1.registers == c.registers.update(reg as int, c.registers[reg as int] + 1));
+        assert(c1.registers.len() == m.num_regs);
+        lemma_inc_block(m, c1, reg, (count - 1) as nat, start_pc + 1);
+        assert(run(m, c, count) == run(m, c1, (count - 1) as nat));
+        assert forall|r: int| 0 <= r < m.num_regs as int && r != reg as int
+        implies run(m, c, count).registers[r] == c.registers[r]
+        by {
+            assert(c1.registers[r] == c.registers[r]);
+        }
+    }
+}
+
 //  ============================================================
 //  M1 — the move gadget (Jump back-edge, no scratch).
 //  ============================================================
