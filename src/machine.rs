@@ -8,6 +8,10 @@ pub enum Instruction {
     Inc { register: nat },
     ///  If register `register` > 0, decrement it; otherwise jump to `target`.
     DecJump { register: nat, target: nat },
+    ///  Unconditionally jump to `target` (registers untouched). The Shepherdson–Sturgis
+    ///  `J[E1]` primitive — required for 2-counter loop back-edges where `DecJump`'s fused
+    ///  decrement would consume live data (see `docs/gap2-register-to-tm-plan.md`, R-ii).
+    Jump { target: nat },
     ///  Halt execution.
     Halt,
 }
@@ -34,6 +38,7 @@ pub open spec fn machine_wf(m: RegisterMachine) -> bool {
             Instruction::Inc { register } => register < m.num_regs,
             Instruction::DecJump { register, target } =>
                 register < m.num_regs && target <= m.instructions.len(),
+            Instruction::Jump { target } => target <= m.instructions.len(),
             Instruction::Halt => true,
         }
 }
@@ -77,6 +82,12 @@ pub open spec fn step(m: RegisterMachine, c: Configuration) -> Option<Configurat
                 } else {
                     None //  malformed
                 }
+            },
+            Instruction::Jump { target } => {
+                Some(Configuration {
+                    pc: target,
+                    registers: c.registers,
+                })
             },
         }
     }
@@ -169,6 +180,11 @@ pub proof fn lemma_step_preserves_config_wf(m: RegisterMachine, c: Configuration
             } else {
                 assert(next.pc == target);
             }
+            assert(next.registers.len() == m.num_regs);
+        },
+        Instruction::Jump { target } => {
+            assert(target <= m.instructions.len());
+            assert(next.pc == target);
             assert(next.registers.len() == m.num_regs);
         },
         Instruction::Halt => {

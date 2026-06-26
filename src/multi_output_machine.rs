@@ -100,6 +100,7 @@ proof fn lemma_build_multi_output_wf(
         Instruction::Inc { register } => register < nr,
         Instruction::DecJump { register, target } =>
             register < nr && target <= tl,
+        Instruction::Jump { target } => target <= tl,
         Instruction::Halt => true,
     } by {
         //  Each region: identify the instruction and check bounds

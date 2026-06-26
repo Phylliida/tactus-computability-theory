@@ -73,6 +73,10 @@ pub open spec fn instrument_body(
             Instruction::Inc { register: register + reg_offset },
         Instruction::DecJump { register, target } =>
             Instruction::DecJump { register: register + reg_offset, target: pc_offset + 2 * target },
+        Instruction::Jump { target } =>
+            //  Unconditional jump → DecJump on the always-zero scratch to the (stride-2 relocated)
+            //  target's guard. Same device as Halt, but to the jump's own target.
+            Instruction::DecJump { register: scratch, target: pc_offset + 2 * target },
         Instruction::Halt =>
             Instruction::DecJump { register: scratch, target: halted_pc },
     }
@@ -249,6 +253,18 @@ pub proof fn lemma_instrument_estep(
                 assert(c2.registers == c1.registers);
             }
         },
+        Instruction::Jump { target: t } => {
+            //  body = DecJump{scratch, pc_offset+2t}; scratch register is 0, so the
+            //  unconditional zero-branch fires: pc := pc_offset+2t, registers unchanged.
+            assert(body == Instruction::DecJump { register: scratch, target: pc_offset + 2 * t });
+            assert(t <= len);
+            assert(c1.registers[scratch as int] == 0);
+            assert(scratch < c1.registers.len());
+            assert(!is_halted(m, c1));
+            assert(s_sub.pc == t);
+            assert(c2.pc == pc_offset + 2 * t);
+            assert(c2.registers == c1.registers);
+        },
         Instruction::Halt => {
             assert(false);
         },
@@ -271,6 +287,7 @@ pub proof fn lemma_instrument_estep(
             Instruction::DecJump { register: r, target: t } => {
                 if c_sub.registers[r as int] > 0 { assert((r + reg_offset) != scratch as int); }
             },
+            Instruction::Jump { target: t } => { assert(c2.registers == c1.registers); },
             Instruction::Halt => { assert(false); },
         }
     }
@@ -280,6 +297,7 @@ pub proof fn lemma_instrument_estep(
             Instruction::DecJump { register: r, target: t } => {
                 if c_sub.registers[r as int] > 0 { assert((r + reg_offset) != fuel_reg as int); }
             },
+            Instruction::Jump { target: t } => { assert(c2.registers == c1.registers); },
             Instruction::Halt => { assert(false); },
         }
     }
@@ -303,6 +321,12 @@ pub proof fn lemma_instrument_estep(
                     }
                 }
             },
+            Instruction::Jump { target: t } => {
+                //  s_sub (Jump) keeps registers; c2 == c1 (zero-branch). Agreement carries from c1.
+                assert(c2.registers == c1.registers);
+                assert(s_sub.registers == c_sub.registers);
+                assert(c1.registers[(r + reg_offset) as int] == c_sub.registers[r as int]);
+            },
             Instruction::Halt => { assert(false); },
         }
     }
@@ -318,6 +342,7 @@ pub proof fn lemma_instrument_estep(
             Instruction::DecJump { register: rr, target: t } => {
                 if c_sub.registers[rr as int] > 0 { assert(jj != (rr + reg_offset) as int); }
             },
+            Instruction::Jump { target: t } => { assert(c2.registers == c1.registers); },
             Instruction::Halt => { assert(false); },
         }
     }
