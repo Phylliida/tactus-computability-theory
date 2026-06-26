@@ -152,6 +152,11 @@
 // RM(k) halts <==> rm_k_to_rm2(RM(k)) halts on the godel-encoded config. See godel_run.rs.
 #[cfg(verus_keep_ghost)] pub mod godel_run;
 
+// GAP-2 machine-content core: compose the three halting equivalences (godel_halts_iff +
+// rm_tm_origin_iff + tm_h0_iff) into RM(k) halts <==> mm_in_H0 of the assembled modular machine.
+// The self-contained brick G2-F consumes. See godel_modular.rs.
+#[cfg(verus_keep_ghost)] pub mod godel_modular;
+
 // GAP-2 / L0 brick B-L0.1: fuel-instrumented bounded simulation. `instrument` guards each original
 // instruction with a `DecJump{fuel, TIMEOUT}` so a run always returns within `fuel` steps with a
 // HALTED-or-TIMEOUT verdict (a non-halting enumerator stage cannot wedge the dovetail). The bounded
