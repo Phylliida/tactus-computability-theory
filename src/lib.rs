@@ -57,6 +57,10 @@
 // docs/gap2-register-to-tm-plan.md.
 #[cfg(verus_keep_ghost)] pub mod tm_run_lemmas;
 
+// GAP-2-E brick B1: the unary-separator two-counter tape layout (repunit_m blocks + wf). The config
+// representation the simulation gadgets edit. See tm_two_counter.rs.
+#[cfg(verus_keep_ghost)] pub mod tm_two_counter;
+
 // GAP-2 interface skeleton: the register->modular machine reduction (Aanderaa-Cohen Thm 2),
 // supplying the `mm` whose H0 realizes the CEER declared pairs. Type-level plumbing + the
 // reduction target; the simulation-correctness proofs are the deferred GAP-2 impl. See
