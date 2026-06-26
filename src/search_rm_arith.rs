@@ -481,6 +481,10 @@ pub proof fn lemma_pair_subroutine(
             && run(m, c, g).registers.len() == m.num_regs
             && run(m, c, g).registers[x_in as int] == 0
             && run(m, c, g).registers[y_in as int] == 0
+            && run(m, c, g).registers[xk as int] == 0
+            && run(m, c, g).registers[nc as int] == 0
+            && run(m, c, g).registers[t as int] == 0
+            && run(m, c, g).registers[ibak as int] == 0
             && (forall|r: int| 0 <= r < m.num_regs as int
                     && r != x_in as int && r != y_in as int && r != xk as int && r != nc as int
                     && r != i as int && r != t as int && r != ibak as int && r != p as int
@@ -599,6 +603,22 @@ pub proof fn lemma_pair_subroutine(
         assert(c3.registers[y_in as int] == c2.registers[y_in as int]) by { assert(y_in != nc && y_in != i && y_in != t && y_in != ibak); }
         assert(c4.registers[y_in as int] == c3.registers[y_in as int]) by { assert(y_in != t && y_in != p); }
         assert(c5.registers[y_in as int] == c4.registers[y_in as int]) by { assert(y_in != xk && y_in != p); }
+    }
+    //  xk drained in phase 3b; nc/ibak in phase 2; t in phase 3.
+    assert(run(m, c, g).registers[xk as int] == 0);   //  c5 = phase3b copy(xk->p): src drained
+    assert(run(m, c, g).registers[t as int] == 0) by {
+        assert(c4.registers[t as int] == 0);
+        assert(c5.registers[t as int] == c4.registers[t as int]) by { assert(t != xk && t != p); }
+    }
+    assert(run(m, c, g).registers[nc as int] == 0) by {
+        assert(c3.registers[nc as int] == 0);
+        assert(c4.registers[nc as int] == c3.registers[nc as int]) by { assert(nc != t && nc != p); }
+        assert(c5.registers[nc as int] == c4.registers[nc as int]) by { assert(nc != xk && nc != p); }
+    }
+    assert(run(m, c, g).registers[ibak as int] == 0) by {
+        assert(c3.registers[ibak as int] == 0);
+        assert(c4.registers[ibak as int] == c3.registers[ibak as int]) by { assert(ibak != t && ibak != p); }
+        assert(c5.registers[ibak as int] == c4.registers[ibak as int]) by { assert(ibak != xk && ibak != p); }
     }
 }
 

@@ -701,14 +701,23 @@ pub open spec fn srm_o2_zero(c: Configuration) -> bool {
     &&& c.registers[22] == 0 && c.registers[23] == 0 && c.registers[24] == 0 && c.registers[28] == 0
 }
 
-///  After C1 (orientation 1): result += [match1], d1B/d2B preserved, o2 working still zero.
+///  All temporaries zero EXCEPT d1B(8), d2B(10) (hold d1,d2) and ii1(13) (dirty after o1 pair).
+pub open spec fn srm_c1_zero(c: Configuration) -> bool {
+    &&& c.registers[7] == 0 && c.registers[9] == 0 && c.registers[11] == 0 && c.registers[12] == 0
+    &&& c.registers[14] == 0 && c.registers[15] == 0 && c.registers[16] == 0 && c.registers[17] == 0
+    &&& c.registers[18] == 0 && c.registers[19] == 0 && c.registers[20] == 0 && c.registers[21] == 0
+    &&& c.registers[22] == 0 && c.registers[23] == 0 && c.registers[24] == 0 && c.registers[25] == 0
+    &&& c.registers[26] == 0 && c.registers[27] == 0 && c.registers[28] == 0
+}
+
+///  After C1 (orientation 1): result += [match1], d1B/d2B hold d1/d2, all else zero (except ii1).
 pub open spec fn srm_post_c1(e: CEER, c: Configuration, inp_v: nat, t_v: nat, s_v: nat, cnt_v: nat, r_old: nat) -> bool {
     &&& c.pc == srm_cmp(e) + 44
     &&& srm_ctrl(e, c, inp_v, t_v, s_v, cnt_v,
             if srm_match1(e, s_v, t_v, inp_v) { (r_old + 1) as nat } else { r_old })
     &&& c.registers[8] == srm_decl1(e, s_v, t_v)
     &&& c.registers[10] == srm_decl2(e, s_v, t_v)
-    &&& srm_o2_zero(c)
+    &&& srm_c1_zero(c)
 }
 
 #[verifier::rlimit(10000)]
@@ -737,12 +746,20 @@ pub proof fn lemma_srm_phase_c1(
         run(m, c, g).pc == (cmp + 8) + 23
         && run(m, c, g).registers[16] == pair(d1, d2)
         && run(m, c, g).registers.len() == m.num_regs
+        && run(m, c, g).registers[7] == 0
+        && run(m, c, g).registers[9] == 0
+        && run(m, c, g).registers[11] == 0
+        && run(m, c, g).registers[12] == 0
+        && run(m, c, g).registers[14] == 0
+        && run(m, c, g).registers[15] == 0
         && (forall|r: int| 0 <= r < m.num_regs as int
                 && r != 7 && r != 9 && r != 11 && r != 12 && r != 13 && r != 14 && r != 15 && r != 16
                 ==> #[trigger] run(m, c, g).registers[r] == c.registers[r]);
     let cp = run(m, c, gp);
     assert(cp.pc == cmp + 31);
     assert(cp.registers[16] == pair(d1, d2));
+    assert(cp.registers[7] == 0 && cp.registers[9] == 0 && cp.registers[11] == 0
+        && cp.registers[12] == 0 && cp.registers[14] == 0 && cp.registers[15] == 0);
     assert(cp.registers[0] == inp_v) by { assert(0 != 7 && 0 != 9 && 0 != 11 && 0 != 12 && 0 != 13 && 0 != 14 && 0 != 15 && 0 != 16); }
     assert(cp.registers[17] == 0) by { assert(17 != 7 && 17 != 9 && 17 != 11 && 17 != 12 && 17 != 13 && 17 != 14 && 17 != 15 && 17 != 16); }
     assert(cp.registers[27] == 0) by { assert(27 != 7 && 27 != 9 && 27 != 11 && 27 != 12 && 27 != 13 && 27 != 14 && 27 != 15 && 27 != 16); }
