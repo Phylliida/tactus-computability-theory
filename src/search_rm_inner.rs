@@ -19,15 +19,22 @@ verus! {
 //  Register invariants
 //  ============================================================
 
-///  Every working temporary EXCEPT ii1(13)/ii2(20) is zero. These are the registers the CMP gadgets
-///  require zeroed; ii1/ii2 are cleared per iteration in the reset phase.
-pub open spec fn srm_temps_zero(c: Configuration) -> bool {
+///  Every working temporary EXCEPT ii1(13)/ii2(20) is zero. At INNER_TOP the ii's may be dirty (from
+///  the previous iteration's pair subroutines); they are cleared in the reset phase.
+pub open spec fn srm_temps_top(c: Configuration) -> bool {
     &&& c.registers[7] == 0   && c.registers[8] == 0   && c.registers[9] == 0   && c.registers[10] == 0
     &&& c.registers[11] == 0  && c.registers[12] == 0  && c.registers[14] == 0  && c.registers[15] == 0
     &&& c.registers[16] == 0  && c.registers[17] == 0
     &&& c.registers[18] == 0  && c.registers[19] == 0  && c.registers[21] == 0  && c.registers[22] == 0
     &&& c.registers[23] == 0  && c.registers[24] == 0
     &&& c.registers[25] == 0  && c.registers[26] == 0  && c.registers[27] == 0  && c.registers[28] == 0
+}
+
+///  All working temporaries are zero (incl. ii1/ii2) — holds from B2 through the CMP entry.
+pub open spec fn srm_temps_zero(c: Configuration) -> bool {
+    &&& srm_temps_top(c)
+    &&& c.registers[13] == 0
+    &&& c.registers[20] == 0
 }
 
 ///  Control registers: zero, inp, Treg, scnt, cnt, result (NOT fuel, which is set in the reset phase).
@@ -52,11 +59,11 @@ pub open spec fn srm_ebank_init(e: CEER, c: Configuration, s_v: nat) -> bool {
     &&& (forall|r: int| 30 <= r < 29 + srm_ne(e) ==> #[trigger] c.registers[r] == 0)
 }
 
-///  At INNER_TOP with the per-iteration register state.
+///  At INNER_TOP with the per-iteration register state (ii1/ii2 may be dirty).
 pub open spec fn srm_at_top(e: CEER, c: Configuration, inp_v: nat, t_v: nat, s_v: nat, cnt_v: nat, r_v: nat) -> bool {
     &&& c.pc == 8
     &&& srm_ctrl(e, c, inp_v, t_v, s_v, cnt_v, r_v)
-    &&& srm_temps_zero(c)
+    &&& srm_temps_top(c)
 }
 
 ///  At B2 (post-reset): E-bank all zero.
@@ -176,6 +183,7 @@ pub proof fn lemma_srm_phase_r1(
     assert(c3.registers[4] == s_v);
     assert(c3.registers[5] == (cnt_v - 1) as nat);
     assert(c3.registers[6] == r_v);
+    assert(c3.registers[13] == 0) by { assert(c2.registers[13] == 0); }
     assert(srm_temps_zero(c3));
     assert(srm_ebank_zero(e, c3)) by {
         //  E-bank zeroed by clear_bank; ii-clears (regs 13,20) don't touch r>=29
