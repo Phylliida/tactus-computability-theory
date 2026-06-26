@@ -479,6 +479,8 @@ pub proof fn lemma_pair_subroutine(
             run(m, c, g).pc == sp + 23
             && #[trigger] run(m, c, g).registers[p as int] == pair(x, y)
             && run(m, c, g).registers.len() == m.num_regs
+            && run(m, c, g).registers[x_in as int] == 0
+            && run(m, c, g).registers[y_in as int] == 0
             && (forall|r: int| 0 <= r < m.num_regs as int
                     && r != x_in as int && r != y_in as int && r != xk as int && r != nc as int
                     && r != i as int && r != t as int && r != ibak as int && r != p as int
@@ -584,6 +586,20 @@ pub proof fn lemma_pair_subroutine(
         assert(c1.registers[r] == c.registers[r]) by { assert(r != x_in as int && r != nc as int && r != xk as int); }
     }
     assert(run(m, c, g).registers[p as int] == pair(x, y));
+    //  x_in drained in phase 1, y_in in phase 1b; both untouched afterward.
+    assert(run(m, c, g).registers[x_in as int] == 0) by {
+        assert(c1.registers[x_in as int] == 0);
+        assert(c2.registers[x_in as int] == c1.registers[x_in as int]) by { assert(x_in != y_in && x_in != nc); }
+        assert(c3.registers[x_in as int] == c2.registers[x_in as int]) by { assert(x_in != nc && x_in != i && x_in != t && x_in != ibak); }
+        assert(c4.registers[x_in as int] == c3.registers[x_in as int]) by { assert(x_in != t && x_in != p); }
+        assert(c5.registers[x_in as int] == c4.registers[x_in as int]) by { assert(x_in != xk && x_in != p); }
+    }
+    assert(run(m, c, g).registers[y_in as int] == 0) by {
+        assert(c2.registers[y_in as int] == 0);
+        assert(c3.registers[y_in as int] == c2.registers[y_in as int]) by { assert(y_in != nc && y_in != i && y_in != t && y_in != ibak); }
+        assert(c4.registers[y_in as int] == c3.registers[y_in as int]) by { assert(y_in != t && y_in != p); }
+        assert(c5.registers[y_in as int] == c4.registers[y_in as int]) by { assert(y_in != xk && y_in != p); }
+    }
 }
 
 } //  verus!
