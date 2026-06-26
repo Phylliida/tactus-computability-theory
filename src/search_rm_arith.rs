@@ -12,7 +12,7 @@
 use vstd::prelude::*;
 use crate::machine::*;
 use crate::multi_output_primitives::{mk_inc, mk_dj, lemma_copy_loop_inner};
-use crate::pairing::triangular;
+use crate::pairing::{triangular, pair};
 
 verus! {
 
@@ -387,6 +387,203 @@ pub proof fn lemma_triangular_loop(
         }
         assert(run(m, c, g).registers[t as int] == triangular(k + remaining));
     }
+}
+
+//  ============================================================
+//  Forward Cantor pair subroutine:  p := pair(x, y) = triangular(x+y) + x
+//  ============================================================
+//
+//  Inputs `x_in = x`, `y_in = y`; working registers `xk, nc, i, t, ibak, p, zero` all start at 0.
+//  Layout (`sp = start_pc`):
+//    sp+0 .. sp+4   double_dist(x_in → nc, xk)           nc := x, xk := x  (x_in drained)
+//    sp+4 .. sp+7   copy(y_in → nc)                       nc := x + y       (y_in drained)
+//    sp+7 .. sp+17  triangular_loop(nc, i, t, ibak)       t := triangular(x+y), nc:=0, i:=x+y
+//    sp+17.. sp+20  copy(t → p)                           p := triangular(x+y)   (t drained)
+//    sp+20.. sp+23  copy(xk → p)                          p := triangular(x+y)+x = pair(x,y)
+//  End pc = sp + 23.
+
+pub open spec fn pair_subroutine_frame(
+    m: RegisterMachine,
+    x_in: nat, y_in: nat, xk: nat, nc: nat, i: nat, t: nat, ibak: nat, zero: nat, p: nat,
+    sp: nat,
+) -> bool {
+    //  phase 1: double_dist(x_in → nc, xk)  at sp
+    &&& sp + 23 <= m.instructions.len()
+    &&& m.instructions[sp as int]        == mk_dj(x_in, sp + 4)
+    &&& m.instructions[(sp + 1) as int]  == mk_inc(nc)
+    &&& m.instructions[(sp + 2) as int]  == mk_inc(xk)
+    &&& m.instructions[(sp + 3) as int]  == mk_dj(zero, sp)
+    //  phase 1b: copy(y_in → nc)  at sp+4
+    &&& m.instructions[(sp + 4) as int]  == mk_dj(y_in, sp + 7)
+    &&& m.instructions[(sp + 5) as int]  == mk_inc(nc)
+    &&& m.instructions[(sp + 6) as int]  == mk_dj(zero, sp + 4)
+    //  phase 2: triangular loop  at sp+7  (10 instrs)
+    &&& m.instructions[(sp + 7) as int]  == mk_dj(nc, sp + 17)
+    &&& m.instructions[(sp + 8) as int]  == mk_inc(i)
+    &&& m.instructions[(sp + 9) as int]  == mk_dj(i, sp + 12)
+    &&& m.instructions[(sp + 10) as int] == mk_inc(ibak)
+    &&& m.instructions[(sp + 11) as int] == mk_dj(zero, sp + 9)
+    &&& m.instructions[(sp + 12) as int] == mk_dj(ibak, sp + 16)
+    &&& m.instructions[(sp + 13) as int] == mk_inc(t)
+    &&& m.instructions[(sp + 14) as int] == mk_inc(i)
+    &&& m.instructions[(sp + 15) as int] == mk_dj(zero, sp + 12)
+    &&& m.instructions[(sp + 16) as int] == mk_dj(zero, sp + 7)
+    //  phase 3: copy(t → p)  at sp+17
+    &&& m.instructions[(sp + 17) as int] == mk_dj(t, sp + 20)
+    &&& m.instructions[(sp + 18) as int] == mk_inc(p)
+    &&& m.instructions[(sp + 19) as int] == mk_dj(zero, sp + 17)
+    //  phase 3b: copy(xk → p)  at sp+20
+    &&& m.instructions[(sp + 20) as int] == mk_dj(xk, sp + 23)
+    &&& m.instructions[(sp + 21) as int] == mk_inc(p)
+    &&& m.instructions[(sp + 22) as int] == mk_dj(zero, sp + 20)
+    //  registers distinct + in bounds
+    &&& x_in < m.num_regs && y_in < m.num_regs && xk < m.num_regs && nc < m.num_regs
+        && i < m.num_regs && t < m.num_regs && ibak < m.num_regs && zero < m.num_regs && p < m.num_regs
+    &&& all_distinct9(x_in, y_in, xk, nc, i, t, ibak, zero, p)
+}
+
+///  Nine pairwise-distinct register indices.
+pub open spec fn all_distinct9(a: nat, b: nat, c: nat, d: nat, e: nat, f: nat, g: nat, h: nat, j: nat) -> bool {
+    &&& a != b && a != c && a != d && a != e && a != f && a != g && a != h && a != j
+    &&& b != c && b != d && b != e && b != f && b != g && b != h && b != j
+    &&& c != d && c != e && c != f && c != g && c != h && c != j
+    &&& d != e && d != f && d != g && d != h && d != j
+    &&& e != f && e != g && e != h && e != j
+    &&& f != g && f != h && f != j
+    &&& g != h && g != j
+    &&& h != j
+}
+
+///  The pair subroutine computes `p := pair(x, y)` and reaches `sp + 23`.
+#[verifier::rlimit(8000)]
+pub proof fn lemma_pair_subroutine(
+    m: RegisterMachine, c: Configuration,
+    x_in: nat, y_in: nat, xk: nat, nc: nat, i: nat, t: nat, ibak: nat, zero: nat, p: nat,
+    sp: nat, x: nat, y: nat,
+)
+    requires
+        pair_subroutine_frame(m, x_in, y_in, xk, nc, i, t, ibak, zero, p, sp),
+        c.pc == sp,
+        c.registers.len() == m.num_regs,
+        c.registers[x_in as int] == x,
+        c.registers[y_in as int] == y,
+        c.registers[xk as int] == 0,
+        c.registers[nc as int] == 0,
+        c.registers[i as int] == 0,
+        c.registers[t as int] == 0,
+        c.registers[ibak as int] == 0,
+        c.registers[zero as int] == 0,
+        c.registers[p as int] == 0,
+    ensures
+        exists|g: nat|
+            run(m, c, g).pc == sp + 23
+            && #[trigger] run(m, c, g).registers[p as int] == pair(x, y)
+            && run(m, c, g).registers.len() == m.num_regs
+            && (forall|r: int| 0 <= r < m.num_regs as int
+                    && r != x_in as int && r != y_in as int && r != xk as int && r != nc as int
+                    && r != i as int && r != t as int && r != ibak as int && r != p as int
+                    ==> #[trigger] run(m, c, g).registers[r] == c.registers[r]),
+{
+    //  --- phase 1: double_dist(x_in → nc, xk), 4x+1 steps:  nc:=x, xk:=x, x_in:=0 ---
+    lemma_double_dist_inner(m, c, x_in, nc, xk, zero, sp, 0, 0, x);
+    let s1: nat = (4 * x + 1) as nat;
+    let c1 = run(m, c, s1);
+    assert(c1.pc == sp + 4);
+    assert(c1.registers[nc as int] == 0 + x);
+    assert(c1.registers[xk as int] == 0 + x);
+    assert(c1.registers[x_in as int] == 0);
+    assert(c1.registers[zero as int] == 0) by { assert(zero != x_in && zero != nc && zero != xk); }
+    assert(c1.registers[y_in as int] == y) by { assert(y_in != x_in && y_in != nc && y_in != xk); }
+    assert(c1.registers[i as int] == 0) by { assert(i != x_in && i != nc && i != xk); }
+    assert(c1.registers[t as int] == 0) by { assert(t != x_in && t != nc && t != xk); }
+    assert(c1.registers[ibak as int] == 0) by { assert(ibak != x_in && ibak != nc && ibak != xk); }
+    assert(c1.registers[p as int] == 0) by { assert(p != x_in && p != nc && p != xk); }
+    lemma_run_preserves_len(m, c, s1);
+
+    //  --- phase 1b: copy(y_in → nc), 3y+1 steps:  nc:=x+y, y_in:=0 ---
+    lemma_copy_loop_inner(m, c1, y_in, nc, zero, sp + 4, x + y, x, y);
+    let s2: nat = (3 * y + 1) as nat;
+    let c2 = run(m, c1, s2);
+    assert(c2.pc == sp + 7);
+    assert(c2.registers[nc as int] == x + y);
+    assert(c2.registers[y_in as int] == 0);
+    assert(c2.registers[zero as int] == 0);
+    //  xk, i, t, ibak, p preserved (r != y_in, nc)
+    assert(c2.registers[xk as int] == x) by { assert(xk != y_in && xk != nc); }
+    assert(c2.registers[i as int] == 0) by { assert(i != y_in && i != nc); }
+    assert(c2.registers[t as int] == 0) by { assert(t != y_in && t != nc); }
+    assert(c2.registers[ibak as int] == 0) by { assert(ibak != y_in && ibak != nc); }
+    assert(c2.registers[p as int] == 0) by { assert(p != y_in && p != nc); }
+    lemma_run_preserves_len(m, c1, s2);
+
+    //  --- phase 2: triangular loop, t:=triangular(x+y), nc:=0, i:=x+y, existential g_tri ---
+    assert(triangular_loop_frame(m, nc, i, t, ibak, zero, sp + 7));
+    lemma_triangular_loop(m, c2, nc, i, t, ibak, zero, sp + 7, 0, x + y);
+    let g_tri = choose|g: nat|
+        run(m, c2, g).pc == (sp + 7) + 10
+        && run(m, c2, g).registers[t as int] == triangular(0 + (x + y))
+        && run(m, c2, g).registers[i as int] == 0 + (x + y)
+        && run(m, c2, g).registers[nc as int] == 0
+        && run(m, c2, g).registers[ibak as int] == 0
+        && run(m, c2, g).registers[zero as int] == 0
+        && run(m, c2, g).registers.len() == m.num_regs
+        && (forall|r: int| 0 <= r < m.num_regs as int
+                && r != nc as int && r != i as int && r != t as int && r != ibak as int
+                ==> #[trigger] run(m, c2, g).registers[r] == c2.registers[r]);
+    let c3 = run(m, c2, g_tri);
+    assert(c3.pc == sp + 17);
+    assert(c3.registers[t as int] == triangular(x + y));
+    //  xk, p preserved across the loop (r ∉ {nc,i,t,ibak})
+    assert(c3.registers[xk as int] == x) by { assert(xk != nc && xk != i && xk != t && xk != ibak); }
+    assert(c3.registers[p as int] == 0) by { assert(p != nc && p != i && p != t && p != ibak); }
+    assert(c3.registers[zero as int] == 0);
+    assert(c3.registers.len() == m.num_regs);
+
+    //  --- phase 3: copy(t → p), 3*triangular(x+y)+1 steps:  p:=triangular(x+y), t:=0 ---
+    lemma_copy_loop_inner(m, c3, t, p, zero, sp + 17, triangular(x + y), 0, triangular(x + y));
+    let s4: nat = (3 * triangular(x + y) + 1) as nat;
+    let c4 = run(m, c3, s4);
+    assert(c4.pc == sp + 20);
+    assert(c4.registers[p as int] == triangular(x + y));
+    assert(c4.registers[zero as int] == 0);
+    assert(c4.registers[xk as int] == x) by { assert(xk != t && xk != p); }
+    lemma_run_preserves_len(m, c3, s4);
+
+    //  --- phase 3b: copy(xk → p), 3x+1 steps:  p:=triangular(x+y)+x = pair(x,y), xk:=0 ---
+    lemma_copy_loop_inner(m, c4, xk, p, zero, sp + 20, triangular(x + y) + x, triangular(x + y), x);
+    let s5: nat = (3 * x + 1) as nat;
+    let c5 = run(m, c4, s5);
+    assert(c5.pc == sp + 23);
+    assert(c5.registers[p as int] == triangular(x + y) + x);
+    assert(pair(x, y) == triangular(x + y) + x);
+    lemma_run_preserves_len(m, c4, s5);
+
+    //  --- chain:  run(m,c,g) == c5,  peeling each segment from the front via run_add ---
+    let g: nat = (s1 + s2 + g_tri + s4 + s5) as nat;
+    lemma_run_add(m, c, s1, (s2 + g_tri + s4 + s5) as nat);   //  run(c,g) == run(c1, s2+g_tri+s4+s5)
+    lemma_run_add(m, c1, s2, (g_tri + s4 + s5) as nat);       //          == run(c2, g_tri+s4+s5)
+    lemma_run_add(m, c2, g_tri, (s4 + s5) as nat);            //          == run(c3, s4+s5)
+    lemma_run_add(m, c3, s4, s5);                             //          == run(c4, s5) == c5
+    assert(run(m, c, g) == c5);
+
+    //  --- frame: regs outside the working set preserved through all phases ---
+    assert forall|r: int| 0 <= r < m.num_regs as int
+        && r != x_in as int && r != y_in as int && r != xk as int && r != nc as int
+        && r != i as int && r != t as int && r != ibak as int && r != p as int
+    implies #[trigger] run(m, c, g).registers[r] == c.registers[r]
+    by {
+        //  c5 = run(c4,s5): copy(xk→p) preserves r ∉ {xk,p}
+        assert(c5.registers[r] == c4.registers[r]) by { assert(r != xk as int && r != p as int); }
+        //  c4 = run(c3,s4): copy(t→p) preserves r ∉ {t,p}
+        assert(c4.registers[r] == c3.registers[r]) by { assert(r != t as int && r != p as int); }
+        //  c3 = run(c2,g_tri): triangular loop preserves r ∉ {nc,i,t,ibak}
+        assert(c3.registers[r] == c2.registers[r]) by { assert(r != nc as int && r != i as int && r != t as int && r != ibak as int); }
+        //  c2 = run(c1,s2): copy(y_in→nc) preserves r ∉ {y_in,nc}
+        assert(c2.registers[r] == c1.registers[r]) by { assert(r != y_in as int && r != nc as int); }
+        //  c1 = run(c,s1): double_dist(x_in→nc,xk) preserves r ∉ {x_in,nc,xk}
+        assert(c1.registers[r] == c.registers[r]) by { assert(r != x_in as int && r != nc as int && r != xk as int); }
+    }
+    assert(run(m, c, g).registers[p as int] == pair(x, y));
 }
 
 } //  verus!
