@@ -597,7 +597,11 @@ pub proof fn lemma_instrument_reaches_sink(
                     run_halts(rm_sub, c_sub, phi)
                     && (forall|r: int| 0 <= r < rm_sub.num_regs as int ==>
                             #[trigger] run(m, c, g).registers[(r + reg_offset) as int]
-                                == run(rm_sub, c_sub, phi).registers[r])),
+                                == run(rm_sub, c_sub, phi).registers[r]))
+            && (forall|jj: int| 0 <= jj < m.num_regs as int
+                    && (jj < reg_offset || jj >= reg_offset + rm_sub.num_regs)
+                    && jj != fuel_reg as int && jj != scratch as int
+                    ==> #[trigger] run(m, c, g).registers[jj] == c.registers[jj]),
     decreases phi,
 {
     reveal(machine_wf);
@@ -617,6 +621,10 @@ pub proof fn lemma_instrument_reaches_sink(
                 && (forall|r: int| 0 <= r < rm_sub.num_regs as int ==>
                         run(m, c, g).registers[(r + reg_offset) as int]
                             == run(rm_sub, c_sub, phi).registers[r]));
+            assert(forall|jj: int| 0 <= jj < m.num_regs as int
+                && (jj < reg_offset || jj >= reg_offset + rm_sub.num_regs)
+                && jj != fuel_reg as int && jj != scratch as int
+                ==> run(m, c, g).registers[jj] == c.registers[jj]);
             assert(g <= 2 * phi + 1);
         } else {
             assert(rm_sub.instructions[c_sub.pc as int] is Halt) by {
@@ -632,6 +640,10 @@ pub proof fn lemma_instrument_reaches_sink(
                     && (forall|r: int| 0 <= r < rm_sub.num_regs as int ==>
                             run(m, c, g).registers[(r + reg_offset) as int]
                                 == run(rm_sub, c_sub, phi).registers[r]));
+                assert(forall|jj: int| 0 <= jj < m.num_regs as int
+                    && (jj < reg_offset || jj >= reg_offset + rm_sub.num_regs)
+                    && jj != fuel_reg as int && jj != scratch as int
+                    ==> run(m, c, g).registers[jj] == c.registers[jj]);
                 assert(g <= 2 * phi + 1);
             } else {
                 assert(phi == 0);
@@ -639,6 +651,7 @@ pub proof fn lemma_instrument_reaches_sink(
                     fuel_reg, scratch, c_sub, c);
                 let g: nat = 1;
                 assert(run(m, c, g).pc == timeout_pc);
+                assert(run(m, c, g).registers == c.registers);
                 assert(g <= 2 * phi + 1);
             }
         }
@@ -650,6 +663,7 @@ pub proof fn lemma_instrument_reaches_sink(
                 fuel_reg, scratch, c_sub, c);
             let g: nat = 1;
             assert(run(m, c, g).pc == timeout_pc);
+            assert(run(m, c, g).registers == c.registers);
             assert(g <= 2 * phi + 1);
         } else {
             lemma_instrument_estep(rm_sub, m, reg_offset, pc_offset, halted_pc, timeout_pc,
@@ -665,7 +679,11 @@ pub proof fn lemma_instrument_reaches_sink(
                         run_halts(rm_sub, s_sub, (phi - 1) as nat)
                         && (forall|r: int| 0 <= r < rm_sub.num_regs as int ==>
                                 #[trigger] run(m, c2, g).registers[(r + reg_offset) as int]
-                                    == run(rm_sub, s_sub, (phi - 1) as nat).registers[r]));
+                                    == run(rm_sub, s_sub, (phi - 1) as nat).registers[r]))
+                && (forall|jj: int| 0 <= jj < m.num_regs as int
+                        && (jj < reg_offset || jj >= reg_offset + rm_sub.num_regs)
+                        && jj != fuel_reg as int && jj != scratch as int
+                        ==> #[trigger] run(m, c2, g).registers[jj] == c2.registers[jj]);
             lemma_run_add(m, c, 2, g_inner);
             let g: nat = (2 + g_inner) as nat;
             assert(run(m, c, g) == run(m, c2, g_inner));
@@ -686,6 +704,15 @@ pub proof fn lemma_instrument_reaches_sink(
                     lemma_run_unfold_step(rm_sub, c_sub, phi);
                     assert(run(rm_sub, c_sub, phi) == run(rm_sub, s_sub, (phi - 1) as nat));
                 }
+            }
+            //  frame compose: out-of-bank regs of run(m,c,g) == c2's (IH frame) == c's (estep frame)
+            assert forall|jj: int| 0 <= jj < m.num_regs as int
+                && (jj < reg_offset || jj >= reg_offset + rm_sub.num_regs)
+                && jj != fuel_reg as int && jj != scratch as int
+            implies #[trigger] run(m, c, g).registers[jj] == c.registers[jj]
+            by {
+                assert(run(m, c2, g_inner).registers[jj] == c2.registers[jj]);
+                assert(c2.registers[jj] == c.registers[jj]);
             }
         }
     }
