@@ -175,12 +175,15 @@ identify `mm_in_H0(mm, enc(a,b)) ⟺ declared_equiv(e,a,b)` and discharge `ceer_
   abstraction) — matches the verified `multi_output_primitives` copy-loop style.
 
 **Status 2026-06-26:** design locked. **DONE & verified, all committed, purely additive (no edits to
-existing modules):** B0 `tm_run_lemmas.rs` (run-split/halts-at bridges), B1 `tm_two_counter.rs` (layout +
-repunit + wf), gadget infra + B2 `tm_gadget.rs` (`lemma_tm_step_picks` + bounded peek), B3 `tm_walk.rs`
-(both walk loops) + `tm_inc.rs` (`lemma_inc`, the full inc walk gadget). **NEXT = B4 dec gadget** (design
-above), then B5 (per-instruction Inc/DecJump quintuple blocks + one-RM-step↔one-gadget-run), B6 (run sim
-+ cleanup-to-origin), L1 (k→2 Gödel, the one Euclid lemma), L0 (search_rm dovetailer), G2-F (wire
-`config_encode`/`enc` + discharge `ceer_realizes`). Lessons banked for the next builder:
+existing modules); full crate 334/0:** B0 `tm_run_lemmas.rs` (run-split/halts-at bridges), B1
+`tm_two_counter.rs` (layout + repunit + wf), gadget infra + B2 `tm_gadget.rs` (`lemma_tm_step_picks` +
+bounded peek), B3 `tm_walk.rs` (both walk loops) + `tm_inc.rs` (`lemma_inc`), **B4 `tm_dec.rs`
+(`lemma_dec`)**. **The full gadget library is complete** — peek + inc + dec over the two-counter layout.
+**NEXT = B5** (assemble per-instruction Inc/DecJump quintuple blocks into the full `rm_to_tm(R2)` TM with
+state allocation — the `build_multi_output` analog; DecJump folds the B2 peek; thread `tm_wf` determinism;
+prove one RM(2) step ↔ one gadget run), then B6 (run sim + cleanup-to-origin), L1 (k→2 Gödel, the one
+Euclid lemma), L0 (search_rm dovetailer), G2-F (wire `config_encode`/`enc` + discharge `ceer_realizes`).
+Lessons banked for the next builder:
 - `tm_run(.,1)==X` unfolds need an explicit `assert(tm_run(.,0)==X)` hint right before (Z3 is
   context-sensitive — adding/removing asserts elsewhere can flip these; keep the hints).
 - Build next configs as `let c = apply_quint(tm.quints[i], prev, m);` then assert its *fields*; do NOT
