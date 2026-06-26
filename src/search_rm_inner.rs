@@ -26,17 +26,17 @@ verus! {
 pub open spec fn srm_temps_top(c: Configuration) -> bool {
     &&& c.registers[7] == 0   && c.registers[8] == 0   && c.registers[9] == 0   && c.registers[10] == 0
     &&& c.registers[11] == 0  && c.registers[12] == 0  && c.registers[14] == 0  && c.registers[15] == 0
-    &&& c.registers[16] == 0  && c.registers[17] == 0
     &&& c.registers[18] == 0  && c.registers[19] == 0  && c.registers[21] == 0  && c.registers[22] == 0
-    &&& c.registers[23] == 0  && c.registers[24] == 0
     &&& c.registers[25] == 0  && c.registers[26] == 0  && c.registers[27] == 0  && c.registers[28] == 0
 }
 
-///  All working temporaries are zero (incl. ii1/ii2) — holds from B2 through the CMP entry.
+///  All working temporaries are zero — holds from B2 through the CMP entry. The 6 registers the
+///  pair/eq subroutines leave dirty (ii1=13, p1=16, ic1=17, ii2=20, p2=23, ic2=24) are excluded from
+///  srm_temps_top (dirty at INNER_TOP) but cleared in the reset phase, so they ARE zero here.
 pub open spec fn srm_temps_zero(c: Configuration) -> bool {
     &&& srm_temps_top(c)
-    &&& c.registers[13] == 0
-    &&& c.registers[20] == 0
+    &&& c.registers[13] == 0 && c.registers[16] == 0 && c.registers[17] == 0
+    &&& c.registers[20] == 0 && c.registers[23] == 0 && c.registers[24] == 0
 }
 
 ///  Control registers: zero, inp, Treg, scnt, cnt, result (NOT fuel, which is set in the reset phase).
@@ -141,59 +141,115 @@ pub proof fn lemma_srm_phase_r1(
     let c1 = run(m, c0, g1);
     assert(m.num_regs == nr);
     assert(c1.pc == 9 + 2 * ne);
-    assert(c1.pc == srm_clrii1(e));
+    assert(c1.pc == srm_clr(e, 0));
+    assert(c1.registers[1] == 0) by { assert(c1.registers[1] == (if 29 <= 1 && 1 < 29 + ne { 0nat } else { c0.registers[1] })); }
 
-    //  --- clear ii1 at clrii1: clear_instrs(13, 1, clrii1) ---
-    lemma_srm_index(e, srm_clrii1(e) as int);
-    lemma_srm_index(e, srm_clrii1(e) as int + 1);
-    assert(m.instructions[srm_clrii1(e) as int] == mk_dj(13, srm_clrii1(e) + 2));
-    assert(m.instructions[(srm_clrii1(e) + 1) as int] == mk_dj(1, srm_clrii1(e)));
-    assert(c1.pc == srm_clrii1(e));
-    assert(c1.registers[1] == 0) by { assert(!(29 <= 1 < 29 + ne)); }
-    lemma_clear_loop(m, c1, 13, 1, srm_clrii1(e), c1.registers[13]);
+    //  --- clear the 6 dirty regs 13,16,17,20,23,24 at srm_clr(e,0..5) ---
+    let c2 = lemma_srm_clear6(e, c1, 13, 0);
+    let c3 = lemma_srm_clear6(e, c2, 16, 1);
+    let c4 = lemma_srm_clear6(e, c3, 17, 2);
+    let c5 = lemma_srm_clear6(e, c4, 20, 3);
+    let c6 = lemma_srm_clear6(e, c5, 23, 4);
+    let c7 = lemma_srm_clear6(e, c6, 24, 5);
+    assert(c7.pc == srm_clr(e, 5) + 2);
+    assert(c7.pc == srm_b2(e));
+
+    //  --- compose: run(m, c, g) == c7 ---
     let s2: nat = (2 * c1.registers[13] + 1) as nat;
-    let c2 = run(m, c1, s2);
-    assert(c2.pc == srm_clrii2(e));
-    assert(c2.registers[13] == 0);
-
-    //  --- clear ii2 at clrii2: clear_instrs(20, 1, clrii2) ---
-    lemma_srm_index(e, srm_clrii2(e) as int);
-    lemma_srm_index(e, srm_clrii2(e) as int + 1);
-    assert(m.instructions[srm_clrii2(e) as int] == mk_dj(20, srm_clrii2(e) + 2));
-    assert(m.instructions[(srm_clrii2(e) + 1) as int] == mk_dj(1, srm_clrii2(e)));
-    assert(c2.registers[1] == 0) by { assert(20 != 13); }
-    lemma_clear_loop(m, c2, 20, 1, srm_clrii2(e), c2.registers[20]);
-    let s3: nat = (2 * c2.registers[20] + 1) as nat;
-    let c3 = run(m, c2, s3);
-    assert(c3.pc == srm_clrii2(e) + 2);
-    assert(c3.pc == srm_b2(e));
-    assert(c3.registers[20] == 0);
-
-    //  --- compose: run(m, c, g) == c3 ---
-    lemma_run_add(m, c1, s2, s3);
-    lemma_run_add(m, c0, g1, (s2 + s3) as nat);
-    lemma_run_add(m, c, 1, (g1 + s2 + s3) as nat);
-    let g: nat = (1 + g1 + s2 + s3) as nat;
-    assert(run(m, c, g) == c3);
+    let s3: nat = (2 * c2.registers[16] + 1) as nat;
+    let s4: nat = (2 * c3.registers[17] + 1) as nat;
+    let s5: nat = (2 * c4.registers[20] + 1) as nat;
+    let s6: nat = (2 * c5.registers[23] + 1) as nat;
+    let s7: nat = (2 * c6.registers[24] + 1) as nat;
+    lemma_run_add(m, c5, s6, s7);
+    lemma_run_add(m, c4, s5, (s6 + s7) as nat);
+    lemma_run_add(m, c3, s4, (s5 + s6 + s7) as nat);
+    lemma_run_add(m, c2, s3, (s4 + s5 + s6 + s7) as nat);
+    lemma_run_add(m, c1, s2, (s3 + s4 + s5 + s6 + s7) as nat);
+    lemma_run_add(m, c0, g1, (s2 + s3 + s4 + s5 + s6 + s7) as nat);
+    lemma_run_add(m, c, 1, (g1 + s2 + s3 + s4 + s5 + s6 + s7) as nat);
+    let g: nat = (1 + g1 + s2 + s3 + s4 + s5 + s6 + s7) as nat;
+    assert(run(m, c, g) == c7);
 
     //  --- register postconditions ---
-    //  control + temps preserved through the three clears (none touches 0,1,3,4,5(after guard),6 or non-ii temps)
-    assert(c3.registers.len() == nr);
-    assert(c3.registers[1] == 0);
-    assert(c3.registers[0] == inp_v);
-    assert(c3.registers[3] == t_v);
-    assert(c3.registers[4] == s_v);
-    assert(c3.registers[5] == (cnt_v - 1) as nat);
-    assert(c3.registers[6] == r_v);
-    assert(c3.registers[13] == 0) by { assert(c2.registers[13] == 0); }
-    assert(srm_temps_zero(c3));
-    assert(srm_ebank_zero(e, c3)) by {
-        //  E-bank zeroed by clear_bank; ii-clears (regs 13,20) don't touch r>=29
-        assert forall|r: int| 29 <= r < 29 + ne implies #[trigger] c3.registers[r] == 0 by {
+    //  the 6 cleared regs are 0 at c7 (each preserved by all later clears, which target distinct regs)
+    assert(c7.registers[13] == 0 && c7.registers[16] == 0 && c7.registers[17] == 0
+        && c7.registers[20] == 0 && c7.registers[23] == 0 && c7.registers[24] == 0);
+    //  srm_temps_top + control preserved through the 6 clears (none touches them) + E-bank clear (>=29)
+    assert forall|r: int| 0 <= r < nr as int && r != 13 && r != 16 && r != 17 && r != 20 && r != 23 && r != 24
+        && (r < 29 || r >= 29 + ne)
+        implies c7.registers[r] == c1.registers[r] by {
+        assert(c2.registers[r] == c1.registers[r]);
+        assert(c3.registers[r] == c2.registers[r]);
+        assert(c4.registers[r] == c3.registers[r]);
+        assert(c5.registers[r] == c4.registers[r]);
+        assert(c6.registers[r] == c5.registers[r]);
+        assert(c7.registers[r] == c6.registers[r]);
+    }
+    assert(srm_ctrl(e, c7, inp_v, t_v, s_v, (cnt_v - 1) as nat, r_v)) by {
+        assert(c7.registers[0] == c1.registers[0]);
+        assert(c7.registers[1] == c1.registers[1]);
+        assert(c7.registers[3] == c1.registers[3]);
+        assert(c7.registers[4] == c1.registers[4]);
+        assert(c7.registers[5] == c1.registers[5]);
+        assert(c7.registers[6] == c1.registers[6]);
+    }
+    assert(srm_temps_zero(c7));
+    assert(srm_ebank_zero(e, c7)) by {
+        assert forall|r: int| 29 <= r < 29 + ne implies #[trigger] c7.registers[r] == 0 by {
+            assert(c2.registers[r] == c1.registers[r]);
+            assert(c3.registers[r] == c2.registers[r]);
+            assert(c4.registers[r] == c3.registers[r]);
+            assert(c5.registers[r] == c4.registers[r]);
+            assert(c6.registers[r] == c5.registers[r]);
+            assert(c7.registers[r] == c6.registers[r]);
             assert(c1.registers[r] == 0);
         }
     }
-    assert(srm_at_b2(e, c3, inp_v, t_v, s_v, (cnt_v - 1) as nat, r_v));
+    assert(srm_at_b2(e, c7, inp_v, t_v, s_v, (cnt_v - 1) as nat, r_v));
+}
+
+///  One reset clear: clears register `reg == srm_clr_reg(k)` at offset `srm_clr(e,k)`, returns the
+///  resulting config `run(m, c, 2*c[reg]+1)` at `srm_clr(e,k)+2`.
+proof fn lemma_srm_clear6(e: CEER, c: Configuration, reg: nat, k: nat) -> (cout: Configuration)
+    requires
+        ceer_wf(e),
+        k < 6,
+        reg == srm_clr_reg(k),
+        c.pc == srm_clr(e, k),
+        c.registers.len() == srm_numregs(e),
+        c.registers[1] == 0,
+    ensures
+        cout == run(search_rm(e), c, (2 * c.registers[reg as int] + 1) as nat),
+        cout.pc == srm_clr(e, k) + 2,
+        cout.registers[reg as int] == 0,
+        cout.registers.len() == srm_numregs(e),
+        forall|j: int| 0 <= j < srm_numregs(e) as int && j != reg as int
+            ==> #[trigger] cout.registers[j] == c.registers[j],
+{
+    reveal(ceer_wf);
+    let m = search_rm(e);
+    let sp = srm_clr(e, k);
+    lemma_srm_clr_dispatch(e, k);
+    assert(m.instructions[sp as int] == mk_dj(reg, sp + 2));
+    assert(m.instructions[(sp + 1) as int] == mk_dj(1, sp));
+    assert(reg < srm_numregs(e) && reg != 1);
+    lemma_clear_loop(m, c, reg, 1, sp, c.registers[reg as int]);
+    run(m, c, (2 * c.registers[reg as int] + 1) as nat)
+}
+
+///  The dispatch resolves each of the 6 reset-clear slots (case split on the literal k).
+proof fn lemma_srm_clr_dispatch(e: CEER, k: nat)
+    requires ceer_wf(e), k < 6,
+    ensures
+        search_rm(e).instructions[srm_clr(e, k) as int] == mk_dj(srm_clr_reg(k), srm_clr(e, k) + 2),
+        search_rm(e).instructions[(srm_clr(e, k) + 1) as int] == mk_dj(1, srm_clr(e, k)),
+{
+    reveal(ceer_wf);
+    lemma_srm_index(e, srm_clr(e, k) as int);
+    lemma_srm_index(e, srm_clr(e, k) as int + 1);
+    if k == 0 {} else if k == 1 {} else if k == 2 {}
+    else if k == 3 {} else if k == 4 {} else { assert(k == 5); }
 }
 
 //  ============================================================
@@ -701,13 +757,14 @@ pub open spec fn srm_o2_zero(c: Configuration) -> bool {
     &&& c.registers[22] == 0 && c.registers[23] == 0 && c.registers[24] == 0 && c.registers[28] == 0
 }
 
-///  All temporaries zero EXCEPT d1B(8), d2B(10) (hold d1,d2) and ii1(13) (dirty after o1 pair).
+///  All temporaries zero EXCEPT d1B(8), d2B(10) (hold d1,d2) and ii1(13), p1(16), ic1(17) (dirty
+///  after o1 pair + eq). o2 working (18..24) and the d-backups (7,9) are zero.
 pub open spec fn srm_c1_zero(c: Configuration) -> bool {
     &&& c.registers[7] == 0 && c.registers[9] == 0 && c.registers[11] == 0 && c.registers[12] == 0
-    &&& c.registers[14] == 0 && c.registers[15] == 0 && c.registers[16] == 0 && c.registers[17] == 0
-    &&& c.registers[18] == 0 && c.registers[19] == 0 && c.registers[20] == 0 && c.registers[21] == 0
-    &&& c.registers[22] == 0 && c.registers[23] == 0 && c.registers[24] == 0 && c.registers[25] == 0
-    &&& c.registers[26] == 0 && c.registers[27] == 0 && c.registers[28] == 0
+    &&& c.registers[14] == 0 && c.registers[15] == 0 && c.registers[18] == 0 && c.registers[19] == 0
+    &&& c.registers[20] == 0 && c.registers[21] == 0 && c.registers[22] == 0 && c.registers[23] == 0
+    &&& c.registers[24] == 0 && c.registers[25] == 0 && c.registers[26] == 0 && c.registers[27] == 0
+    &&& c.registers[28] == 0
 }
 
 ///  After C1 (orientation 1): result += [match1], d1B/d2B hold d1/d2, all else zero (except ii1).
