@@ -31,6 +31,70 @@ proof fn lemma_run_unfold_step(m: RegisterMachine, c: Configuration, fuel: nat)
 {
 }
 
+//  ============================================================
+//  Register clear: drain a register to 0.  2 instructions at sp; exit at sp+2.
+//  ============================================================
+//    sp+0  DecJump{r,    sp+2}    r==0 ⇒ exit; else r--, fall
+//    sp+1  DecJump{zero, sp}      loop
+
+pub open spec fn clear_instrs(r: nat, zero: nat, sp: nat) -> Seq<Instruction> {
+    seq![
+        Instruction::DecJump { register: r,    target: sp + 2 },
+        Instruction::DecJump { register: zero, target: sp },
+    ]
+}
+
+///  `clear` drains `r` to 0 in `2*v+1` steps, preserving every other register.
+#[verifier::rlimit(1000)]
+pub proof fn lemma_clear_loop(
+    m: RegisterMachine, c: Configuration, r: nat, zero: nat, sp: nat, v: nat,
+)
+    requires
+        sp + 2 <= m.instructions.len(),
+        m.instructions[sp as int]       == mk_dj(r, sp + 2),
+        m.instructions[(sp + 1) as int] == mk_dj(zero, sp),
+        c.pc == sp,
+        c.registers.len() == m.num_regs,
+        c.registers[r as int] == v,
+        c.registers[zero as int] == 0,
+        r < m.num_regs, zero < m.num_regs, r != zero,
+    ensures
+        run(m, c, 2 * v + 1).pc == sp + 2,
+        run(m, c, 2 * v + 1).registers[r as int] == 0,
+        run(m, c, 2 * v + 1).registers.len() == m.num_regs,
+        forall|j: int| 0 <= j < m.num_regs as int && j != r as int
+            ==> #[trigger] run(m, c, 2 * v + 1).registers[j] == c.registers[j],
+    decreases v,
+{
+    if v == 0 {
+        assert(c.registers[r as int] == 0);
+        assert(!is_halted(m, c));
+        let c1 = step(m, c).unwrap();
+        assert(c1.pc == sp + 2 && c1.registers == c.registers);
+        lemma_run_unfold_step(m, c, 2 * v + 1);
+        assert((2 * v + 1 - 1) as nat == 0nat);
+        assert(run(m, c, 2 * v + 1) == c1);
+    } else {
+        assert(!is_halted(m, c));
+        let c1 = step(m, c).unwrap();
+        assert(c1.pc == sp + 1);
+        assert(c1.registers == c.registers.update(r as int, (v - 1) as nat));
+        assert(c1.registers[zero as int] == 0) by { assert(zero != r); }
+        assert(!is_halted(m, c1));
+        let c2 = step(m, c1).unwrap();
+        assert(c2.pc == sp && c2.registers == c1.registers);
+        assert(c2.registers[r as int] == (v - 1) as nat);
+        lemma_run_unfold_step(m, c, 2 * v + 1);
+        lemma_run_unfold_step(m, c1, (2 * v + 1 - 1) as nat);
+        assert((2 * v + 1 - 2) as nat == (2 * ((v - 1) as nat) + 1) as nat);
+        lemma_clear_loop(m, c2, r, zero, sp, (v - 1) as nat);
+        assert(run(m, c, 2 * v + 1) == run(m, c2, 2 * ((v - 1) as nat) + 1));
+        assert forall|j: int| 0 <= j < m.num_regs as int && j != r as int
+        implies #[trigger] run(m, c, 2 * v + 1).registers[j] == c.registers[j]
+        by { assert(c2.registers[j] == c.registers[j]); }
+    }
+}
+
 pub open spec fn eq_test_instrs(a: nat, b: nat, zero: nat, neq: nat, sp: nat) -> Seq<Instruction> {
     seq![
         Instruction::DecJump { register: a,    target: sp + 3 },
