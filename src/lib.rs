@@ -36,6 +36,14 @@
 // bridge. See ceer_layer05_bridge.rs.
 #[cfg(verus_keep_ghost)] pub mod ceer_layer05_bridge;
 
+// GAP-2 brick G2-A: a Turing-machine formalism in Minsky pair-arithmetic form (the source the
+// TM->modular simulation consumes). See tm.rs / docs/gap2-register-modular-plan.md.
+#[cfg(verus_keep_ghost)] pub mod tm;
+
+// GAP-2 brick G2-B: the TM->modular construction (Aanderaa-Cohen Thm 2, 2 quads per quintuple) +
+// determinism well-formedness. See tm_modular.rs.
+#[cfg(verus_keep_ghost)] pub mod tm_modular;
+
 // GAP-2 interface skeleton: the register->modular machine reduction (Aanderaa-Cohen Thm 2),
 // supplying the `mm` whose H0 realizes the CEER declared pairs. Type-level plumbing + the
 // reduction target; the simulation-correctness proofs are the deferred GAP-2 impl. See
