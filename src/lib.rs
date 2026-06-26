@@ -35,3 +35,9 @@
 // Layer 0.5 step (ii): the native ceer_group_equiv <=> equiv_in_c0_limit derivation-translation
 // bridge. See ceer_layer05_bridge.rs.
 #[cfg(verus_keep_ghost)] pub mod ceer_layer05_bridge;
+
+// GAP-2 interface skeleton: the register->modular machine reduction (Aanderaa-Cohen Thm 2),
+// supplying the `mm` whose H0 realizes the CEER declared pairs. Type-level plumbing + the
+// reduction target; the simulation-correctness proofs are the deferred GAP-2 impl. See
+// modular_reduction.rs.
+#[cfg(verus_keep_ghost)] pub mod modular_reduction;
