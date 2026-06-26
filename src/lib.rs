@@ -94,6 +94,10 @@
 // cleanup) and tm_wf (quint_wf + determinism via index-recovery arithmetic). See tm_assemble.rs.
 #[cfg(verus_keep_ghost)] pub mod tm_assemble;
 
+// GAP-2-E brick B5.4/B5.5: per-instruction one-step simulation (tm_reaches + lemma_quint_at +
+// per-instruction sim lemmas + the unified one-step lemma_sim_step). See tm_sim.rs.
+#[cfg(verus_keep_ghost)] pub mod tm_sim;
+
 // GAP-2 interface skeleton: the register->modular machine reduction (Aanderaa-Cohen Thm 2),
 // supplying the `mm` whose H0 realizes the CEER declared pairs. Type-level plumbing + the
 // reduction target; the simulation-correctness proofs are the deferred GAP-2 impl. See
