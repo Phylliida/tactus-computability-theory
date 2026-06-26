@@ -128,6 +128,10 @@
 // (drain one register into two), the primitive for the forward-`pair` comparison. See search_rm_arith.rs.
 #[cfg(verus_keep_ghost)] pub mod search_rm_arith;
 
+// GAP-2 / L0 brick B-L0.2b: the nat-equality comparison gadget `eq_test_instrs` (destructive compare,
+// EQUAL exit iff (a)==(b)) — tests `pair(reg1,reg2) == input` in the HALTED comparison. See search_rm_compare.rs.
+#[cfg(verus_keep_ghost)] pub mod search_rm_compare;
+
 // GAP-2 interface skeleton: the register->modular machine reduction (Aanderaa-Cohen Thm 2),
 // supplying the `mm` whose H0 realizes the CEER declared pairs. Type-level plumbing + the
 // reduction target; the simulation-correctness proofs are the deferred GAP-2 impl. See
