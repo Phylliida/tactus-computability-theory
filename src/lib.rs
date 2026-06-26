@@ -77,6 +77,11 @@
 // two_counter_config(c1,c2) -> (c1-1,c2) in 2(c1+1) steps (c1>=1). See tm_dec.rs.
 #[cfg(verus_keep_ghost)] pub mod tm_dec;
 
+// GAP-2-E brick B5.0: the exit-routing "bounce" gadget (lemma_bounce_left/right) -- a 2-step
+// trampoline converting a gadget's exit state to the next instruction's entry state, counters
+// unchanged, keeping each instruction block's quintuples in one state-window. See tm_bounce.rs.
+#[cfg(verus_keep_ghost)] pub mod tm_bounce;
+
 // GAP-2 interface skeleton: the register->modular machine reduction (Aanderaa-Cohen Thm 2),
 // supplying the `mm` whose H0 realizes the CEER declared pairs. Type-level plumbing + the
 // reduction target; the simulation-correctness proofs are the deferred GAP-2 impl. See
