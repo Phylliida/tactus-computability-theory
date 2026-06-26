@@ -98,6 +98,15 @@
 // per-instruction sim lemmas + the unified one-step lemma_sim_step). See tm_sim.rs.
 #[cfg(verus_keep_ghost)] pub mod tm_sim;
 
+// GAP-2-E brick B6 (part 1): the cleanup phase + Halt routing reach the origin (lemma_cleanup +
+// phase A/B/C + lemma_sim_halt), reusing the parametric peek/dec/bounce gadgets. See tm_cleanup.rs.
+#[cfg(verus_keep_ghost)] pub mod tm_cleanup;
+
+// GAP-2-E brick B6 (part 2): the full run simulation + the halting iff. Chains lemma_sim_step along
+// the 2-counter run + cleanup (forward) and inducts on TM fuel with positive-fuel sim (backward) to
+// prove rm-halts ⟺ rm_to_tm reaches the origin (lemma_rm_tm_origin_iff). See tm_run_sim.rs.
+#[cfg(verus_keep_ghost)] pub mod tm_run_sim;
+
 // GAP-2 interface skeleton: the register->modular machine reduction (Aanderaa-Cohen Thm 2),
 // supplying the `mm` whose H0 realizes the CEER declared pairs. Type-level plumbing + the
 // reduction target; the simulation-correctness proofs are the deferred GAP-2 impl. See
