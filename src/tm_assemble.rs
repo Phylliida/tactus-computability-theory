@@ -162,6 +162,22 @@ pub open spec fn halt_act(pc: nat, len: nat, off: nat, sym: nat) -> (nat, nat, D
     } else { (sym, e, Dir::L) }
 }
 
+/// Jump instruction: an unconditional left bounce routing `entry(pc) → entry(target)`.
+/// Bit-for-bit `halt_act` with the cleanup entry `entry(len)` replaced by the jump's own
+/// (relocated) destination `entry(target)` — the counters/tape are left untouched.
+pub open spec fn jump_act(pc: nat, target: nat, off: nat, sym: nat) -> (nat, nat, Dir) {
+    let e = entry(pc);
+    let dst = entry(target);
+    if off == 0 {
+        if sym == 2 { (2, e + 1, Dir::L) }      // (s0,2,2,s1,L)
+        else { (sym, e, Dir::L) }
+    } else if off == 1 {
+        if sym == 1 { (1, dst, Dir::R) }        // (s1,1,1,dst,R)
+        else if sym == 0 { (0, dst, Dir::R) }   // (s1,0,0,dst,R)
+        else { (sym, e, Dir::L) }
+    } else { (sym, e, Dir::L) }
+}
+
 /// The cleanup block (window `pc == len`): dec `c1` to 0 (phase A, off 0–5), dec `c2` to 0
 /// (phase B, off 6–11), then blank the separator into `tm_origin()` (phase C, off 12).
 pub open spec fn cleanup_act(len: nat, off: nat, sym: nat) -> (nat, nat, Dir) {
@@ -226,6 +242,7 @@ pub open spec fn pos_act(rm: RegisterMachine, pc: nat, off: nat, sym: nat) -> (n
             Instruction::DecJump { register, target } =>
                 if register == 0 { decjump_left_act(pc, target, off, sym) }
                 else { decjump_right_act(pc, target, off, sym) },
+            Instruction::Jump { target } => jump_act(pc, target, off, sym),
             Instruction::Halt => halt_act(pc, len, off, sym),
         }
     } else {
@@ -303,6 +320,12 @@ pub proof fn lemma_act_bounds(rm: RegisterMachine, pc: nat, off: nat, sym: nat)
                 assert(entry(pc) + 16 == entry((pc + 1) as nat));
                 assert(entry((pc + 1) as nat) <= entry(len)) by(nonlinear_arith)
                     requires pc + 1 <= len, entry((pc + 1) as nat) == 3 + 16 * (pc + 1), entry(len) == 3 + 16 * len;
+            },
+            Instruction::Jump { target } => {
+                // q2 ∈ {entry(pc), entry(pc)+1, entry(target)}; target ≤ len (machine_wf).
+                assert(target <= len);
+                assert(entry(target) <= entry(len)) by(nonlinear_arith)
+                    requires target <= len, entry(target) == 3 + 16 * target, entry(len) == 3 + 16 * len;
             },
             Instruction::Halt => {
                 // q2 ∈ {entry(pc), entry(pc)+1, entry(len)}; all ≤ entry(len)+1 ≤ ... < m.

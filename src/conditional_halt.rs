@@ -71,6 +71,7 @@ pub proof fn lemma_build_cond_halt_wf(rm: RegisterMachine)
         Instruction::Inc { register } => register < rm2.num_regs,
         Instruction::DecJump { register, target } =>
             register < rm2.num_regs && target <= rm2.instructions.len(),
+        Instruction::Jump { target } => target <= rm2.instructions.len(),
         Instruction::Halt => true,
     } by {
         if i < n {
@@ -197,6 +198,16 @@ pub proof fn lemma_step_sim(
                 };
                 assert(s2.registers[scratch as int] == c2.registers[scratch as int]);
             }
+        },
+        Instruction::Jump { target: t } => {
+            //  Unconditional jump: registers untouched on both sides (rm2 keeps the
+            //  same Jump — replace_halts only rewrites Halt). Mirror the DecJump jump-branch.
+            assert forall|i: int| 0 <= i < rm.num_regs as int
+            implies s2.registers[i] == s1.registers[i] by {
+                assert(s2.registers[i] == c2.registers[i]);
+                assert(s1.registers[i] == c1.registers[i]);
+            };
+            assert(s2.registers[scratch as int] == c2.registers[scratch as int]);
         },
         Instruction::Halt => {
             assert(false);

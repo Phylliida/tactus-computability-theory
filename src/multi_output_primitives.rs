@@ -32,6 +32,10 @@ pub open spec fn mk_dj(r: nat, t: nat) -> Instruction {
     Instruction::DecJump { register: r, target: t }
 }
 
+pub open spec fn mk_jump(t: nat) -> Instruction {
+    Instruction::Jump { target: t }
+}
+
 //  ============================================================
 //  Instruction primitives
 //  ============================================================
@@ -50,6 +54,10 @@ pub open spec fn embed_instructions(
             Instruction::Inc { register: register + reg_offset },
         Instruction::DecJump { register, target } =>
             Instruction::DecJump { register: register + reg_offset, target: target + pc_offset },
+        Instruction::Jump { target } =>
+            //  Unconditional jump → DecJump on the always-zero scratch (same device as Halt),
+            //  but to the jump's own (relocated) target. Keeps the embedded machine Jump-free.
+            Instruction::DecJump { register: scratch_reg, target: target + pc_offset },
         Instruction::Halt =>
             Instruction::DecJump { register: scratch_reg, target: halt_target },
     })
@@ -368,6 +376,24 @@ pub proof fn lemma_embed_step_sim(
             by {
                 assert(j != (r + reg_offset) as int);
             };
+        },
+        Instruction::Jump { target: t } => {
+            //  embed maps Jump → DecJump{scratch, t+pc_offset}; scratch is 0, so the host takes
+            //  the zero-branch (pc := t+pc_offset, registers unchanged), matching the sub Jump.
+            assert(m_instr == mk_dj(scratch, t + pc_offset));
+            assert(c.registers[scratch as int] == 0);
+            assert(scratch < m.num_regs);
+            //  s_m.registers == c.registers (zero-branch), s_sub.registers == c_sub.registers (Jump).
+            assert forall|j: int| 0 <= j < rm_sub.num_regs as int implies
+                s_m.registers[(j + reg_offset) as int] == s_sub.registers[j]
+            by {
+                assert(c.registers[(j + reg_offset) as int] == c_sub.registers[j]);
+            };
+            assert(s_m.registers[scratch as int] == 0);
+            assert forall|j: int| 0 <= j < m.num_regs
+                && (j < reg_offset || j >= reg_offset + rm_sub.num_regs) && j != scratch
+                implies s_m.registers[j] == c.registers[j]
+            by { };
         },
         Instruction::Halt => { assert(false); },
     }

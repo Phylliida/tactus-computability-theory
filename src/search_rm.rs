@@ -182,6 +182,7 @@ pub open spec fn instr_wf(ins: Instruction, numregs: nat, total: nat) -> bool {
     match ins {
         Instruction::Inc { register } => register < numregs,
         Instruction::DecJump { register, target } => register < numregs && target <= total,
+        Instruction::Jump { target } => target <= total,
         Instruction::Halt => true,
     }
 }
@@ -236,12 +237,18 @@ proof fn lemma_instrument_block_wf(e: CEER, numregs: nat, total: nat)
             assert(match instr {
                 Instruction::Inc { register } => register < ne,
                 Instruction::DecJump { register, target } => register < ne && target <= ni,
+                Instruction::Jump { target } => target <= ni,
                 Instruction::Halt => true,
             });
             match instr {
                 Instruction::Inc { register } => { assert(register + 29 < numregs); },
                 Instruction::DecJump { register, target } => {
                     assert(register + 29 < numregs);
+                    assert(srm_instr_pc(e) + 2 * target <= srm_cmp(e)) by { assert(target <= ni); }
+                },
+                Instruction::Jump { target } => {
+                    //  instrument_body maps Jump → DecJump{scratch=1, srm_instr_pc + 2*target}.
+                    assert(1 < numregs);
                     assert(srm_instr_pc(e) + 2 * target <= srm_cmp(e)) by { assert(target <= ni); }
                 },
                 Instruction::Halt => {},
@@ -298,6 +305,7 @@ pub proof fn lemma_search_rm_wf(e: CEER)
     implies match m.instructions[i] {
         Instruction::Inc { register } => register < m.num_regs,
         Instruction::DecJump { register, target } => register < m.num_regs && target <= m.instructions.len(),
+        Instruction::Jump { target } => target <= m.instructions.len(),
         Instruction::Halt => true,
     } by {
         lemma_srm_index(e, i);

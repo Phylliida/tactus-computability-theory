@@ -120,6 +120,10 @@ pub proof fn lemma_rm_terminal_cases(rm: RegisterMachine, c: Configuration)
                 assert(step(rm, c) is Some);
                 assert(false);
             },
+            Instruction::Jump { target } => {
+                assert(step(rm, c) is Some);   // Jump always steps — contradiction
+                assert(false);
+            },
         }
     }
 }

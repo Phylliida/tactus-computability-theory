@@ -16,7 +16,7 @@ use vstd::prelude::*;
 use vstd::arithmetic::div_mod::lemma_fundamental_div_mod_converse;
 use verus_group_theory::machine_group::Dir;
 use crate::machine::{RegisterMachine, Instruction, Configuration, machine_wf, config_wf, step};
-use crate::multi_output_primitives::{mk_inc, mk_dj};
+use crate::multi_output_primitives::{mk_inc, mk_dj, mk_jump};
 use crate::tm::{Tm, TmConfig, tm_run};
 use crate::tm_two_counter::two_counter_config;
 use crate::tm_gadget::{mk_quint, lemma_peek_gadget};
@@ -438,6 +438,52 @@ pub proof fn lemma_sim_decjump_right(rm: RegisterMachine, pc: nat, t: nat, c1: n
     }
 }
 
+/// **A `Jump` instruction routes to its target.** From `two_counter_config(c1,c2,entry(pc))` the two
+/// `jump_act` quintuples (a left bounce `entry(pc) → entry(target)`) leave the counters unchanged and
+/// land the head on the separator in state `entry(target)`. The unconditional-jump analogue of
+/// `lemma_sim_halt` (which bounces to the cleanup entry `entry(len)`); fuel = 2 ⟹ also `tm_reaches_pos`.
+pub proof fn lemma_sim_jump(rm: RegisterMachine, pc: nat, target: nat, c1: nat, c2: nat)
+    requires
+        machine_wf(rm),
+        pc < rm.instructions.len(),
+        rm.instructions[pc as int] == mk_jump(target),
+    ensures
+        tm_reaches(rm_to_tm(rm),
+            two_counter_config(c1, c2, entry(pc), tm_mod(rm.instructions.len())),
+            two_counter_config(c1, c2, entry(target), tm_mod(rm.instructions.len()))),
+        tm_reaches_pos(rm_to_tm(rm),
+            two_counter_config(c1, c2, entry(pc), tm_mod(rm.instructions.len())),
+            two_counter_config(c1, c2, entry(target), tm_mod(rm.instructions.len()))),
+{
+    let tm = rm_to_tm(rm);
+    let len = rm.instructions.len();
+    let m = tm_mod(len);
+    lemma_rm_to_tm_wf(rm);
+    assert(tm.m == m && tm.n == 2);
+    assert(tm.quints.len() == 48 * (len + 1));
+    let e = entry(pc);
+    assert(e < m) by(nonlinear_arith) requires e == 3 + 16 * pc, pc < len, m == 19 + 16 * len;
+    let etgt = entry(target);
+
+    lemma_quint_at(rm, pc, 0, 2);   // (e,2,2,e+1,L)
+    lemma_quint_at(rm, pc, 1, 1);   // (e+1,1,1,entry(target),R)
+    lemma_quint_at(rm, pc, 1, 0);   // (e+1,0,0,entry(target),R)
+    let i_b = (pc * 48 + 2) as int;
+    let i_one = (pc * 48 + 4) as int;
+    let i_zero = (pc * 48 + 3) as int;
+    assert(0 <= i_b < tm.quints.len() && 0 <= i_one < tm.quints.len() && 0 <= i_zero < tm.quints.len())
+        by(nonlinear_arith)
+        requires pc < len, tm.quints.len() == 48 * (len + 1),
+            i_b == pc*48+2, i_one == pc*48+4, i_zero == pc*48+3;
+
+    let start = two_counter_config(c1, c2, e, tm.m);
+    lemma_bounce_left(tm, c1, c2, e, e + 1, etgt, i_b, i_one, i_zero);
+    let fin = two_counter_config(c1, c2, etgt, tm.m);
+    assert(tm_run(tm, start, 2) == fin);
+    lemma_tm_reaches_intro(tm, start, fin, 2);
+    lemma_tm_reaches_pos_intro(tm, start, fin, 2);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // The unified one-step simulation.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -522,6 +568,15 @@ pub proof fn lemma_sim_step(rm: RegisterMachine, c: Configuration)
                     assert(cprime.registers[0] == c1 && cprime.registers[1] == c2);
                 }
             }
+        },
+        Instruction::Jump { target } => {
+            //  Unconditional jump: step → (target, registers unchanged); the gadget bounces
+            //  entry(pc) → entry(target) leaving the counters intact.
+            assert(rm.instructions[pc as int] == mk_jump(target));
+            lemma_sim_jump(rm, pc, target, c1, c2);
+            assert(cprime.pc == target);
+            assert(cprime.registers == c.registers);
+            assert(cprime.registers[0] == c1 && cprime.registers[1] == c2);
         },
         Instruction::Halt => {
             assert(step(rm, c) is None);   // contradicts step is Some
