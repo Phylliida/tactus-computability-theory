@@ -31,3 +31,7 @@
 // Layer 0.5 wiring: instantiate verus_group_theory::cohen_layer05's abstract Miller embedding
 // C0 -> C with the concrete CEER declared-relator family (decls_fam). See ceer_layer05.rs.
 #[cfg(verus_keep_ghost)] pub mod ceer_layer05;
+
+// Layer 0.5 step (ii): the native ceer_group_equiv <=> equiv_in_c0_limit derivation-translation
+// bridge. See ceer_layer05_bridge.rs.
+#[cfg(verus_keep_ghost)] pub mod ceer_layer05_bridge;
