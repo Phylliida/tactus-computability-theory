@@ -112,11 +112,15 @@ fully verified, no verifier escape hatches:
   Bézout eq by `c`" to dodge the degree-3 product identity Lean's `nonlinear_arith` chokes on),
   `lemma_coprime_pow`, `lemma_coprime_not_divides` (`a≥2` coprime to `x` ⟹ `a∤x`). Plus generic
   divisibility plumbing (`lemma_mod_self`/`lemma_divides_mul`/`lemma_divides_trans`).
-- **`src/godel.rs` (15/0, verified first try)** — the **Sylvester/Euclid pairwise-coprime base**
-  `base(0)=2, base(j)=1+∏_{i<j}base(i)`, the encoding `godel(regs)=∏ base(j)^{regs[j]}`, and the headline
+- **`src/godel.rs` (21/0)** — the **Sylvester/Euclid pairwise-coprime base**
+  `base(0)=2, base(j)=1+∏_{i<j}base(i)`, the encoding `godel(regs)=∏ base(j)^{regs[j]}`, the headline
   **`lemma_godel_div_iff`**: for `i<regs.len()`, `base(i) | godel(regs) ⟺ regs[i] ≥ 1` (the `DecJump`
-  zero-test arithmetic). The base is pairwise coprime because `base(j) ≡ 1 (mod base(i))` for `i<j`
-  (`base(i) | ∏_{i<j}base(i)`), so coprimality is a one-liner — NO `nth_prime`/primality/injectivity.
+  zero-test arithmetic), AND the register-op value arithmetic **`lemma_godel_inc`** (`Inc(rᵢ)` ⟺
+  `godel ×= base(i)`) / **`lemma_godel_dec`** (`godel = base(i)·godel(rᵢ−1)` for `rᵢ≥1`, the divide).
+  The base is pairwise coprime because `base(j) ≡ 1 (mod base(i))` for `i<j` (`base(i) | ∏_{i<j}base(i)`),
+  so coprimality is a one-liner — NO `nth_prime`/primality/injectivity. The inc/dec lemmas are the
+  abstract-value facts the multiply/divide gadget proofs will consume, **independent of the machine
+  blocker below** (they stand whatever R-ii/R-iii resolves to).
 
 Lean-backend lessons banked: `nonlinear_arith` proves ring identities up to ~degree-2 substitution (the
 ported `lemma_divides_linear_combination` works) but NOT a raw degree-3 product identity — decompose;
