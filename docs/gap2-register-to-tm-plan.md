@@ -133,10 +133,26 @@ are written once and reused). Bottom-up brick order (companion's priority):
   `v_j = repunit(c2)·m^{j} + 2·m^{j-1} + repunit(j-1)` (define recursively `v_j = v_{j-1}·m + digit` to
   dodge raw `m^j`; carry it through a decreasing-fuel loop lemma `lemma_walk_left_inner` exactly like
   `multi_output_primitives::lemma_copy_loop_inner`). Walk-back is the mirror loop reconstructing `u`.
-- **B4 dec gadget**: `lemma_dec` — to `two_counter_config(c1−1,c2,q')`, fuel `2·c1`. Mirror of inc: walk
-  left `c1` steps to the **outermost** 1 (peel sep + `c1−1` ones, scanned = outer 1), erase it (write 0),
-  walk back `c1−1`. (DecJump folds the B2 zero-test: peek first; if `c1=0` jump, else run this dec.)
-  Right-counter inc/dec are the L↔R mirror images (walk via R-moves through `v`).
+- **B4 dec gadget**: `lemma_dec` — to `two_counter_config(c1−1,c2,q')` for `c1 ≥ 1`. **REFINED DESIGN
+  (reuses both walk loops):** walk left **to the blank** (same as inc: sep-peel + `lemma_walk_left_inner`
+  `j0=c1−1`, `c1+1` steps), then erase the outermost 1 — which the walk-out left as the pile's low digit.
+  Quintuples (5, vs inc's 4):
+  ```
+    (q_walk, 2, 2, q_walk, L)   peel separator
+    (q_walk, 1, 1, q_walk, L)   walk left over block-1s
+    (q_walk, 0, 0, q_disc, R)   turnaround: WRITE 0 (erase) — the outer 1 pops into scanned, u stays 0
+    (q_disc, 1, 0, q_back, R)   DISCARD that popped 1 (write 0, don't push it back onto u)
+    (q_back, 1, 1, q_back, R)   walk back (lemma_walk_back_inner, k0=0)
+  ```
+  After the erase-turnaround: `(0, pile_ones(V1, c1−1), 1, q_disc)` (`V1 = repunit(c2)·m+2`). The discard
+  step pops again: for **`c1 = 1`** it pops `V1` itself → lands directly on `two_counter_config(0,c2,q_back)`
+  (no walk-back); for **`c1 ≥ 2`** → `(0, pile_ones(V1,c1−2), 1, q_back)`, then `lemma_walk_back_inner`
+  (`k0=0, rem0=c1−2`) reconstructs `u = repunit(c1−1)`. Total `2c1+2` steps. The `c1=1` vs `c1≥2` split is
+  the one wrinkle (the discard either lands on the separator or feeds the walk-back). **DecJump** folds the
+  B2 zero-test: peek first; if `c1=0` jump to target, else run this dec. Right-counter inc/dec are the
+  L↔R mirror (walk via R-moves through `v`).
+
+  **Status: inc (B3) DONE & verified (`tm_inc.rs lemma_inc`, 5 verified). Dec (B4) = this design, next.**
 - **B5 per-instruction simulation** : assemble Inc/DecJump quintuple blocks (relocated like
   `embed_instructions`), prove one 2-counter step ↔ one gadget run; thread `tm_wf` determinism.
 - **B6 run simulation + cleanup** : induct over the 2-counter run; on halt, the cleanup phase
@@ -158,4 +174,20 @@ identify `mm_in_H0(mm, enc(a,b)) ⟺ declared_equiv(e,a,b)` and discharge `ceer_
 - Work in `(u,v)` arithmetic with repunit formulas + decreasing-fuel loop lemmas (no separate tape-seq
   abstraction) — matches the verified `multi_output_primitives` copy-loop style.
 
-**Status 2026-06-26:** design locked (this doc). Building B0 (`tm_run` composition) first.
+**Status 2026-06-26:** design locked. **DONE & verified, all committed, purely additive (no edits to
+existing modules):** B0 `tm_run_lemmas.rs` (run-split/halts-at bridges), B1 `tm_two_counter.rs` (layout +
+repunit + wf), gadget infra + B2 `tm_gadget.rs` (`lemma_tm_step_picks` + bounded peek), B3 `tm_walk.rs`
+(both walk loops) + `tm_inc.rs` (`lemma_inc`, the full inc walk gadget). **NEXT = B4 dec gadget** (design
+above), then B5 (per-instruction Inc/DecJump quintuple blocks + one-RM-step↔one-gadget-run), B6 (run sim
++ cleanup-to-origin), L1 (k→2 Gödel, the one Euclid lemma), L0 (search_rm dovetailer), G2-F (wire
+`config_encode`/`enc` + discharge `ceer_realizes`). Lessons banked for the next builder:
+- `tm_run(.,1)==X` unfolds need an explicit `assert(tm_run(.,0)==X)` hint right before (Z3 is
+  context-sensitive — adding/removing asserts elsewhere can flip these; keep the hints).
+- Build next configs as `let c = apply_quint(tm.quints[i], prev, m);` then assert its *fields*; do NOT
+  assert `tm_step(prev)==Some(handbuilt_struct)` (Verus won't match a hand-built struct to `apply_quint`).
+- Recursive spec fns (`pile_ones`, `repunit_m`) need explicit one-step unfold asserts (`pile_ones(v,1)==
+  pile_ones(v,0)*m+1`, etc.); they don't auto-fold in comparisons.
+- `(c-1)+1 == c` substitutions inside `repunit_m(...)`/fuel args need explicit bridge asserts.
+- Per-module check: `./check.sh --verify-module <name>` (NOT the MCP per-module path — it bypasses the
+  Lean toolchain). A transient "could not find module" / "Failed to spawn lake" = a concurrent verus run;
+  serialize and re-run. Baseline full-crate check carries 20 pre-existing group-theory errors (the `/20`).
