@@ -82,6 +82,10 @@
 // unchanged, keeping each instruction block's quintuples in one state-window. See tm_bounce.rs.
 #[cfg(verus_keep_ghost)] pub mod tm_bounce;
 
+// GAP-2-E brick B5.1: the right-counter walk loops (lemma_walk_right_inner / walk_back_left_inner) --
+// u<->v, L<->R mirrors of tm_walk.rs, for the right counter c2 (in v). See tm_walk_right.rs.
+#[cfg(verus_keep_ghost)] pub mod tm_walk_right;
+
 // GAP-2 interface skeleton: the register->modular machine reduction (Aanderaa-Cohen Thm 2),
 // supplying the `mm` whose H0 realizes the CEER declared pairs. Type-level plumbing + the
 // reduction target; the simulation-correctness proofs are the deferred GAP-2 impl. See
