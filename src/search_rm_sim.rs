@@ -598,6 +598,7 @@ pub proof fn lemma_instrument_reaches_sink(
                     && (forall|r: int| 0 <= r < rm_sub.num_regs as int ==>
                             #[trigger] run(m, c, g).registers[(r + reg_offset) as int]
                                 == run(rm_sub, c_sub, phi).registers[r]))
+            && run(m, c, g).registers[scratch as int] == 0
             && (forall|jj: int| 0 <= jj < m.num_regs as int
                     && (jj < reg_offset || jj >= reg_offset + rm_sub.num_regs)
                     && jj != fuel_reg as int && jj != scratch as int
@@ -625,6 +626,7 @@ pub proof fn lemma_instrument_reaches_sink(
                 && (jj < reg_offset || jj >= reg_offset + rm_sub.num_regs)
                 && jj != fuel_reg as int && jj != scratch as int
                 ==> run(m, c, g).registers[jj] == c.registers[jj]);
+            assert(run(m, c, g).registers[scratch as int] == 0);
             assert(g <= 2 * phi + 1);
         } else {
             assert(rm_sub.instructions[c_sub.pc as int] is Halt) by {
@@ -644,6 +646,7 @@ pub proof fn lemma_instrument_reaches_sink(
                     && (jj < reg_offset || jj >= reg_offset + rm_sub.num_regs)
                     && jj != fuel_reg as int && jj != scratch as int
                     ==> run(m, c, g).registers[jj] == c.registers[jj]);
+                assert(run(m, c, g).registers[scratch as int] == 0);
                 assert(g <= 2 * phi + 1);
             } else {
                 assert(phi == 0);
@@ -680,6 +683,7 @@ pub proof fn lemma_instrument_reaches_sink(
                         && (forall|r: int| 0 <= r < rm_sub.num_regs as int ==>
                                 #[trigger] run(m, c2, g).registers[(r + reg_offset) as int]
                                     == run(rm_sub, s_sub, (phi - 1) as nat).registers[r]))
+                && run(m, c2, g).registers[scratch as int] == 0
                 && (forall|jj: int| 0 <= jj < m.num_regs as int
                         && (jj < reg_offset || jj >= reg_offset + rm_sub.num_regs)
                         && jj != fuel_reg as int && jj != scratch as int
@@ -714,6 +718,7 @@ pub proof fn lemma_instrument_reaches_sink(
                 assert(run(m, c2, g_inner).registers[jj] == c2.registers[jj]);
                 assert(c2.registers[jj] == c.registers[jj]);
             }
+            assert(run(m, c, g).registers[scratch as int] == 0);
         }
     }
 }

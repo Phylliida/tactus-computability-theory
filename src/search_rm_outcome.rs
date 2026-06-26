@@ -44,6 +44,7 @@ pub proof fn lemma_instrument_outcome(
                             #[trigger] run(m, c, g).registers[(r + reg_offset) as int]
                                 == run(rm_sub, c_sub, phi).registers[r]))
             && (run_halts(rm_sub, c_sub, (phi - 1) as nat) ==> run(m, c, g).pc == halted_pc)
+            && run(m, c, g).registers[scratch as int] == 0
             && (forall|jj: int| 0 <= jj < m.num_regs as int
                     && (jj < reg_offset || jj >= reg_offset + rm_sub.num_regs)
                     && jj != fuel_reg as int && jj != scratch as int
@@ -77,6 +78,7 @@ pub proof fn lemma_instrument_outcome(
                     #[trigger] run(m, c, g_h).registers[(r + reg_offset) as int]
                         == run(rm_sub, c_sub, phi).registers[r]));
         assert(run_halts(rm_sub, c_sub, (phi - 1) as nat) ==> run(m, c, g_h).pc == halted_pc);
+        assert(run(m, c, g_h).registers[scratch as int] == 0);
         assert(forall|jj: int| 0 <= jj < m.num_regs as int
             && (jj < reg_offset || jj >= reg_offset + rm_sub.num_regs)
             && jj != fuel_reg as int && jj != scratch as int
@@ -92,12 +94,14 @@ pub proof fn lemma_instrument_outcome(
                     && (forall|r: int| 0 <= r < rm_sub.num_regs as int ==>
                             #[trigger] run(m, c, g).registers[(r + reg_offset) as int]
                                 == run(rm_sub, c_sub, phi).registers[r]))
+            && run(m, c, g).registers[scratch as int] == 0
             && (forall|jj: int| 0 <= jj < m.num_regs as int
                     && (jj < reg_offset || jj >= reg_offset + rm_sub.num_regs)
                     && jj != fuel_reg as int && jj != scratch as int
                     ==> #[trigger] run(m, c, g).registers[jj] == c.registers[jj]);
         //  completeness arm vacuous: ¬run_halts(E, phi-1).
         assert(run_halts(rm_sub, c_sub, (phi - 1) as nat) ==> run(m, c, g_i).pc == halted_pc);
+        assert(run(m, c, g_i).registers[scratch as int] == 0);
     }
 }
 
