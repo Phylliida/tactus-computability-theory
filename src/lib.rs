@@ -73,6 +73,10 @@
 // walk-back, two_counter_config(c1,c2) -> (c1+1,c2) in 2(c1+1) steps. See tm_inc.rs.
 #[cfg(verus_keep_ghost)] pub mod tm_inc;
 
+// GAP-2-E brick B4: the dec gadget (lemma_dec) -- walk-left to blank + erase + discard + walk-back,
+// two_counter_config(c1,c2) -> (c1-1,c2) in 2(c1+1) steps (c1>=1). See tm_dec.rs.
+#[cfg(verus_keep_ghost)] pub mod tm_dec;
+
 // GAP-2 interface skeleton: the register->modular machine reduction (Aanderaa-Cohen Thm 2),
 // supplying the `mm` whose H0 realizes the CEER declared pairs. Type-level plumbing + the
 // reduction target; the simulation-correctness proofs are the deferred GAP-2 impl. See
