@@ -167,6 +167,42 @@ control is the TM **state**, not a tape coordinate. So the dimensionally-honest 
 solo — modifying the frozen, verified `rm_to_tm`/`machine.rs` is a co-design decision. **The L1
 number-theory foundation above is independent of this choice and stands regardless.**
 
+#### ✅ TEXTBOOK RESOLUTION 2026-06-26 — Shepherdson–Sturgis confirms R-ii (Danielle's paper).
+
+Danielle supplied **`ComputabilityOfRecursiveFunctions.pdf`** (Shepherdson & Sturgis, *J. ACM* 1963 —
+the canonical register-machine / URM source). It settles the L1 instruction-set question authoritatively,
+and the standing guidance ("follow the textbook, don't reinvent") points squarely at it. Key facts:
+
+- **The URM's basic set (§2)** is the *separated* one: `P(n)` (increment), `D(n)` (decrement, used only
+  on a non-empty register), `O(n)` (clear), `C(m,n)` (copy), **`J[E1]` (unconditional jump)**, and
+  **`J(m)[E1]` (jump if register m is empty — a *non-destructive* test, no decrement).** This is exactly
+  the set our `machine.rs` is *missing* the jump primitives from: ours fuses test+decrement into
+  `DecJump`-on-zero and has no unconditional jump.
+- **Theorem 10.2 (Minsky, via S–S):** with operations `a=P(n)`, `b=D(n)`, `f=J(n)[test]` and **exactly
+  two registers**, the machine computes *all* partial recursive functions (Gödel `∏ pᵢ^{xᵢ}` coding). So
+  2 registers genuinely suffice — but *only* with the separated test-jump + a derivable unconditional `J`.
+- **The unconditional jump is derivable** from `{P,D,J(n)-test}` via a *compensated subroutine* (S–S §10
+  proof of the Lemma): `J[m] = P(1); J(1)[m+1]` with line `m` recompiled to `P(1); D(1); old-line-m`. It
+  temporarily perturbs and restores one register. **This trick does NOT translate to our fused
+  `DecJump`-on-zero** (opposite polarity *and* fused decrement: after `Inc(1)`, `DecJump(1,L)` decrements
+  and falls through — never an unconditional jump). With only 2 *live* registers and no guaranteed-zero
+  register to save into, our fused primitive provably cannot realize the back-edge. **So the counting
+  argument in the blocker above is correct, and the textbook's own resolution is to have the separated
+  test + an (un)conditional jump available.**
+
+**Conclusion (still Danielle's call to execute):** the faithful fix is **R-ii — add an unconditional
+`Jump{target}` to `Instruction`** (matching S–S's `J[E1]`). That is precisely the missing primitive: the
+loop back-edges in the k→2 multiply/divide gadgets become `Jump{loop_top}` (no register consumed), while
+`DecJump` continues to serve as the fused test-and-decrement *guard* (= S–S's `J(n)[body]; D(n)` in one).
+With `Jump` available, Theorem 10.2's 2-register multiply/divide port directly, consuming the already-built
+`lemma_godel_div_iff`. Cost is the enum-variant ripple through every `match Instruction` (`step`,
+`machine_wf`, `embed_instructions`, the `tm_*` dispatch + one trivial TM state-jump quintuple-window) — wide
+but mechanical, and it keeps data 2-dimensional so the frozen `tm_to_modmachine`/`lemma_tm_h0_iff` stay
+2-coordinate. R-iii (zero-register convention) remains the lower-enum-disruption alternative but still
+touches `rm_to_tm`'s contract. **Either way `rm_to_tm`/`machine.rs` get un-frozen — that is the gate.**
+Until it's taken, **L0 (`search_rm`) is the unblocked path** (it builds an `RM(k)` with free scratch, so it
+never needs the 2-register back-edge) — see `gap2-l0-search-rm-plan.md`.
+
 ### L2 (2-counter → TM) — the universal foundation, build FIRST
 
 Parametric-in-layout gadget library over the unary-separator tape (k=2 is the special case; the gadgets
