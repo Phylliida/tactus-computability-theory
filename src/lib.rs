@@ -132,6 +132,11 @@
 // Parametric in k + block addresses; M5 plugs in the Gödel invariant. See godel_blocks.rs.
 #[cfg(verus_keep_ghost)] pub mod godel_blocks;
 
+// GAP-2 / L1 k→2 reduction M5 per-instruction sims: the M3 blocks wrapped with godel.rs value lemmas
+// so each RM(2) block simulates one RM(k) instruction on the Gödel-encoded state (Inc=multiply,
+// DecJump=Div?+divide/jump, Jump=jump). Parametric in addresses. See godel_sim.rs.
+#[cfg(verus_keep_ghost)] pub mod godel_sim;
+
 // GAP-2 / L0 brick B-L0.1: fuel-instrumented bounded simulation. `instrument` guards each original
 // instruction with a `DecJump{fuel, TIMEOUT}` so a run always returns within `fuel` steps with a
 // HALTED-or-TIMEOUT verdict (a non-halting enumerator stage cannot wedge the dovetail). The bounded
