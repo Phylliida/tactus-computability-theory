@@ -5,10 +5,10 @@
 use vstd::prelude::*;
 use crate::machine::*;
 use crate::ceer::{CEER, ceer_wf};
-use crate::multi_output_primitives::{mk_inc, mk_dj};
+use crate::multi_output_primitives::{mk_inc, mk_dj, lemma_copy_loop_inner};
 use crate::search_rm_clearbank::{clear_bank_instrs, lemma_clear_bank};
 use crate::search_rm_compare::lemma_clear_loop;
-use crate::search_rm_arith::lemma_run_add;
+use crate::search_rm_arith::{lemma_run_add, lemma_double_dist_inner, lemma_run_preserves_len};
 use crate::search_rm::*;
 
 verus! {
@@ -28,10 +28,8 @@ pub open spec fn srm_temps_zero(c: Configuration) -> bool {
     &&& c.registers[25] == 0  && c.registers[26] == 0  && c.registers[27] == 0  && c.registers[28] == 0
 }
 
-///  The configuration is at INNER_TOP with the per-iteration register state: control registers set,
-///  all CMP temporaries zero, E-bank/fuel/ii1/ii2 unconstrained (cleared in the reset phase).
-pub open spec fn srm_at_top(e: CEER, c: Configuration, inp_v: nat, t_v: nat, s_v: nat, cnt_v: nat, r_v: nat) -> bool {
-    &&& c.pc == 8
+///  Control registers: zero, inp, Treg, scnt, cnt, result (NOT fuel, which is set in the reset phase).
+pub open spec fn srm_ctrl(e: CEER, c: Configuration, inp_v: nat, t_v: nat, s_v: nat, cnt_v: nat, r_v: nat) -> bool {
     &&& c.registers.len() == srm_numregs(e)
     &&& c.registers[1] == 0
     &&& c.registers[0] == inp_v
@@ -39,7 +37,49 @@ pub open spec fn srm_at_top(e: CEER, c: Configuration, inp_v: nat, t_v: nat, s_v
     &&& c.registers[4] == s_v
     &&& c.registers[5] == cnt_v
     &&& c.registers[6] == r_v
+}
+
+///  The whole E-bank [29, 29+ne) is zero.
+pub open spec fn srm_ebank_zero(e: CEER, c: Configuration) -> bool {
+    forall|r: int| 29 <= r < 29 + srm_ne(e) ==> #[trigger] c.registers[r] == 0
+}
+
+///  The E-bank holds `initial_config(E, s)`: reg 0 = s, the rest 0.
+pub open spec fn srm_ebank_init(e: CEER, c: Configuration, s_v: nat) -> bool {
+    &&& c.registers[29] == s_v
+    &&& (forall|r: int| 30 <= r < 29 + srm_ne(e) ==> #[trigger] c.registers[r] == 0)
+}
+
+///  At INNER_TOP with the per-iteration register state.
+pub open spec fn srm_at_top(e: CEER, c: Configuration, inp_v: nat, t_v: nat, s_v: nat, cnt_v: nat, r_v: nat) -> bool {
+    &&& c.pc == 8
+    &&& srm_ctrl(e, c, inp_v, t_v, s_v, cnt_v, r_v)
     &&& srm_temps_zero(c)
+}
+
+///  At B2 (post-reset): E-bank all zero.
+pub open spec fn srm_at_b2(e: CEER, c: Configuration, inp_v: nat, t_v: nat, s_v: nat, cnt_v: nat, r_v: nat) -> bool {
+    &&& c.pc == srm_b2(e)
+    &&& srm_ctrl(e, c, inp_v, t_v, s_v, cnt_v, r_v)
+    &&& srm_temps_zero(c)
+    &&& srm_ebank_zero(e, c)
+}
+
+///  At B3 (post-load-scnt): E-bank = initial_config(E, s).
+pub open spec fn srm_at_b3(e: CEER, c: Configuration, inp_v: nat, t_v: nat, s_v: nat, cnt_v: nat, r_v: nat) -> bool {
+    &&& c.pc == srm_b3(e)
+    &&& srm_ctrl(e, c, inp_v, t_v, s_v, cnt_v, r_v)
+    &&& srm_temps_zero(c)
+    &&& srm_ebank_init(e, c, s_v)
+}
+
+///  At the instrument entry (post-set-fuel): E-bank = initial_config(E, s), fuel = T+1 (= phi).
+pub open spec fn srm_at_instr(e: CEER, c: Configuration, inp_v: nat, t_v: nat, s_v: nat, cnt_v: nat, r_v: nat) -> bool {
+    &&& c.pc == srm_instr_pc(e)
+    &&& srm_ctrl(e, c, inp_v, t_v, s_v, cnt_v, r_v)
+    &&& srm_temps_zero(c)
+    &&& srm_ebank_init(e, c, s_v)
+    &&& c.registers[2] == t_v + 1
 }
 
 //  ============================================================
@@ -57,15 +97,7 @@ pub proof fn lemma_srm_phase_r1(
     ensures
         exists|g: nat|
             #[trigger] run(search_rm(e), c, g).pc == srm_b2(e)
-            && run(search_rm(e), c, g).registers.len() == srm_numregs(e)
-            && run(search_rm(e), c, g).registers[1] == 0
-            && run(search_rm(e), c, g).registers[0] == inp_v
-            && run(search_rm(e), c, g).registers[3] == t_v
-            && run(search_rm(e), c, g).registers[4] == s_v
-            && run(search_rm(e), c, g).registers[5] == cnt_v - 1
-            && run(search_rm(e), c, g).registers[6] == r_v
-            && srm_temps_zero(run(search_rm(e), c, g))
-            && (forall|r: int| 29 <= r < 29 + srm_ne(e) ==> #[trigger] run(search_rm(e), c, g).registers[r] == 0),
+            && srm_at_b2(e, run(search_rm(e), c, g), inp_v, t_v, s_v, (cnt_v - 1) as nat, r_v),
 {
     reveal(ceer_wf);
     let m = search_rm(e);
@@ -143,12 +175,199 @@ pub proof fn lemma_srm_phase_r1(
     assert(c3.registers[5] == (cnt_v - 1) as nat);
     assert(c3.registers[6] == r_v);
     assert(srm_temps_zero(c3));
-    assert(forall|r: int| 29 <= r < 29 + ne ==> #[trigger] c3.registers[r] == 0) by {
+    assert(srm_ebank_zero(e, c3)) by {
         //  E-bank zeroed by clear_bank; ii-clears (regs 13,20) don't touch r>=29
-        assert forall|r: int| 29 <= r < 29 + ne implies c3.registers[r] == 0 by {
+        assert forall|r: int| 29 <= r < 29 + ne implies #[trigger] c3.registers[r] == 0 by {
             assert(c1.registers[r] == 0);
         }
     }
+    assert(srm_at_b2(e, c3, inp_v, t_v, s_v, (cnt_v - 1) as nat, r_v));
+}
+
+//  ============================================================
+//  Phase R2a — load scnt into E[0] (preserving scnt).  B2 -> B3.
+//  ============================================================
+
+#[verifier::rlimit(8000)]
+pub proof fn lemma_srm_phase_r2a(
+    e: CEER, c: Configuration, inp_v: nat, t_v: nat, s_v: nat, cnt_v: nat, r_v: nat,
+)
+    requires
+        ceer_wf(e),
+        srm_at_b2(e, c, inp_v, t_v, s_v, cnt_v, r_v),
+    ensures
+        exists|g: nat|
+            #[trigger] run(search_rm(e), c, g).pc == srm_b3(e)
+            && srm_at_b3(e, run(search_rm(e), c, g), inp_v, t_v, s_v, cnt_v, r_v),
+{
+    reveal(ceer_wf);
+    let m = search_rm(e);
+    let ne = srm_ne(e);
+    let b2 = srm_b2(e);
+
+    //  --- double_dist(scnt=4 -> E0=29, bakA=25, zero=1, sp=b2) ---
+    lemma_srm_index(e, b2 as int);
+    lemma_srm_index(e, b2 as int + 1);
+    lemma_srm_index(e, b2 as int + 2);
+    lemma_srm_index(e, b2 as int + 3);
+    assert(m.instructions[b2 as int] == mk_dj(4, b2 + 4));
+    assert(m.instructions[(b2 + 1) as int] == mk_inc(29));
+    assert(m.instructions[(b2 + 2) as int] == mk_inc(25));
+    assert(m.instructions[(b2 + 3) as int] == mk_dj(1, b2));
+    assert(c.registers[29] == 0) by { assert(srm_ebank_zero(e, c)); }
+    lemma_double_dist_inner(m, c, 4, 29, 25, 1, b2, 0, 0, s_v);
+    let d1s: nat = (4 * s_v + 1) as nat;
+    let c1 = run(m, c, d1s);
+    lemma_run_preserves_len(m, c, d1s);
+    assert(c1.pc == b2 + 4);
+    assert(c1.registers[29] == s_v);
+    assert(c1.registers[25] == s_v);
+    assert(c1.registers[4] == 0);
+    assert(c1.registers[1] == 0) by { assert(1 != 4 && 1 != 29 && 1 != 25); }
+
+    //  --- copy(bakA=25 -> scnt=4, zero=1, sp=b2+4) ---
+    lemma_srm_index(e, b2 as int + 4);
+    lemma_srm_index(e, b2 as int + 5);
+    lemma_srm_index(e, b2 as int + 6);
+    assert(m.instructions[(b2 + 4) as int] == mk_dj(25, b2 + 4 + 3));
+    assert(m.instructions[(b2 + 5) as int] == mk_inc(4));
+    assert(m.instructions[(b2 + 6) as int] == mk_dj(1, b2 + 4));
+    lemma_copy_loop_inner(m, c1, 25, 4, 1, (b2 + 4) as nat, s_v, 0, s_v);
+    let c2s: nat = (3 * s_v + 1) as nat;
+    let c2 = run(m, c1, c2s);
+    lemma_run_preserves_len(m, c1, c2s);
+    assert(c2.pc == b2 + 7);
+    assert(c2.pc == srm_b3(e));
+    assert(c2.registers[4] == s_v);
+    assert(c2.registers[25] == 0);
+
+    //  --- compose ---
+    lemma_run_add(m, c, d1s, c2s);
+    let g: nat = (d1s + c2s) as nat;
+    assert(run(m, c, g) == c2);
+
+    //  --- postcondition ---
+    assert(srm_ctrl(e, c2, inp_v, t_v, s_v, cnt_v, r_v));
+    assert(srm_temps_zero(c2)) by {
+        //  only reg 25 touched (then restored to 0); others preserved
+    }
+    assert(srm_ebank_init(e, c2, s_v)) by {
+        assert(c2.registers[29] == s_v) by { assert(29 != 25 && 29 != 4); }
+        assert forall|r: int| 30 <= r < 29 + ne implies #[trigger] c2.registers[r] == 0 by {
+            assert(c.registers[r] == 0) by { assert(srm_ebank_zero(e, c)); }
+        }
+    }
+    assert(srm_at_b3(e, c2, inp_v, t_v, s_v, cnt_v, r_v));
+}
+
+//  ============================================================
+//  Phase R2b — set fuel := T+1 (preserving Treg).  B3 -> instrument entry.
+//  ============================================================
+
+#[verifier::rlimit(10000)]
+pub proof fn lemma_srm_phase_r2b(
+    e: CEER, c: Configuration, inp_v: nat, t_v: nat, s_v: nat, cnt_v: nat, r_v: nat,
+)
+    requires
+        ceer_wf(e),
+        srm_at_b3(e, c, inp_v, t_v, s_v, cnt_v, r_v),
+    ensures
+        exists|g: nat|
+            #[trigger] run(search_rm(e), c, g).pc == srm_instr_pc(e)
+            && srm_at_instr(e, run(search_rm(e), c, g), inp_v, t_v, s_v, cnt_v, r_v),
+{
+    reveal(ceer_wf);
+    let m = search_rm(e);
+    let ne = srm_ne(e);
+    let b3 = srm_b3(e);
+
+    //  --- clear fuel: clear_instrs(2, 1, b3) ---
+    lemma_srm_index(e, b3 as int);
+    lemma_srm_index(e, b3 as int + 1);
+    assert(m.instructions[b3 as int] == mk_dj(2, b3 + 2));
+    assert(m.instructions[(b3 + 1) as int] == mk_dj(1, b3));
+    lemma_clear_loop(m, c, 2, 1, b3, c.registers[2]);
+    let f1: nat = (2 * c.registers[2] + 1) as nat;
+    let c1 = run(m, c, f1);
+    assert(c1.pc == b3 + 2);
+    assert(c1.registers[2] == 0);
+    assert(c1.registers[1] == 0) by { assert(1 != 2); }
+
+    //  --- double_dist(Treg=3 -> fuel=2, bakB=26, zero=1, sp=b3+2) ---
+    lemma_srm_index(e, b3 as int + 2);
+    lemma_srm_index(e, b3 as int + 3);
+    lemma_srm_index(e, b3 as int + 4);
+    lemma_srm_index(e, b3 as int + 5);
+    assert(m.instructions[(b3 + 2) as int] == mk_dj(3, b3 + 2 + 4));
+    assert(m.instructions[(b3 + 3) as int] == mk_inc(2));
+    assert(m.instructions[(b3 + 4) as int] == mk_inc(26));
+    assert(m.instructions[(b3 + 5) as int] == mk_dj(1, b3 + 2));
+    assert(c1.registers[3] == t_v) by { assert(3 != 2); }
+    assert(c1.registers[26] == 0) by { assert(26 != 2); }
+    lemma_double_dist_inner(m, c1, 3, 2, 26, 1, (b3 + 2) as nat, 0, 0, t_v);
+    let f2: nat = (4 * t_v + 1) as nat;
+    let c2 = run(m, c1, f2);
+    lemma_run_preserves_len(m, c1, f2);
+    assert(c2.pc == b3 + 6);
+    assert(c2.registers[2] == t_v);
+    assert(c2.registers[26] == t_v);
+    assert(c2.registers[3] == 0);
+
+    //  --- Inc fuel at b3+6: fuel := T+1 ---
+    lemma_srm_index(e, b3 as int + 6);
+    assert(m.instructions[(b3 + 6) as int] == mk_inc(2));
+    assert(!is_halted(m, c2));
+    let c3 = step(m, c2).unwrap();
+    assert(c3.pc == b3 + 7);
+    assert(c3.registers == c2.registers.update(2, (t_v + 1) as nat));
+    assert(run(m, c2, 1) == c3) by { lemma_run_unfold(m, c2, 1); }
+    assert(c3.registers[2] == t_v + 1);
+    assert(c3.registers[26] == t_v) by { assert(26 != 2); }
+    assert(c3.registers[3] == 0) by { assert(3 != 2); }
+    assert(c3.registers[1] == 0) by { assert(1 != 2); }
+
+    //  --- copy(bakB=26 -> Treg=3, zero=1, sp=b3+7) ---
+    lemma_srm_index(e, b3 as int + 7);
+    lemma_srm_index(e, b3 as int + 8);
+    lemma_srm_index(e, b3 as int + 9);
+    assert(m.instructions[(b3 + 7) as int] == mk_dj(26, b3 + 7 + 3));
+    assert(m.instructions[(b3 + 8) as int] == mk_inc(3));
+    assert(m.instructions[(b3 + 9) as int] == mk_dj(1, b3 + 7));
+    lemma_copy_loop_inner(m, c3, 26, 3, 1, (b3 + 7) as nat, t_v, 0, t_v);
+    let f4: nat = (3 * t_v + 1) as nat;
+    let c4 = run(m, c3, f4);
+    lemma_run_preserves_len(m, c3, f4);
+    assert(c4.pc == b3 + 10);
+    assert(c4.pc == srm_instr_pc(e));
+    assert(c4.registers[3] == t_v);
+    assert(c4.registers[26] == 0);
+    assert(c4.registers[2] == t_v + 1) by { assert(2 != 26 && 2 != 3); }
+
+    //  --- compose ---
+    lemma_run_add(m, c2, 1, f4);
+    lemma_run_add(m, c1, f2, (1 + f4) as nat);
+    lemma_run_add(m, c, f1, (f2 + 1 + f4) as nat);
+    let g: nat = (f1 + f2 + 1 + f4) as nat;
+    assert(run(m, c, g) == c4);
+
+    //  --- postcondition ---
+    //  every reg except {2(fuel),3(Treg),26(bakB)} is preserved c -> c4 (chain the 4 gadget frames)
+    let nr = srm_numregs(e);
+    assert forall|r: int| 0 <= r < nr as int && r != 2 && r != 3 && r != 26
+        implies c4.registers[r] == c.registers[r] by {
+        assert(c1.registers[r] == c.registers[r]);
+        assert(c2.registers[r] == c1.registers[r]);
+        assert(c3.registers[r] == c2.registers[r]);
+        assert(c4.registers[r] == c3.registers[r]);
+    }
+    assert(srm_ctrl(e, c4, inp_v, t_v, s_v, cnt_v, r_v));
+    assert(srm_temps_zero(c4));
+    assert(srm_ebank_init(e, c4, s_v)) by {
+        assert forall|r: int| 30 <= r < 29 + ne implies #[trigger] c4.registers[r] == 0 by {
+            assert(c.registers[r] == 0) by { assert(srm_ebank_init(e, c, s_v)); }
+        }
+    }
+    assert(srm_at_instr(e, c4, inp_v, t_v, s_v, cnt_v, r_v));
 }
 
 ///  Local `run` unfold helper (private copy).
