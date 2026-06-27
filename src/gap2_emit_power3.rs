@@ -309,6 +309,23 @@ proof fn locate_pbb3x_exit(tm: Tm, len: nat, pc: nat, s0: nat, s1: nat, s2: nat,
 // The reusable triple power-block phase lemmas (M ≥ 2 and M = 1), abstract over the full machine.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// **Expose one off-0 self-loop** of a `pbb3x` window: `(q_dh0, sym, sym, q_dh0, L)` for `sym ∈ 1..4`.
+/// The walk-back-compatible quints a preceding singleton consumes when `q_home := entry5(pc)` (§N+12).
+pub proof fn lemma_pbb3x_walkback(tm: Tm, len: nat, pc: nat, s0: nat, s1: nat, s2: nat, qexit: nat, sym: nat)
+    requires
+        tm.m == tm_mod5(len),
+        pc <= len,
+        1 <= sym <= 4,
+        tm.quints.len() == 288 * (len + 1),
+        forall|i: int| pc * 288 <= i < pc * 288 + 288 ==> #[trigger] tm.quints[i] == pbb3x_gen(s0, s1, s2, qexit, i as nat),
+    ensures
+        0 <= pc * 288 + sym < tm.quints.len(),
+        tm.quints[(pc * 288 + sym) as int] == mk_quint(entry5(pc), sym, sym, entry5(pc), Dir::L),
+{
+    locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 0, sym, sym, 0, Dir::L);
+    assert(pc * 288 + 0 * 6 + sym == pc * 288 + sym);
+}
+
 /// **Triple power-block phase (one window, the `(s0,s1,s2)^M` periodic step, `M ≥ 2`).** From
 /// `{u: copy_u(0,M,g), v: dpack(od), a: 0, q: entry5(pc)}` after `power_block_fuel_b3(M,g,|od|)` steps the
 /// master is stationary, the output has grown by `(s0,s1,s2)^M`, and the head is on the home pivot in the
