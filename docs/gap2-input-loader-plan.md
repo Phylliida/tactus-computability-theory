@@ -1299,3 +1299,64 @@ Counts: pbb1×4, pbb3×4, seret1×6, seret3×2. Two phases (master = b+1 then a+
 4. **fam_digits assembly** — produced output `== fam_digits(a,b)` (compose `lemma_dds_fam_relator` /
    `lemma_relnum_is_fam_digits`); `dpack` value is `relnum(a,b)`.
 5. **Concrete `psc_act` tm/tm_wf** + R-cmp/R-S/R-C/R-MC/B-W → discharge `ceer_realizes`.
+
+### N+12 FINAL — BOTH per-phase 8-block chains DONE (crate 1211 → 1254/0)
+
+**✅ Both `fam_digits` phases are fully chained & verified** (`gap2_emit_seq.rs`, abstract over a machine
+carrying the 8 window gens per phase):
+- **`lemma_uinv_phase`** — `tm_run(…, uinv_phase_fuel) == {…, v: dpack(od ++ uinv_digits(M-1)), q: qend}`.
+  Decomposed into `lemma_uinv_half_a` (blocks 0–3) + `lemma_uinv_half_b` (blocks 4–7); last block is a
+  power-block → `qend` external (no walk-back needed).
+- **`lemma_u_phase`** — `tm_run(…, u_phase_fuel) == {…, v: dpack(od ++ u_digits(M-1)), q: qfinal}`.
+  Decomposed into `lemma_u_seg_a` (0–2) + `lemma_u_seg_b` (3–4) + `lemma_u_half_b` (5–7); last block is the
+  FINAL singleton → `qfinal` external, so `qfinal` must be walk-back-compatible (4 `kf` quint hypotheses —
+  the `q_cmp` hand-off).
+- **⚠ RLIMIT LESSON:** a 5-block chain segment exceeds rlimit; **keep chain segments ≤ 4 blocks** and split
+  at power-block boundaries (so a singleton's walk-back never crosses a segment boundary). The uinv phase
+  split 4+4; the u phase needed 3+2+3.
+- Helpers: `lemma_pbb1x_phase_any`/`lemma_pbb3x_phase_any` (M-dispatch), `lemma_*_walkback`,
+  `cat_bound`, `lemma_seq_pow_len`/`lemma_seq_pow_bound`. Single-element `seq_pow` length needs an explicit
+  `assert(seq![x].len() == 1)` so `M·1` stays linear.
+
+**NEXT (the remaining assembly — master-mgmt + concrete tm; distinct next phase):**
+1. **Master-management gadgets (`load_master`, `q_clean`)** — NEW TM gadgets (need design): `load_master` =
+   `copy_u(stored counter → emit-scratch master)`; `q_clean` = wipe the master zone (`read 1 → write 0 →
+   L`). WIPE-AND-LOAD between the two phases (load `b+1`, run uinv phase, `q_clean`, load `a+1`, run u
+   phase). Per the locked global tape layout (§N+11).
+2. **Two-phase wiring** — chain `lemma_uinv_phase` (qend = master-mgmt entry) → master-mgmt → `lemma_u_phase`
+   ⟹ output `= dpack(od ++ uinv_digits(b) ++ u_digits(a)) = dpack(od ++ fam_digits(a,b))`. The `qfinal` of
+   the u phase = R-cmp's `q_cmp`.
+3. **Concrete dispatch generator + `psc_act` tm/tm_wf** — `seq_gen(a,b,idx)` laying all windows (each pc →
+   its block's gen, qexit = entry5(pc+1)); discharge the per-phase window hypotheses; `tm_wf` via
+   `lemma_tm_wf_n5`.
+4. **fam_digits ⟹ relnum** — `dpack(fam_digits(a,b))` is `relnum(a,b)` (`lemma_dds_fam_relator` /
+   `lemma_relnum_is_fam_digits`). Then R-cmp/R-S/R-C/R-MC/B-W → discharge `ceer_realizes` → drop the axiom.
+
+### N+12 addendum — CHAIN MECHANICS FULLY VALIDATED (crate 1233 → 1246/0); the 8-block assembly is mechanical
+
+The sequencer's hard mechanics are now all verified end-to-end (`gap2_emit_seq.rs`, `gap2_relnum_dds.rs`):
+
+- **Unified M-dispatch atoms** — `lemma_pbb1x_phase_any` / `lemma_pbb3x_phase_any` (+ `pb1_fuel`/`pb3_fuel`):
+  one call dispatches `M=1` (m1 step) vs `M≥2` (general step) over the same window, unified fuel/output.
+  Since the loaded master = `a+1 = i ≥ 1`, this is the ONLY power-block dispatch the chain needs.
+- **Walk-back exposers** — `lemma_{pbb1x,pbb3x,seret1x,seret3x}_walkback(tm,len,pc,…,sym)` expose a window's
+  off-0 self-loop `(entry5(pc),sym,sym,entry5(pc),L)`. A singleton ending at `entry5(pc+1)` gets its 4
+  `jl` quints by calling the NEXT window's walkback for `sym=1..4`.
+- **`seq_pow` bookkeeping** — `lemma_seq_pow_len` (`|seq_pow(s,k)|=k·|s|`) + `lemma_seq_pow_bound` (element
+  range preserved) — the output-accumulation digit-bound/length helpers.
+- **`lemma_chain_seret1_pbb1`** (2-block) + **`lemma_chain_s1_p3_s1`** (3-block) validate ALL splice cases:
+  singleton→power (walk-back located from next window), power→singleton (trivial config-equality), FINAL
+  singleton (`qexit=qfinal` external, walk-back-compatible via external `kf` hypotheses — the `q_cmp` case).
+
+**THE 8-BLOCK CHAIN TEMPLATE (the exact next build, ≈150 lines, mechanical):** an abstract lemma over a
+machine with 8 window hypotheses (windows `pc..pc+7`, each `forall i in window. tm.quints[i] ==
+<block>_gen(…, entry5(pc+k+1), i)`; last block's exit = external `qend`). Body: for `k = 0..7`, let-bind
+`c_k`/accumulated od; if block k is a singleton, locate the 4 walk-backs from window `pc+k+1` (its type's
+`_walkback`); apply the block's phase lemma (`_phase_any` for power, `_phase` for singleton) to get
+`tm_run(c_k, F_k) == c_{k+1}`; extend with `lemma_tm_run_split(tm, c0, acc_k, F_k)`. Maintain the
+"od_k digits ∈ 1..4" invariant (use `lemma_seq_pow_bound` for the power emits). Encapsulate the 8-term fuel
+sum in a `uinv_phase_fuel`/`u_phase_fuel` spec fn to keep the ensures readable. uinv blocks (M=b+1):
+`[4]s1·(4,1,2)ⁱp3·[3]s1·(4,3,2)ⁱp3·[2]s1·(1)ⁱp1·[4,1,2]s3·(3)ⁱp1` (last = pbb1(3) → external qend, a power
+exit so qend needs NO walk-back). Then prove the produced concatenation `=~= od ++ uinv_digits(b)` (and the u
+phase `++ u_digits(a)`) by unfolding the spec fns (the emits already match term-for-term). Keep each block's
+sub-proof isolated (let-bound) to stay under rlimit; extract per-block helpers if a monolith blows up.
