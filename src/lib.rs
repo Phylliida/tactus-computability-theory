@@ -254,6 +254,13 @@
 // tm_skip_blank.rs and docs/gap2-input-loader-plan.md sec N+19.
 #[cfg(verus_keep_ghost)] pub mod tm_skip_blank;
 
+// GAP-2 G2-F Route (i) brick R-cmp (B-cmp.1): the generalized digit-walks over `block ++ W` --
+// lemma_dwalk_right_gen / lemma_dwalk_left_gen peel a 1..4 block and land scanning the tail W's low digit
+// (W%m), W/m intact on the far stack. W=0 recovers tm_dwalk; W%m==5 is the probe's stop at the alpha
+// frontier mark. The non-destructive there-and-back traverse the M1 compare reads alpha with. See
+// tm_cmp_traverse.rs and docs/gap2-input-loader-plan.md sec N+20.
+#[cfg(verus_keep_ghost)] pub mod tm_cmp_traverse;
+
 // GAP-2 G2-F Route (i) brick R-P: the copy-and-park core. lemma_rp_entry (2-step handshake depositing
 // the ignition-held low digit d0 onto v) + lemma_rp_copy_park (entry o dwalk_left) park alpha's digit
 // sequence reversed in v, freeing u as workspace -- the canonical layout R-cmp reads. See tm_rp.rs.
