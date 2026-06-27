@@ -3375,7 +3375,7 @@ pub open spec fn copy_refresh_fuel(big_m: nat, g: nat) -> nat {
     (full_copy_fuel(big_m, g) + 2 * (2 * g + 2 * big_m + 2)) as nat
 }
 
-/// **One full `copy_refresh` as a single deterministic machine run (`M ≥ 3`, `g ≥ M + 2`).**
+/// **One full `copy_refresh` as a single deterministic machine run (`M ≥ 2`, `g ≥ M + 2`).**
 /// `copy_u(0) = m^g·R(M)` (master at gap `G = g`, fresh empty temp) → `dec_u(M, m^(g−M)·R(M))` (the master
 /// rebuilt below itself as a fresh `M`-counter, ready for the next `block_loop` home). Composes three
 /// verified pieces over ONE deterministic TM:
@@ -3415,7 +3415,7 @@ pub proof fn lemma_copy_refresh(
     requires
         tm_wf(tm),
         tm.n >= 5,
-        3 <= big_m,
+        2 <= big_m,
         g >= big_m + 2,
         0 <= i_dpeel0 < tm.quints.len(),
         0 <= i_dtemp0 < tm.quints.len(),
@@ -3525,17 +3525,34 @@ pub proof fn lemma_copy_refresh(
     let m = tm.m;
     let bounce = (2 * g + 2 * big_m + 2) as nat;
     let c0 = TmConfig { u: copy_u(0, big_m, g, m), v: out, a: 0, q: q_dh0 };
-
-    // ── PHASE 1 — LOOP: copy_u(0) → copy_u(M), full_copy_fuel steps, ends on the pivot in q_home. ──
-    lemma_copy_loop(tm, big_m, g, out,
-        q_dh0, q_dw0, q_bk0, q_t0, q_a0, q_rf0, q_rg0,
-        q_home, q_t, q_a, q_b, q_rf, q_rg, q_rt, q_dw,
-        i_dpeel0, i_dtemp0, i_dins0, i_dwb0,
-        i_peel0, i_temp0, i_t2g0, i_gap0, i_mark0, i_rf2g0, i_rgap0, i_rg2t0,
-        i_peel, i_temp, i_t2g, i_gap, i_a2b, i_fives, i_mark, i_rfives, i_rf2g, i_rgap, i_rg2t, i_rtemp,
-        i_dpeel, i_dtemp, i_dins, i_dwb);
     let c_loop = TmConfig { u: copy_u(big_m, big_m, g, m), v: out, a: 0, q: q_home };
-    assert(tm_run(tm, c0, full_copy_fuel(big_m, g)) == c_loop);
+
+    // ── PHASE 1 — LOOP: copy_u(0) → copy_u(M), full_copy_fuel steps, ends on the pivot in q_home.
+    //    For M == 2 the loop IS the prefix (copy_u(0) → copy_u(2) == copy_u(M), empty general middle);
+    //    M ≥ 3 uses the full loop. ──
+    if big_m == 2 {
+        lemma_copy_prefix(tm, big_m, g, out,
+            q_dh0, q_dw0, q_bk0, q_t0, q_a0, q_rf0, q_rg0,
+            q_home, q_t, q_a, q_b, q_rf, q_rg, q_rt, q_dw,
+            i_dpeel0, i_dtemp0, i_dins0, i_dwb0,
+            i_peel0, i_temp0, i_t2g0, i_gap0, i_mark0, i_rf2g0, i_rgap0, i_rg2t0,
+            i_peel, i_temp, i_t2g, i_gap, i_a2b, i_fives, i_mark, i_rfives, i_rf2g, i_rgap, i_rg2t, i_rtemp,
+            i_dpeel, i_dtemp, i_dins, i_dwb);
+        // copy_u(2, 2, g) == copy_u(M, M, g); full_copy_fuel(2, g) == 4g+12 (g ≠ M ⟹ middle empty).
+        assert(copy_u(2, big_m, g, m) == copy_u(big_m, big_m, g, m));
+        assert(copy_loop_fuel(2, big_m, g) == 0);
+        assert(full_copy_fuel(big_m, g) == (4 * g + 12) as nat);
+        assert(tm_run(tm, c0, full_copy_fuel(big_m, g)) == c_loop);
+    } else {
+        lemma_copy_loop(tm, big_m, g, out,
+            q_dh0, q_dw0, q_bk0, q_t0, q_a0, q_rf0, q_rg0,
+            q_home, q_t, q_a, q_b, q_rf, q_rg, q_rt, q_dw,
+            i_dpeel0, i_dtemp0, i_dins0, i_dwb0,
+            i_peel0, i_temp0, i_t2g0, i_gap0, i_mark0, i_rf2g0, i_rgap0, i_rg2t0,
+            i_peel, i_temp, i_t2g, i_gap, i_a2b, i_fives, i_mark, i_rfives, i_rf2g, i_rgap, i_rg2t,
+            i_rtemp, i_dpeel, i_dtemp, i_dins, i_dwb);
+        assert(tm_run(tm, c0, full_copy_fuel(big_m, g)) == c_loop);
+    }
 
     // ── PHASE 2 — TERMINATE: copy_u(M)@q_home → copy_u(M)@q_ret (non-destructive bounce). ──
     lemma_mark_terminate(tm, big_m, g, out,
