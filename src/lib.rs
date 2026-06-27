@@ -319,3 +319,9 @@
 // (move-L + dwalk_left_prefix home) + dec_temp -- into lemma_block_iter_block1/_block3: home->home,
 // output ++= blk, temp -> temp-1. See tm_block_iter.rs / docs/gap2-input-loader-plan.md §5 (STEP 2 model B).
 #[cfg(verus_keep_ghost)] pub mod tm_block_iter;
+
+// GAP-2 G2-F Route (i) brick R-relnum-gen (STEP 2, model B): the per-block LOOP. Wraps the iteration body
+// in a TM loop with a 2-step non-destructive guard (peek the counter at home, branch continue/exit).
+// lemma_block_loop_block1: (s)^temp emitted onto the output, counter consumed, master shifted m^temp.
+// See tm_block_loop.rs / docs/gap2-input-loader-plan.md §5 (STEP 2 model B).
+#[cfg(verus_keep_ghost)] pub mod tm_block_loop;
