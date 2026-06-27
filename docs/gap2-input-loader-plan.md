@@ -516,6 +516,12 @@ emit bricks BUILT; crate 771/0.*
   and `lemma_dwalk_left` (return home: block `u→v`, stops at the blank). They write back the scanned
   symbol (`a2=s`), so they are the non-destructive shuttles.
 
+**THIS SESSION (N+3) BUILT (crate 760/0 → 774/0):** model-B fork resolved (above); `tm_emit.rs`
+(symbol-power emit + pile_sym/dpile algebra, 766/0); `tm_shuttle.rs` (frontier block-emit, 771/0);
+`tm_dec_master.rs` (`lemma_walk_left_prefix`, the generalized walk-left over a repunit prefix with a
+preserved high tail `w`, 774/0). Found: the safe-walk shuttles already exist (`dwalk_left`/`dwalk_right`);
+the gap-growth pitfall ⟹ the `[master]0[temp]0[output]` per-power-block layout (above).
+
 **NEXT (model-B per-block loop — the substantial remaining STEP-2 work):**
 1. **`home_config(iₐ, i_b, output, m)` spec** — the layout config: `a=0` (home pivot, the 0 before
    output), `u = [i_b ones] 0 [iₐ ones]` (low=i_b inner one), `v = [output digits] 0 [blanks]` (low=output
@@ -539,7 +545,20 @@ emit bricks BUILT; crate 771/0.*
    `[i_active]0[i_other]0[output]` and rebuild `i_active` per fresh block from a preserved `i_other` copy,
    OR process all of `u_digits` (exponent `a+1`) with `iₐ` inner, then all of `uinv_digits` (exponent
    `b+1`) — revisit which master is inner when sequencing the 16 blocks (step 5).
-   ⚠⚠ **NEW SUB-GADGET NEEDED (found this session):** `dec_master` CANNOT reuse
+   ⚠⚠⚠ **REFINED LAYOUT (found this session, supersedes the naive `[iₐ]0[i_b]0[output]` above):** decrementing
+   one master with the OTHER master sitting as high content in `u` causes **GAP GROWTH** — the erase + discard
+   steps each push a `0` onto `u` above the high content (in `lemma_dec` `u==0` there so it's harmless; here
+   the high master accretes a leading `0` per dec). So DON'T keep both masters live and dec one "through" the
+   other. Instead, per POWER-BLOCK `(blk)ⁱ` the live layout is **`[master]0[temp]0[output]0[blanks]`**: `temp`
+   (inner, adjacent to the pivot) is a fresh DECREMENTING COPY of the master; `master` is PRESERVED (it is the
+   high tail `w` that `lemma_walk_left_prefix` leaves intact while dec'ing `temp`). Before each power-block,
+   REFRESH `temp` from `master` via a copy gadget (walk master's ones onto temp + restore, a 3rd gadget to
+   build). Exponent reuse across a phase's 4 power-blocks ⟹ master must survive ⟹ the copy. Singletons
+   between power-blocks emit with no counter (direct `emit_block1`-style, `u`-side untouched if head is parked
+   right). The two phases (`uinv_digits(b)` exponent `b+1`, then `u_digits(a)` exponent `a+1`) run
+   SEQUENTIALLY — only ONE master alive at a time — re-init the master between phases. This keeps it to 3
+   regions max and makes `lemma_walk_left_prefix` exactly the dec-temp walk (`w` = master content, `w%m==0`).
+   ⚠ **OLD SUB-GADGET FRAMING (still the mechanism, master plays the "high tail" role):** `dec_temp` CANNOT reuse
    `tm_walk::lemma_walk_left_inner` directly — that lemma requires `c.u == repunit_m(j0)` and concludes
    `u == 0` (it assumes the rest of the left tape is blank). In the home layout `u` has `iₐ`'s content
    (`repunit(iₐ)`) beyond the `i_b/iₐ` separator, so walking `i_b`'s ones must STOP at that separator 0 and
