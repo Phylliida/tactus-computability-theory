@@ -874,6 +874,8 @@ pub proof fn lemma_surge_emit_return_block3_tail_safe_v(
     lemma_tm_step_picks(tm, c2, i_e0);
     let c_e1 = apply_quint(tm.quints[i_e0], c2, m);
     assert(tm_step(tm, c2) == Some(c_e1));
+    assert(c_e1 == apply_quint(mk_quint(q_surge, 0, s0, q_e1, Dir::R), c2, m));
+    assert(c_e1 == TmConfig { u: c2.u * m + s0, v: 0, a: 0, q: q_e1 });
     assert(c_e1.u == c2.u * m + s0 && c_e1.v == 0 && c_e1.a == 0 && c_e1.q == q_e1);
     assert(tm_run(tm, c_e1, 0) == c_e1);
     assert(tm_run(tm, c2, 1) == c_e1);
@@ -890,6 +892,8 @@ pub proof fn lemma_surge_emit_return_block3_tail_safe_v(
     lemma_tm_step_picks(tm, c_e1, i_e1);
     let c_e2 = apply_quint(tm.quints[i_e1], c_e1, m);
     assert(tm_step(tm, c_e1) == Some(c_e2));
+    assert(c_e2 == apply_quint(mk_quint(q_e1, 0, s1, q_e2, Dir::R), c_e1, m));
+    assert(c_e2 == TmConfig { u: c_e1.u * m + s1, v: 0, a: 0, q: q_e2 });
     assert(c_e2.u == c_e1.u * m + s1 && c_e2.v == 0 && c_e2.a == 0 && c_e2.q == q_e2);
     assert(tm_run(tm, c_e2, 0) == c_e2);
     assert(tm_run(tm, c_e1, 1) == c_e2);
@@ -906,6 +910,8 @@ pub proof fn lemma_surge_emit_return_block3_tail_safe_v(
     lemma_tm_step_picks(tm, c_e2, i_e2);
     let c3 = apply_quint(tm.quints[i_e2], c_e2, m);
     assert(tm_step(tm, c_e2) == Some(c3));
+    assert(c3 == apply_quint(mk_quint(q_e2, 0, s2, q_eret, Dir::R), c_e2, m));
+    assert(c3 == TmConfig { u: c_e2.u * m + s2, v: 0, a: 0, q: q_eret });
     assert(c3.u == c_e2.u * m + s2 && c3.v == 0 && c3.a == 0 && c3.q == q_eret);
     assert(tm_run(tm, c3, 0) == c3);
     assert(tm_run(tm, c_e2, 1) == c3);
