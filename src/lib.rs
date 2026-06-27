@@ -367,6 +367,10 @@
 // gap2_master_mgmt::lemma_wipe_ones_left. See gap2_init.rs / docs/gap2-input-loader-plan.md item 4.
 #[cfg(verus_keep_ghost)] pub mod gap2_init;
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_lift;
+// GAP-2 G2-F: the RIGHT-tape (v-side) high-tail lift — the L<->R mirror of gap2_tail_lift, for carrying the
+// parked alpha-block (input word-number, right of the emitter output) through the emit phases as an inert
+// high tail in v. See gap2_tail_lift_v.rs / docs/gap2-input-loader-plan.md §N+11.
+#[cfg(verus_keep_ghost)] pub mod gap2_tail_lift_v;
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_walks;
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_phases;
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_phase1;
