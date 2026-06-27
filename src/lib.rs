@@ -299,3 +299,10 @@
 // frontier blanks (v==0), appending dpile(c.u,blk). lemma_emit_one_frontier + block1/block3 compositions
 // (the only fam_digits block sizes). See tm_shuttle.rs / docs/gap2-input-loader-plan.md §5 (STEP 2 model B).
 #[cfg(verus_keep_ghost)] pub mod tm_shuttle;
+
+// GAP-2 G2-F Route (i) brick R-relnum-gen (STEP 2, model B): the master-decrement foundation.
+// lemma_walk_left_prefix -- the generalized walk-left over a repunit PREFIX with a high tail w (the
+// i_b/i_a separator + i_a), the dec_master analog of lemma_walk_left_inner that LEAVES w intact (lands
+// u==w/m, a==w%m) instead of assuming a bare counter (u==0). Foundation for dec_master + home_config.
+// See tm_dec_master.rs / docs/gap2-input-loader-plan.md §5 (STEP 2 model B).
+#[cfg(verus_keep_ghost)] pub mod tm_dec_master;
