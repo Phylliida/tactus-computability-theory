@@ -823,3 +823,26 @@ The **general marked-copy iteration `copy_u(j) → copy_u(j+1)` is COMPLETE** (c
 
 ⚠ `tm.n >= 5` (the `5` marker, per the N+4 n=5 bump decision) is a precondition of all the mark/copy lemmas.
 ⚠ Use the crate-local `./check.sh` (Lean backend + group-theory export), NOT the top-level one.
+
+### Edge-case design note (uncovered N+6, for whoever builds the edges)
+
+The general `lemma_mark`/`lemma_copy_iter` couple **temp-count == fives-count == j** (both come from `copy_u(j)`).
+The walks use `len = j−1`: `run_walk_left/right` handle `len = 0` (fire 1 step), but `j = 0` gives `len = −1`
+(skip the walk) and the return's S10 `run_walk_right` temp has `rem0 = j−2` (invalid at `j ≤ 1`). Concretely:
+- **`j = 1`** is "almost general": forward works (walks fire `len=0`), but the return ENDS at the `rg2t`
+  transition (S9 lands `a=0` at the pivot directly, `pile_sym(out·m,1,0)=out·m`, `%m=0`) — so DROP S10.
+- **`j = 0`** is special: no temp, no fives. **The trap: the return has no temp landmark, so the gap-seek-back
+  can't stop at the pivot** (pivot and gap are both `0`; `seek_right_blanks` would overshoot into the output).
+
+**Promising fix — DEPOSIT-FIRST (deposit ∘ mark instead of mark ∘ deposit).** Arithmetic still closes:
+`copy_u(j) +m^j (deposit) = R(j+1)+m^G·master_at(j,M)`, then `+4·m^(g+j) (mark) = copy_u(j+1)`. With deposit
+first, the **temp count is `j+1` (always ≥ 1)** during the mark, so the return ALWAYS has a temp landmark — the
+`j=0` pivot-boundary trap disappears. The remaining edge is only **fives-count `f = j = 0`** (skip the
+fives-walk/back), plus the **`g−j = 1`** gap edge (only when `g = M`, `j = M−1`: the `t2g`/`rf2g` transition
+eats the only gap blank ⟹ skip `seek_left/right_blanks`). BUT deposit-first **decouples temp-count (`j+1`) from
+fives-count (`j`)**, so `lemma_mark` must be re-parametrized over separate `(t, f)` counts (currently `t=f=j`).
+That is a re-derivation of the mark/iteration. **DECISION FORK for next session (consider co-design w/ Danielle):**
+(a) keep mark∘deposit + write bespoke `lemma_copy_iter_j0` (with a non-pivot-seek return) and `_j1` + a `g−j=1`
+variant; or (b) switch to deposit∘mark + generalize `lemma_mark` to `(t,f)` counts so only `f=0` and `g−j=1`
+remain. (b) is cleaner for the loop but reworks the verified `lemma_mark`. The general `2≤j<M, g−j≥2` core is
+verified and reused either way.
