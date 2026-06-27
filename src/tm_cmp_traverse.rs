@@ -526,17 +526,19 @@ pub proof fn lemma_cmp_marker_advance(
 /// compare-mode state `q_cmp` (the gap-`0` is the *virtual boundary marker*): step `(q_walk, 0, 0, q_cmp, L)`,
 /// then skip the remaining gap with `(q_cmp, 0, 0, q_cmp, L)` ([`crate::tm_skip_blank::lemma_skip0_left`]),
 /// landing the head scanning `d_o` in `q_cmp`. The crossed `0`s migrate onto `v` (`v == pile_zeros(c.v, g, m)`)
-/// — popped back when the match-action walks right (balanced, no pollution). Fuel `g`. Requires `n ≥ 4`
-/// (so `d_o ≤ 4 < m`). Leaves the head exactly where the compare reads: scanning `d_o ∈ 1..4` in `q_cmp`
-/// (carrying `V_k`), ready for `(q_cmp, d_o, …)`.
+/// — popped back when the match-action walks right (balanced, no pollution). Fuel `g`. Requires `n ≥ 5`
+/// (so the frontier `d_o ≤ 5 < m` — the bound allows `d_o = 5`, the far-`5` output sentinel, so the same
+/// lemma serves both the MATCH/mismatch dispatch and the output-exhausted "too-short" reject). Leaves the
+/// head exactly where the compare reads: scanning `d_o ∈ 1..5` in `q_cmp` (carrying `V_k`), ready for
+/// `(q_cmp, d_o, …)`.
 pub proof fn lemma_cmp_gap_cross(
     tm: Tm, c: TmConfig, q_walk: nat, q_cmp: nat, g: nat, d_o: nat, out_rest: nat,
     ib: int, i0: int,
 )
     requires
         tm_wf(tm),
-        tm.n >= 4,
-        1 <= d_o <= 4,
+        tm.n >= 5,
+        1 <= d_o <= 5,
         g >= 1,
         c.a == pile_zeros(d_o + tm.m * out_rest, g, tm.m) % tm.m,
         c.u == pile_zeros(d_o + tm.m * out_rest, g, tm.m) / tm.m,
@@ -551,7 +553,7 @@ pub proof fn lemma_cmp_gap_cross(
 {
     reveal(tm_wf);
     let m = tm.m;
-    assert(m > 4);   // n >= 4 ∧ n < m ⟹ m ≥ 5
+    assert(m > 5);   // n >= 5 ∧ n < m ⟹ m ≥ 6 (so the frontier d_o ≤ 5 < m)
     let big_x = d_o + m * out_rest;
     assert(m * out_rest == out_rest * m) by(nonlinear_arith);
     assert(big_x == out_rest * m + d_o);

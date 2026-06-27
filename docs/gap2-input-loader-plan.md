@@ -2126,3 +2126,40 @@ output-exhaust (skip0_left hits the output far-`5` while expecting a digit) ⟹ 
 WIPES both tapes to literal `tm_origin()=(0,0,0,0)` (the α "restore" is only a proof invariant); REJECT =
 clear output + rewind + INC + re-dovetail. → **B-cmp.7 dual far-`5` sentinels** (u=output-end, v=α-end). After
 R-cmp: R-S dovetail → R-C/R-MC/B-W → discharge `ceer_realizes` → drop `axiom_ceer_fp_embedding`.
+
+### N+26 — R-cmp B-cmp.6 design PINNED (two port-8051 consults) + the REJECT bricks (mismatch + too-short) DONE.
+
+**Design pinned (consults 4 & 5, 2026-06-27).** Two corrections to the consult-3 sketch, both caught at the
+config level:
+  - **No Stay direction.** `apply_quint` has only `Dir::R`/`Dir::L` (no Stay) — every reject/halt transition
+    MUST move L or R. The consult's `S`-moves are replaced by real L/R steps.
+  - **Accept = scan the SENTINEL `5`, not blank `0`.** Accepting on `0` is ambiguous (could be an interior
+    gap blank). Both string-ends carry a far-`5` sentinel (B-cmp.7), and ACCEPT fires when the head reaches
+    the sentinel. The earlier "output `0` ⟹ accept" wording was pre-sentinel.
+  - **Accept geometry (confirmed).** At ACCEPT (output == α, same length `L`, all matched): every output
+    digit was consumed to `0`, so the output region in `u` is **all `0`** (the gap = whole output region),
+    with the **output far-`5` sentinel at `u`'s high end**; `v` = the fully restored α digits + the marker(s)
+    + the α far-`5`. Crossing the gap (skip-`0`) lands on the output sentinel — that scan-`5` IS the accept
+    signal. The wipe is then asymmetric: `u` is already all-`0` (just clear the one sentinel), `v` needs a
+    real digit-block wipe (no internal `0`s in `v`, so "wipe-until-blank" is sound). End at `tm_origin()`.
+  - **Reject = pure sink.** Every failure path (mismatch / too-short / too-long) transitions to a single
+    `q_reject`; the OUTER dovetail **R-S** owns the cleanup (clear output → rewind → increment candidate →
+    re-dovetail). So a B-cmp.6 reject brick's only obligation is "reach `q_reject`".
+  - **Build order (consult):** REJECT bricks first (layout-light) → B-cmp.7 sentinels (pin the far-`5`
+    layout) → B-cmp.6 ACCEPT wipe (co-designed with .7, since the accept tape state IS the .7 layout).
+
+**Built (crate 1764 → 1766/0, additive, no escape hatches):**
+  - **Generalized `lemma_cmp_gap_cross`** — bound `1≤d_o≤4`, `n≥4` → `1≤d_o≤5`, `n≥5`. The SAME gap-cross now
+    lands on a digit (MATCH/mismatch dispatch) OR the far-`5` (too-short reject). Weaker precond for the
+    `lemma_cmp_round`/`_loop` callers (they pass `d_o=vk∈1..4`); whole chain re-verified green (no regression).
+  - **`lemma_cmp_mismatch_round`** (`src/tm_cmp_decide.rs`, new) — from `INV(K)`, gap-cross lands on output
+    frontier `d_o∈1..4`; when `d_o≠vk` the quint `(q_cmp, d_o, d_o, q_reject, R)` fires ⟹ `q_reject`. Fuel `g+1`.
+  - **`lemma_cmp_tooshort_round`** — from `INV(K)`, gap-cross lands on `d_o=5` (output sentinel, α still has
+    a digit pending); `(q_cmp, 5, 5, q_reject, R)` ⟹ `q_reject`. Fuel `g+1`.
+
+**Brick queue:** B-cmp.0..B-cmp.5 ✅, B-cmp.6 REJECT mismatch+too-short ✅. **NEXT = B-cmp.6 too-long reject**
+(the α-exhaust path: marker-advance reads the α far-`5` instead of a digit `s∈1..4` → `q_verify_end`; then the
+output frontier digit `1..4` ⟹ `q_reject`). This needs the α-exhaust marker-advance variant (a sibling of
+`lemma_cmp_marker_advance` whose `s`-read is `5` not `1..4`) feeding `q_verify_end`. **Then B-cmp.7 sentinels →
+B-cmp.6 ACCEPT wipe** (`q_wipe_v` right-wipe-until-blank + return to origin; `u` already all-`0`). After
+R-cmp: R-S dovetail → R-C/R-MC/B-W → discharge `ceer_realizes` → drop `axiom_ceer_fp_embedding`.
