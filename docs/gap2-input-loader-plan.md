@@ -217,13 +217,33 @@ chained through ignition to `mm_in_H0(mm, α, 0) ⟺ α declared word-number`.
 
 `mm = ignition_quads ++ tm_to_modmachine(psc_tm(e))`, `psc_tm(e)` a single **n≥4 `tm_wf` TM**:
 
-- **R-AL — the n≥4 assembly foundation.** An n≥4 analog of `rm_to_tm`'s `Tm` constructor (or a
-  parametric `n`); prove `tm_wf` and the per-gadget step lemmas go through at `n=4` by reusing the
-  alphabet-monotone gadget lemmas. **← first brick (smallest, unblocks everything).**
+- **R-AL — the n≥4 assembly foundation.** ✅ **DONE (`tm_assemble4.rs`, 17/0; full crate 678/0).** The
+  n=4 uniform-window scaffold: `entry4(pc)=5+16·pc`, `tm_mod4(len)=21+16·len`, `80=16·5`
+  quintuples/window. **FIRST-ORDER scaffold** (a bare `spec fn` won't coerce to `FnSpec`, and
+  closure-identity bites — so NO higher-order action table): `lemma_tm_wf_n4` proves `tm_wf` from the
+  *manifest-key* hypothesis (`q=entry4(pc)+off`, `a=sym`) + per-quintuple boundedness (`a2≤4`,`q2<m`),
+  with determinism by mixed-radix index recovery (`lemma_idx4_recover`), action-content-independent.
+  `lemma_slot_index`/`lemma_idx4_decomp` locate/decode a `(pc,off,sym)` slot. `lemma_assemble4_peek_demo`
+  validates the whole path: the existing `tm.n>=2`-monotone peek gadget fires verbatim on a concrete n=4
+  TM. **Each phase inlines `Seq::new(80·(len+1),|idx| phase_gen(e,idx))` and discharges the manifest +
+  boundedness hypotheses — no higher-order passing.** This is the template R-P/R-cmp/R-S/R-C reuse.
 - **R-P — the read phase.** From `c1` (scanning α's digits), consume α's base-m digits off the left
   tape. New read/peek gadgets distinguish symbols `1..4`. (Design sub-choice: keep α as base-m digits
   on a dedicated tape region for digit-by-digit compare — do NOT fold into a unary counter, which
   reintroduces the expansion. Stay base-m native.)
+
+  **✅ TAPE LAYOUT DECIDED (2026-06-26, port 8051): OPTION (B) — canonicalize.** Ignition leaves α split
+  across `state(digit0)/a(digit1)/u(digits2+)`, head mid-α, `v` empty — awkward for compare. So R-P's
+  first job is a **copy-and-park** gadget: walk α's digits into a clean contiguous sentinel-bounded
+  block, freeing the other side as workspace. Target layout (head shuttles):
+  `[repunit counters | relnum-scratch] | Sentinel | α-copy | Sentinel`. This turns R-cmp from
+  "state-encoded vs tape-encoded" into a simple **ping-pong** "tape-string vs tape-string" compare —
+  the only way to keep R-cmp proofs tractable (avoids carrying remaining-α-digits in the state).
+  **Counters: reuse the existing repunit/2-counter gadget layout** (`tm_two_counter`, parked in the
+  workspace with distinct markers `S1|111|S2|11|…`) — the dovetail `s,(a,b),i` are poly-bounded, so the
+  unary space overhead is negligible vs. base-m carry-logic complexity, and the inc/dec/peek lemmas are
+  trivial to discharge. Only α and `relnum` stay base-m (length Θ(a+b)). R-P terminates with the head at
+  the leftmost sentinel of the α-block.
 - **R-relnum-gen — generate relnum(a,b)'s base-m digits.** For an enumerated declared `(a,b)`, emit the
   digits of `relnum(a,b)` = the symbols of the collapsed Miller relator `ρ(collapse(g_a g_b⁻¹))`
   (length Θ(a+b); `t·(b⁻¹)ⁱ·a·(b)ⁱ·t⁻¹·a⁻ⁱ·b⁻¹·aⁱ`, `i=j+1`, `b=tat⁻¹`). Loop control via counters
@@ -320,7 +340,10 @@ ORDER (low-first vs high-first) and `inverse_word`'s exact digit transform befor
 
 ---
 
-*Status (2026-06-26): SPEC BACKBONE + IGNITION BUILT. B-FR/B-IG (ignition, `gap2_ignition.rs`) +
-B-relnum-spec/B-W-assembly (`gap2_relnum.rs`) DONE; crate 661/0. The whole remaining obligation is now
-ONE spec: a machine satisfying `mm_decides_relnum`. Gated on the §5 architecture re-decision (TM
-read-loop vs modmachine prefix). The conditional chain already stands; this brick removes the last axiom.*
+*Status (2026-06-26): SPEC BACKBONE + IGNITION + R-AL BUILT. B-FR/B-IG (ignition, `gap2_ignition.rs`)
++ B-relnum-spec/B-W-assembly (`gap2_relnum.rs`) + **R-AL (n=4 assembler, `tm_assemble4.rs` 17/0)** DONE;
+crate 678/0. The whole remaining obligation is ONE spec: a machine satisfying `mm_decides_relnum`,
+built as Route (i) — a bespoke n=4 `tm_wf` TM `psc_tm(e)` over the assemble4 scaffold. Tape layout
+DECIDED = Option (B) canonicalize. NEXT = R-P (copy-and-park α into a sentinel block) then
+R-relnum-gen / R-cmp / R-S / R-C / R-MC. The conditional chain already stands; this brick removes the
+last axiom.*
