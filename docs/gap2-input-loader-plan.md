@@ -1929,3 +1929,39 @@ opening B-cmp.2.
 advance** (resolve direction first), then B-cmp.3 output read+consume, B-cmp.4 round step, B-cmp.5 compare
 loop, B-cmp.6 accept/reject dispatch, B-cmp.7 park-time sentinels + relocation. After R-cmp: R-S dovetail →
 R-C/R-MC/B-W → discharge `ceer_realizes` → drop `axiom_ceer_fp_embedding`.
+
+### N+22 — R-cmp B-cmp.2 marker-advance COMPLETE (the matched-digit step). Direction resolved = marker deepens. Next design gate = the digit-compare state space (B-cmp.4).
+
+**Built this session (2026-06-27):** `lemma_cmp_marker_advance` in `src/tm_cmp_traverse.rs` — the
+marker-ADVANCING round-trip (B-cmp.2), the variant of B-cmp.1 whose middle does the marker work instead of
+a no-op rewrite. Same probe skeleton (right-walk → middle → left-walk) but: the entry state `q_back` carries
+the recorded frontier value `vk` (value-in-state, forced by n=5); the middle is two steps —
+`(q_back, 5, vk, q_read, R)` restores `vk` into the marked cell and steps onto `α[k+1]=s`, then
+`(q_read, s, 5, q_walk, L)` writes the new `5`-mark at position `k+1`, records `s = V_{k+1}` into `q_walk`,
+and steps back onto the just-restored `vk`; the left-walk then returns over `[vk] ++ drev(blk)` (the prefix
+grown by `vk`).
+
+**Net effect (ensures):** `v == dpack(blk ++ [vk]) + m^{k+1}·(5 + m·suf)` — the **same invariant shape** as
+entry with `(prefix, k, tail) → (blk ++ [vk], k+1, 5 + m·suf)`. Head ends one cell into `u` scanning the
+output frontier `u % m`, in `q_walk` holding the next frontier value `s`. Fuel `2k+3`. This is exactly the
+inductive step the B-cmp.5 compare loop iterates: each call grows the restored α prefix by one digit, slides
+the marker one deeper, and threads the next-position value through the state. Crate **1740/0**, committed
+(9731736). No escape hatches.
+
+**Marker-direction question (flagged in §N+21) RESOLVED — marker deepens (`k` increasing).** Re-derived
+geometrically: each round consumes one output digit to `0` (gap in `u` grows, crossed by `skip0_left`,
+B-cmp.0) and slides the α marker one cell deeper into `v` while keeping all of α in `v` (the restored prefix
+between boundary and marker grows, traversed by the balanced probe, B-cmp.1/.2). You CANNOT advance by
+pushing the restored digit into `u` — that's the §N+20 pollution flaw. So the prefix lives in `v`, the
+marker deepens, and the traverse grows O(|α|) per round (O(|α|²) total). The "step to k-1" in the older
+brick line was the error; the §N+20 prose (marker deeper, traverse grows) is correct. `lemma_cmp_marker_advance`
+implements this and verifies, confirming the geometry closes.
+
+**Brick queue:** B-cmp.0 ✅, B-cmp.1 ✅ (probe), B-cmp.2 ✅ (marker advance). NEXT = **B-cmp.3 output
+read+consume** then **B-cmp.4 round step** — but B-cmp.4 hits a **new design gate**: the digit COMPARE. Both
+operands live in finite control (`d_o` read from the output frontier, `V_k` the marker value already in the
+state), so the compare is a 2-D state branch (≈4×4 transitions) splitting into match (consume output→`0`,
+fire `lemma_cmp_marker_advance`) vs mismatch (→ reject dispatch). Pin that state-space encoding (and the
+sentinel/exhaustion paths, B-cmp.6) — likely a port-8051 consult — before building B-cmp.4. B-cmp.3 (cross
+the gap with `skip0_left`, land on `output[k]`, read its value into the compare state) is buildable now and
+is the clean bridge into B-cmp.4. After R-cmp: R-S dovetail → R-C/R-MC/B-W → discharge `ceer_realizes`.
