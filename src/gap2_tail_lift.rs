@@ -193,6 +193,53 @@ pub proof fn lemma_run_tail(tm: Tm, c: TmConfig, fuel: nat, h: nat, t: nat)
     }
 }
 
+/// **The matching index is the one you placed.** In a deterministic TM, the `choose`-defined
+/// `matching_index` equals any concrete index `i` whose quint matches `c`. Lets the primitive tail_safe
+/// proofs unfold `tail_safe`/`tail_end_h` (which read `tm.quints[matching_index(tm, c)]`) against the
+/// known loop quint.
+pub proof fn lemma_match_is(tm: Tm, c: TmConfig, i: int)
+    requires
+        tm_wf(tm),
+        0 <= i < tm.quints.len(),
+        quint_matches(tm.quints[i], c),
+    ensures
+        matching_index(tm, c) == i,
+{
+    reveal(tm_wf);
+    lemma_matching_index_ok(tm, c);   // matching_index matches c
+    // determinism: two matching indices coincide.
+}
+
+/// **One-step unfold of `tail_safe`/`tail_end_h` at a known firing quint.** When quint `i` (the unique
+/// match) fires at `c` with `fuel ≥ 1`, the specs reduce to their continuation at `next = apply_quint`.
+/// Packages the `matching_index == i` resolution so the walk companions read off the recursion directly.
+pub proof fn lemma_tail_unfold(tm: Tm, c: TmConfig, fuel: nat, h: nat, i: int)
+    requires
+        tm_wf(tm),
+        fuel >= 1,
+        0 <= i < tm.quints.len(),
+        quint_matches(tm.quints[i], c),
+    ensures
+        ({
+            let next = apply_quint(tm.quints[i], c, tm.m);
+            &&& (tm.quints[i].dir == Dir::R ==> {
+                    &&& tail_safe(tm, c, fuel, h) == tail_safe(tm, next, (fuel - 1) as nat, (h + 1) as nat)
+                    &&& tail_end_h(tm, c, fuel, h) == tail_end_h(tm, next, (fuel - 1) as nat, (h + 1) as nat)
+                })
+            &&& (tm.quints[i].dir == Dir::L ==> {
+                    &&& tail_safe(tm, c, fuel, h)
+                            == (h >= 1 && tail_safe(tm, next, (fuel - 1) as nat, (h - 1) as nat))
+                    &&& tail_end_h(tm, c, fuel, h) == tail_end_h(tm, next, (fuel - 1) as nat, (h - 1) as nat)
+                })
+        }),
+{
+    reveal(tm_wf);
+    lemma_match_is(tm, c, i);            // matching_index(tm, c) == i
+    lemma_matching_index_ok(tm, c);      // !tm_terminal(tm, c)
+    assert(!tm_terminal(tm, c));
+    // with matching_index == i pinned, the spec fns evaluate their else-branch directly.
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // composition: tail_safe / tail_end_h split across a run boundary
 // ────────────────────────────────────────────────────────────────────────────
