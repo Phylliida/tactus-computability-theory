@@ -1691,3 +1691,77 @@ the copy is Θ(|α|) per stage (dovetail is ~stages², asymptotically fine) but 
 simplest, least-error-prone TM pattern (no positional markers needed in α). ⚠ The copy step still ping-pongs
 the head past the output to reach α — reuses the `dwalk`/copy machinery. **OPEN: confirm this vs a direct
 non-destructive ping-pong compare (no copy) — Danielle's design call before the build.**
+
+### N+18 — R-cmp design fork SHARPENED (deep grounding pass, no code). The crux is the *compare action*, not copy-vs-ping-pong. DANIELLE DECISION NEEDED.
+
+**This session was a read-only grounding + co-design pass on the N+17 fork.** Verified the post-emit
+interface, traced the (u,v,a,q) mechanics down to the quintuple level, and ran two port-8051 consults.
+Baseline re-confirmed green (`tm_dwalk` 6/0 sample). No code written — the fork is genuinely undesigned at
+a level the project reserves for Danielle, and it is now *much* better characterized. **The headline: the
+N+17 framing (copy-to-scratch vs ping-pong) is the wrong axis. The real crux is whether the per-digit
+compare can be MARKERLESS at all in the Minsky model — and that is open, with the existing toolkit's own
+docstrings on one side and a clean infeasibility argument on the other.**
+
+**The precise R-cmp entry interface (now pinned, from `lemma_u_phase` / `lemma_u_phase_tail_v`):**
+`u = copy_u(0,big_m,g,m)` (the spent emit-scratch `a+1` master — disposable, will be reloaded by
+`load_master`), `v = dpack(fam_digits) + m^H·dpack(alpha_stored)` (output low = `relnum(a,b)` value, blank
+gap, then alpha as a v-tail at the still-unpinned offset `H` — `H` is R-S glue, deferred), `a=0`, `q=q_cmp`
+(carries the 4 `kf` walk-back self-loops). R-cmp must accept (-> R-C) iff `dpack(fam_digits) == (alpha value)`,
+else clear output + advance `s` + loop.
+
+**Finding 1 — orientation makes "output == alpha" a same-index low-to-low pairing IF the head sits at the gap.**
+`tm_rp` parks alpha REVERSED (`alpha_stored = drev(alpha)`); the emitter writes output forward. Move the head
+to the gap and `u = ...*m^L + dpack(drev(output))` (output relocated, `u`-low `= output[L-1]`),
+`v = dpack(alpha_stored)` (`v`-low `= alpha_stored[0] = alpha[L-1]`). So `u`-low vs `v`-low compares
+`output[L-1]` vs `alpha[L-1]` — the CORRECT same-index pairing, peeling inward. (With alpha stored *forward*
+the same trick checks `output == drev(alpha)`, wrong; so the reversed parking is load-bearing and should be
+kept.) No reversal insertion needed — item 2 RESOLVED in favour of "head-at-gap, low-to-low".
+
+**Finding 2 — the between-stacks wall (the real crux).** With the head at the gap, `u` = output, `v` = alpha:
+this is exactly N+17's "dual-peel". But in the Minsky model **every move is a swap** — L pops `u`/pushes `v`,
+R pops `v`/pushes `u`; there is no "delete". To compare `u`-top vs `v`-top you can get BOTH into the state
+(R to read `v`-top, L to read `u`-top, the two reads cancel), but to ADVANCE while keeping alpha intact you
+must remove the consumed output digit — and pushing it to `v` blocks the next alpha digit, while pushing it
+back to `u` undoes the read. **A markerless dual-consume that preserves `v` loops.** (Port-8051 consult worked
+this through independently and hit the same wall: *"M2's clean cycle is an illusion — Minsky machines don't
+consume, they relocate."*) ⟹ the compare needs EITHER a frontier MARKER (symbol `5`) in alpha, restored after,
+OR a sacrificial COPY whose destructive consume you don't care about.
+
+**Finding 3 — `copy_refresh` is UNARY, so M3's "just reuse the big copy gadget" is overstated.**
+`copy_refresh` (the 356 KB verified file) copies a *unary counter* (master->temp). alpha is a digit-string
+(`1..4`). M3 would need a *new digit-string copy* (the `dwalk`-level analog), and the destructive compare of
+the copy STILL faces the between-stacks wall unless the copy is laid adjacent (-> a single-region fold, which
+needs a marker -> circular). So M1 (marker) and M3 (copy) both need substantial *new* digit-string machinery;
+the asymmetry the peer cited is smaller than it looked.
+
+**Finding 4 — a possible MARKERLESS route the consults missed, and the docstring tension.** The verified
+`dwalk` docstrings explicitly say "the R-cmp **ping-pong**" (markerless) and `tm_rp` calls the reversed park
+"the canonical layout the R-cmp **ping-pong** reads" — i.e. the toolkit was *built assuming a markerless
+compare*. That contradicts Finding 2. The reconciliation candidate: a consumed digit CAN be deleted by writing
+`a2=0` when it is the scanned symbol (a move R with `a2=0` overwrites the scanned digit and shifts a `0` onto
+`u`). The disposable emit-scratch master in `u`-low is a legitimate "delete-bin" for those `0`s. **This may be
+the markerless scheme the docstrings intend** — but it has delicate coupling: the `0`s interleave with the
+master content, so `load_master`'s expected `u` layout on the reject path must survive (or the reject path
+must fully wipe `u` first). NOT traced to completion this session.
+
+**State of the three sub-questions:**
+- (item 1, non-destructive compare) — REFRAMED: it is a *marker vs markerless* question, not copy vs ping-pong.
+  Markerless feasibility is OPEN (Finding 4 vs Finding 2).
+- (item 2, orientation/reversal) — RESOLVED: keep alpha reversed, head-at-gap, low-to-low (Finding 1).
+- (offset `H`) — still R-S glue, deferred (unchanged).
+
+**RECOMMENDATION (for Danielle's call):** my lean is **M1 — a digit-level mark-and-restore compare** (marker
+`5` tracks the alpha frontier; per step peel one output digit, walk to the marker via a `dwalk`-to-marker,
+compare, advance+restore). Rationale: it is the `dwalk`-native approach, the non-destructive-on-alpha guarantee
+is the same pattern `copy_refresh` already proves (read a counter without destroying it), and the loop
+invariant is the cleanest ("marker at frontier `k`; alpha equals its initial value with one cell overwritten
+by `5`; output suffix consumed"). M3 (copy) needs a new digit-string copy AND still hits the between-stacks
+wall on the compare; M2 (markerless dual-consume) is refuted by Finding 2. **BUT** before building I want
+Danielle's call on Finding 4: the `dwalk` docstrings she co-designed assume markerless ping-pong — if she
+intended the `a2=0`-delete-into-scratch scheme, that is a cleaner (no-marker) compare worth doing instead of
+M1, and I do not want to build M1 against a markerless intent. The `H`-offset glue and the compare-action are
+the only things between here and `mm_decides_relnum` -> `ceer_realizes` -> dropping `axiom_ceer_fp_embedding`.
+
+**NEXT (once Danielle picks marker / markerless):** build the chosen compare as a self-contained gadget over
+the `assemble5` scaffold (interface pinned above), then R-S (dovetail), R-C/R-MC/B-W -> discharge
+`ceer_realizes`.
