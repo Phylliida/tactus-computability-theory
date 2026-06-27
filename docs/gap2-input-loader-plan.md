@@ -244,6 +244,16 @@ chained through ignition to `mm_in_H0(mm, α, 0) ⟺ α declared word-number`.
   unary space overhead is negligible vs. base-m carry-logic complexity, and the inc/dec/peek lemmas are
   trivial to discharge. Only α and `relnum` stay base-m (length Θ(a+b)). R-P terminates with the head at
   the leftmost sentinel of the α-block.
+
+  **✅ R-P FOUNDATION DONE — the digit-string algebra (`tm_dstring.rs`, 14/0).** The symbol-agnostic
+  analog of `repunit_m`: `dpack(ds, m) = ds[0] + m·ds[1] + …` packs a digit `Seq<nat>` low-first; with
+  `pow_nat` + `lemma_dpack_pop`/`_push`/`_digits_le`/`_low_nonzero`/`_append` — the pop/push/bound/
+  split algebra the digit-walk loop invariants read. **NEXT R-P piece = the digit-walk gadget:** the
+  n=4 analog of `lemma_walk_left_inner` — quintuples `(q_walk, s, s, q_walk, L)` for each digit symbol
+  `s ∈ {1,2,3,4}` (vs. the unary `(q,1,1,q,L)`) walk the head left over a `dpack` block of nonzero
+  digits onto `v` (reversed), until the blank `0` turnaround; loop invariant phrased over `dpack` of the
+  remaining/processed digit sub-sequences. Then the copy-and-park assembly relocates α into the
+  sentinel-bounded canonical block.
 - **R-relnum-gen — generate relnum(a,b)'s base-m digits.** For an enumerated declared `(a,b)`, emit the
   digits of `relnum(a,b)` = the symbols of the collapsed Miller relator `ρ(collapse(g_a g_b⁻¹))`
   (length Θ(a+b); `t·(b⁻¹)ⁱ·a·(b)ⁱ·t⁻¹·a⁻ⁱ·b⁻¹·aⁱ`, `i=j+1`, `b=tat⁻¹`). Loop control via counters
@@ -340,10 +350,11 @@ ORDER (low-first vs high-first) and `inverse_word`'s exact digit transform befor
 
 ---
 
-*Status (2026-06-26): SPEC BACKBONE + IGNITION + R-AL BUILT. B-FR/B-IG (ignition, `gap2_ignition.rs`)
-+ B-relnum-spec/B-W-assembly (`gap2_relnum.rs`) + **R-AL (n=4 assembler, `tm_assemble4.rs` 17/0)** DONE;
-crate 678/0. The whole remaining obligation is ONE spec: a machine satisfying `mm_decides_relnum`,
-built as Route (i) — a bespoke n=4 `tm_wf` TM `psc_tm(e)` over the assemble4 scaffold. Tape layout
-DECIDED = Option (B) canonicalize. NEXT = R-P (copy-and-park α into a sentinel block) then
-R-relnum-gen / R-cmp / R-S / R-C / R-MC. The conditional chain already stands; this brick removes the
-last axiom.*
+*Status (2026-06-26): SPEC BACKBONE + IGNITION + R-AL + R-P-FOUNDATION BUILT. B-FR/B-IG (ignition,
+`gap2_ignition.rs`) + B-relnum-spec/B-W-assembly (`gap2_relnum.rs`) + **R-AL (n=4 assembler,
+`tm_assemble4.rs` 17/0)** + **R-P digit-string algebra (`tm_dstring.rs` 14/0)** DONE; crate 692/0. The
+whole remaining obligation is ONE spec: a machine satisfying `mm_decides_relnum`, built as Route (i) —
+a bespoke n=4 `tm_wf` TM `psc_tm(e)` over the assemble4 scaffold. Tape layout DECIDED = Option (B)
+canonicalize; α-digit algebra (`dpack`) in hand. NEXT = the digit-walk gadget → R-P copy-and-park
+assembly → R-relnum-gen / R-cmp / R-S / R-C / R-MC. The conditional chain already stands; this brick
+removes the last axiom.*
