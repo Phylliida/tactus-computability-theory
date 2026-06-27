@@ -38,6 +38,7 @@ use crate::tm_dstring::dpack;
 use crate::tm_copy_refresh::copy_u;
 use crate::gap2_relnum_dds::seq_pow;
 use crate::tm_power_block::{power_block_fuel_b1, lemma_power_block_step_block1};
+use crate::tm_power_block_m1::{power_block_fuel_b1_m1, lemma_power_block_step_block1_m1};
 
 verus! {
 
@@ -626,6 +627,110 @@ pub proof fn lemma_pbb1x_phase(tm: Tm, len: nat, pc: nat, big_m: nat, g: nat, od
         i_pivot_r, ir1, ir2, ir3, ir4,
         i_emit, i_off_l, il1, il2, il3, il4,
         i_pivot, i_one_l, i_erase, i_disc);
+}
+
+/// **Exit-parametric power-block phase, the `M = 1` dispatch (same `pbb1x_gen` window).** The M=1 step
+/// ([`lemma_power_block_step_block1_m1`]) needs a SUBSET of the M≥2 quints — every M=1 quint maps to a
+/// `pbb1_act` slot with byte-identical content (verified: the m1 copy lands directly on the pivot, reusing
+/// the off 0–10/15–23 states and skipping off 11–14's home-cycle), so NO separate window is needed. The
+/// sequencer dispatches on the symbolic master `M`: `M = 1` → this lemma, `M ≥ 2` → [`lemma_pbb1x_phase`].
+/// From `{u: copy_u(0,1,g), v: dpack(od), a: 0, q: entry5(pc)}` after `power_block_fuel_b1_m1(g, |od|)`
+/// steps: `{u: copy_u(0,1,g), v: dpack(od ++ [s]), a: 0, q: qexit}`.
+pub proof fn lemma_pbb1x_m1_phase(tm: Tm, len: nat, pc: nat, g: nat, od: Seq<nat>, s: nat, qexit: nat)
+    requires
+        tm_wf(tm),
+        tm.n == 5,
+        tm.m == tm_mod5(len),
+        pc <= len,
+        tm.quints.len() == 288 * (len + 1),
+        forall|i: int| pc * 288 <= i < pc * 288 + 288 ==> #[trigger] tm.quints[i] == pbb1x_gen(s, qexit, i as nat),
+        g >= 3,
+        1 <= s <= 4,
+        forall|k: int| 0 <= k < od.len() ==> 1 <= #[trigger] od[k] <= 4,
+    ensures
+        tm_run(tm,
+            TmConfig { u: copy_u(0, 1, g, tm.m), v: dpack(od, tm.m), a: 0, q: entry5(pc) },
+            power_block_fuel_b1_m1(g, od.len()))
+            == (TmConfig { u: copy_u(0, 1, g, tm.m),
+                v: dpack(od + seq_pow(seq![s], 1), tm.m), a: 0, q: qexit }),
+{
+    let e = entry5(pc);
+    // ── copy_refresh_m1 j=0 copy (off 0–6). ──
+    let i_dpeel  = (pc * 288 + 0 * 6 + 0) as int;  locate_pbb1x(tm, len, pc, s, qexit, 0, 0, 0, 1, Dir::L);
+    let i_dtemp  = (pc * 288 + 1 * 6 + 1) as int;  locate_pbb1x(tm, len, pc, s, qexit, 1, 1, 1, 1, Dir::L);
+    let i_dins   = (pc * 288 + 1 * 6 + 0) as int;  locate_pbb1x(tm, len, pc, s, qexit, 1, 0, 1, 2, Dir::R);
+    let i_dwb    = (pc * 288 + 2 * 6 + 1) as int;  locate_pbb1x(tm, len, pc, s, qexit, 2, 1, 1, 2, Dir::R);
+    let i_cpeel  = (pc * 288 + 2 * 6 + 0) as int;  locate_pbb1x(tm, len, pc, s, qexit, 2, 0, 0, 3, Dir::L);
+    let i_ctemp  = (pc * 288 + 3 * 6 + 1) as int;  locate_pbb1x(tm, len, pc, s, qexit, 3, 1, 1, 3, Dir::L);
+    let i_ct2g   = (pc * 288 + 3 * 6 + 0) as int;  locate_pbb1x(tm, len, pc, s, qexit, 3, 0, 0, 4, Dir::L);
+    let i_cgap   = (pc * 288 + 4 * 6 + 0) as int;  locate_pbb1x(tm, len, pc, s, qexit, 4, 0, 0, 4, Dir::L);
+    let i_cmark  = (pc * 288 + 4 * 6 + 1) as int;  locate_pbb1x(tm, len, pc, s, qexit, 4, 1, 5, 5, Dir::R);
+    let i_crf2g  = (pc * 288 + 5 * 6 + 0) as int;  locate_pbb1x(tm, len, pc, s, qexit, 5, 0, 0, 6, Dir::R);
+    let i_crgap  = (pc * 288 + 6 * 6 + 0) as int;  locate_pbb1x(tm, len, pc, s, qexit, 6, 0, 0, 6, Dir::R);
+    let i_crg2t  = (pc * 288 + 6 * 6 + 1) as int;  locate_pbb1x(tm, len, pc, s, qexit, 6, 1, 1, 7, Dir::R);
+    // ── copy_refresh_m1 terminate (home == q_home == e+7). ──
+    let i_tpeel  = (pc * 288 + 7 * 6 + 0) as int;  locate_pbb1x(tm, len, pc, s, qexit, 7, 0, 0, 8, Dir::L);
+    let i_ttemp  = (pc * 288 + 8 * 6 + 1) as int;  locate_pbb1x(tm, len, pc, s, qexit, 8, 1, 1, 8, Dir::L);
+    let i_tt2g   = (pc * 288 + 8 * 6 + 0) as int;  locate_pbb1x(tm, len, pc, s, qexit, 8, 0, 0, 9, Dir::L);
+    let i_tgap   = (pc * 288 + 9 * 6 + 0) as int;  locate_pbb1x(tm, len, pc, s, qexit, 9, 0, 0, 9, Dir::L);
+    let i_ta2b   = (pc * 288 + 9 * 6 + 5) as int;  locate_pbb1x(tm, len, pc, s, qexit, 9, 5, 5, 10, Dir::L);
+    let i_tturn  = (pc * 288 + 10 * 6 + 0) as int; locate_pbb1x(tm, len, pc, s, qexit, 10, 0, 0, 15, Dir::R);
+    let i_tmaster= (pc * 288 + 15 * 6 + 5) as int; locate_pbb1x(tm, len, pc, s, qexit, 15, 5, 5, 15, Dir::R);
+    let i_tm2g   = (pc * 288 + 15 * 6 + 0) as int; locate_pbb1x(tm, len, pc, s, qexit, 15, 0, 0, 16, Dir::R);
+    let i_trgap  = (pc * 288 + 16 * 6 + 0) as int; locate_pbb1x(tm, len, pc, s, qexit, 16, 0, 0, 16, Dir::R);
+    let i_tg2t   = (pc * 288 + 16 * 6 + 1) as int; locate_pbb1x(tm, len, pc, s, qexit, 16, 1, 1, 17, Dir::R);
+    // ── copy_refresh_m1 unmark (home == q_ret == e+17). ──
+    let i_upeel  = (pc * 288 + 17 * 6 + 0) as int; locate_pbb1x(tm, len, pc, s, qexit, 17, 0, 0, 18, Dir::L);
+    let i_utemp  = (pc * 288 + 18 * 6 + 1) as int; locate_pbb1x(tm, len, pc, s, qexit, 18, 1, 1, 18, Dir::L);
+    let i_ut2g   = (pc * 288 + 18 * 6 + 0) as int; locate_pbb1x(tm, len, pc, s, qexit, 18, 0, 0, 19, Dir::L);
+    let i_ugap   = (pc * 288 + 19 * 6 + 0) as int; locate_pbb1x(tm, len, pc, s, qexit, 19, 0, 0, 19, Dir::L);
+    let i_uu1    = (pc * 288 + 19 * 6 + 5) as int; locate_pbb1x(tm, len, pc, s, qexit, 19, 5, 1, 20, Dir::L);
+    let i_uturn  = (pc * 288 + 20 * 6 + 0) as int; locate_pbb1x(tm, len, pc, s, qexit, 20, 0, 0, 21, Dir::R);
+    let i_umaster= (pc * 288 + 21 * 6 + 1) as int; locate_pbb1x(tm, len, pc, s, qexit, 21, 1, 1, 21, Dir::R);
+    let i_um2g   = (pc * 288 + 21 * 6 + 0) as int; locate_pbb1x(tm, len, pc, s, qexit, 21, 0, 0, 22, Dir::R);
+    let i_urgap  = (pc * 288 + 22 * 6 + 0) as int; locate_pbb1x(tm, len, pc, s, qexit, 22, 0, 0, 22, Dir::R);
+    let i_ug2t   = (pc * 288 + 22 * 6 + 1) as int; locate_pbb1x(tm, len, pc, s, qexit, 22, 1, 1, 23, Dir::R);
+    // ── block_loop (q_loop := q_urt == e+23), exit → qexit. ──
+    let i_peek   = (pc * 288 + 23 * 6 + 0) as int; locate_pbb1x(tm, len, pc, s, qexit, 23, 0, 0, 24, Dir::L);
+    let i_cont   = (pc * 288 + 24 * 6 + 1) as int; locate_pbb1x(tm, len, pc, s, qexit, 24, 1, 1, 25, Dir::R);
+    let i_exit   = (pc * 288 + 24 * 6 + 0) as int; locate_pbb1x_exit(tm, len, pc, s, qexit);
+    let i_pivot_r= (pc * 288 + 25 * 6 + 0) as int; locate_pbb1x(tm, len, pc, s, qexit, 25, 0, 0, 26, Dir::R);
+    let ir1      = (pc * 288 + 26 * 6 + 1) as int; locate_pbb1x(tm, len, pc, s, qexit, 26, 1, 1, 26, Dir::R);
+    let ir2      = (pc * 288 + 26 * 6 + 2) as int; locate_pbb1x(tm, len, pc, s, qexit, 26, 2, 2, 26, Dir::R);
+    let ir3      = (pc * 288 + 26 * 6 + 3) as int; locate_pbb1x(tm, len, pc, s, qexit, 26, 3, 3, 26, Dir::R);
+    let ir4      = (pc * 288 + 26 * 6 + 4) as int; locate_pbb1x(tm, len, pc, s, qexit, 26, 4, 4, 26, Dir::R);
+    let i_emit   = (pc * 288 + 26 * 6 + 0) as int; locate_pbb1x(tm, len, pc, s, qexit, 26, 0, s, 27, Dir::R);
+    let i_off_l  = (pc * 288 + 27 * 6 + 0) as int; locate_pbb1x(tm, len, pc, s, qexit, 27, 0, 0, 28, Dir::L);
+    let il1      = (pc * 288 + 28 * 6 + 1) as int; locate_pbb1x(tm, len, pc, s, qexit, 28, 1, 1, 28, Dir::L);
+    let il2      = (pc * 288 + 28 * 6 + 2) as int; locate_pbb1x(tm, len, pc, s, qexit, 28, 2, 2, 28, Dir::L);
+    let il3      = (pc * 288 + 28 * 6 + 3) as int; locate_pbb1x(tm, len, pc, s, qexit, 28, 3, 3, 28, Dir::L);
+    let il4      = (pc * 288 + 28 * 6 + 4) as int; locate_pbb1x(tm, len, pc, s, qexit, 28, 4, 4, 28, Dir::L);
+    let i_pivot  = (pc * 288 + 28 * 6 + 0) as int; locate_pbb1x(tm, len, pc, s, qexit, 28, 0, 0, 29, Dir::L);
+    let i_one_l  = (pc * 288 + 29 * 6 + 1) as int; locate_pbb1x(tm, len, pc, s, qexit, 29, 1, 1, 29, Dir::L);
+    let i_erase  = (pc * 288 + 29 * 6 + 0) as int; locate_pbb1x(tm, len, pc, s, qexit, 29, 0, 0, 30, Dir::R);
+    let i_disc   = (pc * 288 + 30 * 6 + 1) as int; locate_pbb1x(tm, len, pc, s, qexit, 30, 1, 0, 23, Dir::R);
+    let i_one_r  = (pc * 288 + 23 * 6 + 1) as int; locate_pbb1x(tm, len, pc, s, qexit, 23, 1, 1, 23, Dir::R);
+
+    // ── invoke the verified M=1 power-block step (q_dh0 = e, q_exit = qexit external). ──
+    lemma_power_block_step_block1_m1(tm, g, od, s,
+        // states: off 0–6, then q_t=e+8 q_a=e+9 q_b=e+10 q_turn=e+15 q_turng=e+16 q_ret=e+17 q_home=e+7,
+        //         q_ut=e+18..q_urt=e+23, block_loop e+24..e+30, qexit.
+        e + 0, e + 1, e + 2, e + 3, e + 4, e + 5, e + 6,
+        e + 8, e + 9, e + 10, e + 15, e + 16, e + 17, e + 7,
+        e + 18, e + 19, e + 20, e + 21, e + 22, e + 23,
+        e + 24, e + 25, e + 26, e + 27, e + 28, e + 29, e + 30, qexit,
+        // copy_refresh_m1 quint indices
+        i_dpeel, i_dtemp, i_dins, i_dwb,
+        i_cpeel, i_ctemp, i_ct2g, i_cgap, i_cmark, i_crf2g, i_crgap, i_crg2t,
+        i_tpeel, i_ttemp, i_tt2g, i_tgap, i_ta2b,
+        i_tturn, i_tmaster, i_tm2g, i_trgap, i_tg2t,
+        i_upeel, i_utemp, i_ut2g, i_ugap, i_uu1,
+        i_uturn, i_umaster, i_um2g, i_urgap, i_ug2t,
+        // block_loop quint indices
+        i_peek, i_cont, i_exit,
+        i_pivot_r, ir1, ir2, ir3, ir4,
+        i_emit, i_off_l, il1, il2, il3, il4,
+        i_pivot, i_one_l, i_erase, i_disc, i_one_r);
 }
 
 } // verus!
