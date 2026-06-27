@@ -1114,9 +1114,26 @@ loop's is `q_bhome`). `w % m == 0` is established in-body (`g−M ≥ 2 ⟹ m | 
    A `lemma_singleton_step_block{1,3}` mirroring the power-block step but skipping copy_refresh/dec.
 2. **Phase chaining** — chain the 4 power-blocks + 4 singletons of `uinv_digits(b)` (then `u_digits(a)`) in
    the right low-first order (see `gap2_fam_digits`: `u_digits` = `(1)ⁱ·[4,3,2]·(3)ⁱ·[4]·(4,1,2)ⁱ·[1]·
-   (4,3,2)ⁱ·[2]`; `uinv_digits` = `[4]·(4,1,2)ⁱ·[3]·(4,3,2)ⁱ·[2]·(1)ⁱ·[4,1,2]·(3)ⁱ`). One master alive per
-   phase (`M = i_b = b+1`, then `i_a = a+1`); re-init the master between phases (load from the preserved
-   `a`/`b` counters — a NEW load gadget).
+   (4,3,2)ⁱ·[2]`; `uinv_digits` = `[4]·(4,1,2)ⁱ·[3]·(4,3,2)ⁱ·[2]·(1)ⁱ·[4,1,2]·(3)ⁱ`).
+   - **The splice = STATE IDENTIFICATION** (the key structural insight): every block-step is pivot→pivot,
+     so chain by identifying step_k's END-state with step_{k+1}'s START-state. Power-block start `q_dh0`
+     (reads pivot-`0`, → L into copy), end `q_exit`; singleton start `q_iter` (reads pivot-`0`, surge R),
+     end `q_home` (return-landing, reads `1..4` → L). The shared pivot state's reads are DISTINCT
+     (`0` → next-step's first move; `1..4` → the singleton return-walk's `L`), so `tm_wf` determinism holds
+     and the splice needs no glue steps. `q_exit` has no outgoing quint, so identifying it with the next
+     start just adds that start's `(·,0,·)` quint; the singleton's pivot-`0` is never READ during its
+     counted run (the return-walk lands ON the pivot as the terminal config), so adding a `(q_home,0,·)`
+     quint for the next step is inert to the singleton lemma.
+   - **MASTER MANAGEMENT = Design (A) "Rebuild-One"** (local-model co-designed, port 8051 — chosen over
+     "two counters coexist" because rebuild gives a TEMPORAL firewall: phase-2's tape is independent of
+     `b`, turning the global spatial invariant `dist(pivot,master₁)<dist(pivot,master₂)` into local
+     transition proofs). One master alive per phase. The dovetail stores the enumerated pair as `a+1`/`b+1`
+     counters directly (NOT `a`/`b` — avoids an off-by-one increment gadget at load; `load_master` is then a
+     plain `copy_u(source_counter → master_dest)`, identical logic for both phases). Between phases use the
+     **WIPE-AND-LOAD** pattern: a `q_clean` state (`read 1 → write 0 → L`; `read 0` boundary → R) zeroes the
+     master zone FIRST (else phase-1 residue ones make phase-2's copy_u overshoot its `0`-separator and emit
+     too many digits), then `load_master` copies `a+1` into the clean zone. NEW gadgets: `load_master`
+     (≈ copy_refresh's marked-copy, source = stored counter) + the `q_clean` wipe.
 3. **fam_digits assembly** — prove the produced output `== fam_digits(a,b)` (compose `lemma_dds_fam_relator`
    / `lemma_relnum_is_fam_digits`); its `dpack` value is `relnum(a,b)`.
 4. **Concrete `tm`/`tm_wf`** (assemble5) — instantiate the threaded indices via `lemma_slot_index`; the
