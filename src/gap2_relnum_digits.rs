@@ -21,12 +21,12 @@
 //! `docs/gap2-input-loader-plan.md` §5 (R-relnum-gen). Fully verified, no verifier escape hatches.
 
 use vstd::prelude::*;
-use verus_group_theory::word::Word;
+use verus_group_theory::word::{Word, empty_word};
 use verus_group_theory::symbol::Symbol;
-use verus_group_theory::machine_group::symbol_power;
+use verus_group_theory::machine_group::{symbol_power, word_power};
 use verus_group_theory::word_numbering_decode::{decode_word, letter_digit, in_c_block,
     c_alphabet_word, lemma_alphabet_letter_section};
-use crate::tm_two_counter::repunit_m;
+use crate::tm_two_counter::{repunit_m, lemma_repunit_step};
 use verus_group_theory::machine_group::ModMachine;
 use crate::ceer::CEER;
 use crate::gap2_relnum::{relnum, fam_relator};
@@ -193,6 +193,74 @@ pub proof fn lemma_decode_word_symbol_power(c_base: nat, n: nat, m: nat, s: Symb
         assert((d * repunit_m((k - 1) as nat, m)) * m + d == d * (m * repunit_m((k - 1) as nat, m) + 1))
             by(nonlinear_arith);
         assert(repunit_m(k, m) == m * repunit_m((k - 1) as nat, m) + 1);
+    }
+}
+
+/// **`word_power` append (snoc) form.** `word_power(w, k) =~= word_power(w, k-1) + w` for `k ≥ 1` — the
+/// low (last) copy peels off the right. The defining recurrence peels the FRONT copy
+/// (`word_power(w,k) = w + word_power(w,k-1)`); this commuted form is what lets
+/// [`lemma_decode_word_word_power`]'s induction land on `decode_word`'s last-symbol-is-lowest-digit fold
+/// and the existing low-end `repunit_m` recurrence. Induction on `k` via concatenation associativity.
+pub proof fn lemma_word_power_snoc(w: Word, k: nat)
+    requires
+        k >= 1,
+    ensures
+        word_power(w, k) =~= word_power(w, (k - 1) as nat) + w,
+    decreases k,
+{
+    if k == 1 {
+        assert(word_power(w, 1) == w + word_power(w, 0));
+        assert(word_power(w, 0) =~= empty_word());
+        assert(word_power(w, 1) =~= w);
+        assert(word_power(w, 0) + w =~= w);
+    } else {
+        let k1 = (k - 1) as nat;
+        lemma_word_power_snoc(w, k1);   // word_power(w,k1) == word_power(w,k1-1) + w
+        assert(word_power(w, k) == w + word_power(w, k1));
+        // w + word_power(w,k1) == w + (word_power(w,k1-1) + w) == (w + word_power(w,k1-1)) + w
+        assert(w + word_power(w, k1) =~= w + (word_power(w, (k1 - 1) as nat) + w));
+        assert(w + (word_power(w, (k1 - 1) as nat) + w)
+            =~= (w + word_power(w, (k1 - 1) as nat)) + w);
+        assert(w + word_power(w, (k1 - 1) as nat) == word_power(w, k1));
+        assert(word_power(w, k) =~= word_power(w, k1) + w);
+    }
+}
+
+/// **`decode_word` of a `word_power` block (the geometric closed form).** A run of `k` copies of a word
+/// `w` has word-number `decode_word(w) · repunit_m(k, m^{|w|})` — `w`'s digit block repeats at place
+/// values `1, m^{|w|}, m^{2|w|}, …`. The closed form for the `(t a⁻¹ t⁻¹)ⁱ = word_power(binv_sub,i)`
+/// (digits `(234)ⁱ`) and `(t a t⁻¹)ⁱ = word_power(b_sub,i)` (digits `(214)ⁱ`) blocks of the collapse
+/// relator `u_j`, and the value invariant the R-relnum-gen emitter's inner loop maintains. Induction on
+/// `k` peeling the LOW copy ([`lemma_word_power_snoc`] + [`lemma_decode_word_concat`]) onto the existing
+/// low-end `repunit_m` recurrence (`repunit_m(k,P) = P·repunit_m(k-1,P) + 1`, here `P = m^{|w|}`).
+pub proof fn lemma_decode_word_word_power(c_base: nat, n: nat, m: nat, w: Word, k: nat)
+    ensures
+        decode_word(c_base, n, m, word_power(w, k))
+            == decode_word(c_base, n, m, w) * repunit_m(k, pow_nat(m, w.len())),
+    decreases k,
+{
+    let bigp = pow_nat(m, w.len());
+    let d = decode_word(c_base, n, m, w);
+    if k == 0 {
+        assert(word_power(w, 0) =~= empty_word());
+        assert(decode_word(c_base, n, m, word_power(w, 0)) == 0) by {
+            assert(empty_word().len() == 0);
+        }
+        assert(repunit_m(0, bigp) == 0);
+        assert(d * 0 == 0) by(nonlinear_arith);
+    } else {
+        let k1 = (k - 1) as nat;
+        lemma_word_power_snoc(w, k);                          // word_power(w,k) == word_power(w,k1) + w
+        assert(word_power(w, k) == word_power(w, k1) + w);
+        lemma_decode_word_concat(c_base, n, m, word_power(w, k1), w);
+        // decode_word(word_power(w,k1)+w) == decode_word(word_power(w,k1))·pow_nat(m,|w|) + d
+        lemma_decode_word_word_power(c_base, n, m, w, k1);   // IH: decode_word(wp(k1)) == d·repunit_m(k1,bigp)
+        assert((k1 + 1) as nat == k);
+        lemma_repunit_step(k1, bigp);                        // repunit_m(k,bigp) == bigp·repunit_m(k1,bigp)+1
+        assert(repunit_m(k, bigp) == bigp * repunit_m(k1, bigp) + 1);
+        assert(decode_word(c_base, n, m, word_power(w, k)) == (d * repunit_m(k1, bigp)) * bigp + d);
+        assert((d * repunit_m(k1, bigp)) * bigp + d == d * (bigp * repunit_m(k1, bigp) + 1))
+            by(nonlinear_arith);
     }
 }
 
