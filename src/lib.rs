@@ -264,3 +264,9 @@
 // (lemma_decode_rho_unshift); lemma_relnum_no_rho gives relnum = decode_word(0,2,m,fam_relator(a,b)).
 // See gap2_rho_unshift.rs.
 #[cfg(verus_keep_ghost)] pub mod gap2_rho_unshift;
+
+// GAP-2 G2-F Route (i) brick R-relnum-gen: the digit-sequence structural library (Production-proof side).
+// How decode_digit_seq distributes over ++ (REVERSAL: dds(w1++w2)=dds(w2)++dds(w1)), word_power
+// (=seq_pow(dds(w),k)), symbol_power, and singletons -- so fam_relator decomposes into explicit emitter
+// digit blocks. See gap2_relnum_dds.rs / docs/gap2-input-loader-plan.md §5.
+#[cfg(verus_keep_ghost)] pub mod gap2_relnum_dds;
