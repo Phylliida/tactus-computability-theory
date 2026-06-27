@@ -246,3 +246,9 @@
 // the ignition-held low digit d0 onto v) + lemma_rp_copy_park (entry o dwalk_left) park alpha's digit
 // sequence reversed in v, freeing u as workspace -- the canonical layout R-cmp reads. See tm_rp.rs.
 #[cfg(verus_keep_ghost)] pub mod tm_rp;
+
+// GAP-2 G2-F Route (i) brick R-P (assembly): the copy-and-park psc_act window dispatch over the
+// assemble4 scaffold. rp_act places the start/deposit/walk quintuples in windows 0..=4; lemma_rp_phase
+// splices lemma_rp_copy_park onto any psc_tm whose first five windows carry them. Pins the ignition
+// handoff state start(d0) = entry4(d0). See gap2_psc_rp.rs / docs/gap2-input-loader-plan.md §5 (R-P).
+#[cfg(verus_keep_ghost)] pub mod gap2_psc_rp;
