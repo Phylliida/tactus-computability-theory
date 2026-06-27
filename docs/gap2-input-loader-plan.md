@@ -1599,3 +1599,43 @@ do NOT enter R-S mid-toolkit (now done); R-S should be a composition of the veri
 needs the α-block carried through a phase, discharge `tail_safe_v` over the emit gadgets (a v-side mirror of the
 `gap2_tail_emit`/`gap2_tail_power`/`gap2_tail_phase1` discharge work) — a sizeable but mechanical mirror, deferred
 to R-S integration when the concrete α offset `H` is known.
+
+### N+17 — the u-phase v-side α-tail lift COMPLETE (the v-tail toolkit is now symmetric). crate 1710 → 1715/0.
+
+**✅ `lemma_u_phase_tail_v` BUILT (`gap2_emit_seq.rs`, +5 verified, additive, first-try).** The previous
+session (the v-side discharge ending at commit `a6da193`) built the v-side `tail_safe_v` for the **uinv**
+phase only (`lemma_uinv_phase_tail_v`). But the α-block is parked one separator-blank above the output and
+**persists through BOTH `fam_digits` phases**, so the SECOND (`u_digits`) phase needs its own v-tail lift
+before R-cmp (which reads output AND α-block) can be wired. Mirror of the uinv v-side stack onto the u
+phase's 3-segment structure (`seg_a` blocks 0–2, `seg_b` 3–4, `half_b` 5–7):
+- `lemma_u_seg_a_tail_safe_v` (binding surge = block-2 pbb1, `h ≥ |od| + 2M + 4`),
+- `lemma_u_seg_b_tail_safe_v` (binding = block-4 pbb3, `h ≥ |od3| + 3M + 2`),
+- `lemma_u_half_b_tail_safe_v` (binding = block-7 seret1, `h ≥ |od5| + 3M + 3`; hands off to external
+  `qfinal`/R-cmp `q_cmp` via the 4 `kf` walk-back self-loops),
+- `lemma_u_phase_tail_safe_v` (chains the 3 segments at one `h`, tightest bound `h ≥ |od| + 8M + 7` — the
+  SAME margin as the uinv phase, set by the last power-block surge),
+- `lemma_u_phase_tail_v` (the lift: `lemma_u_phase` ∘ `lemma_u_phase_tail_safe_v` ∘ `lemma_run_tail_v`).
+
+**✅ DESIGN CONFIRMED — the u phase needs NO u-side (`add_hi`) tail.** Per N+13.1, after `q_clean` the
+`a+1` backup floats down to become phase-2's master at gap `g' = g+b+2` and is the TOPMOST block — nothing
+above it in `u` to preserve. So the u phase's only carried tail is the v-side α-block.
+
+**✅ THE COMBINED u+v CARRY (uinv phase) COMPOSES — not a new deep obligation.** On the concrete machine
+the uinv phase runs from `add_hi(add_hi_v(c_local, H_v, A), H_u, T_backup)` — BOTH tails present at once.
+`add_hi` (u) and `add_hi_v` (v) touch DISJOINT `TmConfig` fields, and the SOLE subtlety is that the u-side
+`tail_safe` predicate is invariant under `add_hi_v` (and vice-versa) **given the other side's `tail_safe`
+holds** — because each lift leaves `(q,a)` and the head trajectory untouched, so the same quints fire. Thus
+`tm_run(add_hi(add_hi_v(c))) == add_hi(add_hi_v(tm_run(c)))` follows by applying `lemma_run_tail_v` to
+`add_hi(c)` then `lemma_run_tail` to `c`. ⚠ The one bridging fact to package when wiring R-S: a
+`tail_safe`-is-invariant-under-`add_hi_v` lemma (the two single-side `tail_safe`/`tail_safe_v` capstones
+each prove only their own side). For the u phase this is moot (no u-tail).
+
+**NEXT (the R-S proper arc, unchanged order):** pre-shift glue — (P1) lay `init_block(a,b)` in `u` from the
+parked dovetail counters, (P2) lay the `g`-one gap-counter in `v` (`g = a+b+3`), and an α-tail-parametric
+`lemma_lay_init` (parameterize over `rv` = the empty-output+α-block high tail above the gap-counter, instead
+of the hardcoded `rv=0`) — then **R-cmp** (digit-by-digit compare of the emitted output against the α-block,
+the "sink" whose interface is now pinned: output low in `v`, α-block as a v-tail at offset `H`, head at
+`qfinal`), R-S (dovetail over `(a,b)=declared_pair(e,s)`), R-C (cleanup to origin), R-MC, B-W → discharge
+`ceer_realizes`. The peer-recommended order is R-cmp first (it constrains the emit/α orientations upstream);
+`q_clean` will also need a v-tail companion (`lemma_q_clean_*_tail_safe_v`) since the α-block rides above the
+output across the inter-phase wipe too.
