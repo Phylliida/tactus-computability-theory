@@ -1406,14 +1406,33 @@ head on the pivot in `q_s`, it erases the master and returns home in `q_home`, l
 `(q_w,1,·)` (wipe) and `(q_w,0,·)` (→return), and the digit walk-backs MUST be in `q_r` (NOT `q_w`, which
 already binds symbol `1`).
 
-**NEXT (master-mgmt #2 + wiring):**
-1. **`load_master`** — rebuild the `a+1` master at position `g` from the backup `T` (a `copy_refresh`-style
-   marked copy-DOWN from `T`'s offset to `g`). NOT a direct `lemma_copy_refresh` reuse (that produces the
-   fresh counter at the BOTTOM `0..M` with the source preserved at `g`; load_master needs the master AT `g`).
-   Own gadget; can reuse the seek/walk/mark primitives. Output must be `copy_u(0, a+1, g)` so phase 2 starts.
-   1b. **High-tail phase variants** (option A) — additive `lemma_uinv_phase_tail`/`lemma_u_phase_tail` carrying
-   the preserved `T` tail (the walk primitives already thread a `w`; the block phase lemmas need the tail
-   threaded). Without these the backup doesn't survive a phase.
-2. **Two-phase wiring** — phase1(tail) → `lemma_q_clean` → `load_master` → phase2(tail) ⟹
+### N+13.1 — `load_master` DISSOLVED via a frame shift (2026-06-27, w/ Danielle port 8051) ✅
+
+**`load_master` is NOT needed.** The frame-shift insight: `q_clean`'s output is `u == m^(g+K+1)·T`. With the
+backup `T = R(a+1)` (the literal `a+1` repunit), this is **exactly** `copy_u(0, a+1, g')` for `g' = g+K+1` —
+i.e. q_clean's output IS phase 2's input, with the master `a+1` sitting at its OWN gap `g'`. So instead of
+copying/shifting the `a+1` block back down to position `g` (the old `load_master`), **phase 2 just runs with
+`g := g' = g+K+1`** (the phase lemmas are fully parametric in `g`). No copy, no shift, no gadget.
+
+- **Gap/blankness check (Danielle-validated):** after phase 1 + q_clean, the whole region `[0, g')` is blank
+  (phase-1 gap `[0,g)` restored + the wiped `[g, g+K+1)`); phase 2's clear-path requirement at `g'` holds.
+  Pick init `g ≥ a−b+1` so `g' = g+b+2 ≥ a+3` (phase 2 needs `g' ≥ M+2 = a+3`). Parametric, fine.
+- **No phase-2 tail variant either** — `a+1` is the topmost block, nothing above it to preserve.
+
+**The critical path is now `lemma_uinv_phase_tail`** (the ONLY genuinely-new proof obligation): phase 1
+(`uinv_digits(b)`, master `b+1` at `g`) carrying the `a+1` backup as a preserved high tail at `g' = g+b+2`.
+The proof must show every phase-1 op stays within `[0, g+K]` so the tail term `m^(g')·R(a+1)` passes through
+untouched (the walk primitives already carry a `w` high tail; thread it up through the block phase lemmas).
+
+**Init tape:** `Pivot · Blank_g · R(b+1) · Blank_1(sep) · R(a+1)` — i.e. `u == m^g·R(b+1) + m^(g+b+2)·R(a+1)`.
+
+**Revised NEXT (master-mgmt collapsed to one lemma + setup + wiring):**
+1. **`lemma_uinv_phase_tail`** — additive high-tail variant of `lemma_uinv_phase` carrying `m^(g')·R(a+1)`
+   (`g' = g+b+2`). Thread the tail through the 8-block chain / block phase lemmas (`pbb1x_phase_any`, etc.).
+   THE new critical path.
+2. **Init setup** — lay `u == m^g·R(b+1) + m^(g+b+2)·R(a+1)` at machine start (a `copy_refresh`/`block_loop`
+   prelude that builds both repunits from the input `e`; couples to R-P).
+3. **Wiring** — `lemma_uinv_phase_tail` (ends q_clean's `q_s`) → `lemma_q_clean` (ends `q_home` = phase-2
+   `entry5(pc2)`) → **plain `lemma_u_phase` at `g := g+b+2`** ⟹
    `v == dpack(od ++ uinv_digits(b) ++ u_digits(a)) == dpack(od ++ fam_digits(a,b))`.
-3–4. concrete `psc_act` tm/tm_wf + `fam_digits ⟹ relnum` → discharge `ceer_realizes` (unchanged from N+12).
+4. concrete `psc_act` tm/tm_wf + `fam_digits ⟹ relnum` → discharge `ceer_realizes` (unchanged from N+12).
