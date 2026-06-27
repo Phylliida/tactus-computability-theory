@@ -245,15 +245,28 @@ chained through ignition to `mm_in_H0(mm, α, 0) ⟺ α declared word-number`.
   trivial to discharge. Only α and `relnum` stay base-m (length Θ(a+b)). R-P terminates with the head at
   the leftmost sentinel of the α-block.
 
-  **✅ R-P FOUNDATION DONE — the digit-string algebra (`tm_dstring.rs`, 14/0).** The symbol-agnostic
-  analog of `repunit_m`: `dpack(ds, m) = ds[0] + m·ds[1] + …` packs a digit `Seq<nat>` low-first; with
-  `pow_nat` + `lemma_dpack_pop`/`_push`/`_digits_le`/`_low_nonzero`/`_append` — the pop/push/bound/
-  split algebra the digit-walk loop invariants read. **NEXT R-P piece = the digit-walk gadget:** the
-  n=4 analog of `lemma_walk_left_inner` — quintuples `(q_walk, s, s, q_walk, L)` for each digit symbol
-  `s ∈ {1,2,3,4}` (vs. the unary `(q,1,1,q,L)`) walk the head left over a `dpack` block of nonzero
-  digits onto `v` (reversed), until the blank `0` turnaround; loop invariant phrased over `dpack` of the
-  remaining/processed digit sub-sequences. Then the copy-and-park assembly relocates α into the
-  sentinel-bounded canonical block.
+  **✅ R-P FOUNDATION DONE — the digit-string algebra (`tm_dstring.rs`, 14/0)** + **the digit-walk
+  gadgets (`tm_dwalk.rs`, 6/0; crate 699/0).** The symbol-agnostic analog of `repunit_m`:
+  `dpack(ds, m) = ds[0] + m·ds[1] + …` packs a digit `Seq<nat>` low-first; `dpile(v, blk, m)` = `v`
+  after a walk peels `blk` onto it; with `pow_nat` + `lemma_dpack_pop`/`_push`/`_digits_le`/
+  `_low_nonzero`/`_append`. The gadgets: `lemma_dwalk_left` (the n=4 analog of `lemma_walk_left_inner` —
+  quintuples `(q_walk, s, s, q_walk, L)` for each digit symbol `s ∈ {1,2,3,4}` walk the head left over a
+  `dpack` block of nonzero digits onto `v` reversed, `blk.len()` steps, landing `(0, dpile(c.v,blk), 0,
+  q_walk)` at the blank turnaround) + `lemma_dwalk_right` (the `u↔v, L↔R` mirror, for R-cmp ping-pong).
+
+  **⚠ SYMBOL-SPACE NOTE (for the copy-and-park assembly).** At n=4 the alphabet is `{0=blank, 1,2,3,4}`
+  — all five symbols are spoken for (`0` blank, `1..4` digits), so there is **no free sentinel symbol**.
+  But α's digits are all NONZERO (1..4), so **blanks (0) delimit regions** and the head's STATE tracks
+  which region it is in. The counter `sep()=2` and α-digit-`2` coexist only because the counter region
+  and α-block are **blank-separated** (a walk stops at the blank before crossing); the head crosses a
+  blank gap only via a deliberate `(q, 0, …)` turnaround quint. Target layout
+  `[counter blocks] 0 [relnum-scratch] 0 [α-block] 0`. (If region navigation proves hairy, n=5 with a
+  dedicated sentinel symbol `5` is the fallback — gadgets are alphabet-monotone, assemble4 generalizes.)
+
+  **NEXT = the R-P copy-and-park ASSEMBLY:** handle the ignition split (digit0 in `start(d0)` state,
+  digit1 scanned `a`, digits2+ in `u`); design `start(i)` to deposit d0 + recover a clean running
+  config; walk α off into a blank-delimited parked block; leave the head at a known boundary. This pins
+  `start` (currently abstract in B-IG `ignition_quads(ndig, start)`) and the `psc_act` window layout.
 - **R-relnum-gen — generate relnum(a,b)'s base-m digits.** For an enumerated declared `(a,b)`, emit the
   digits of `relnum(a,b)` = the symbols of the collapsed Miller relator `ρ(collapse(g_a g_b⁻¹))`
   (length Θ(a+b); `t·(b⁻¹)ⁱ·a·(b)ⁱ·t⁻¹·a⁻ⁱ·b⁻¹·aⁱ`, `i=j+1`, `b=tat⁻¹`). Loop control via counters
@@ -350,11 +363,12 @@ ORDER (low-first vs high-first) and `inverse_word`'s exact digit transform befor
 
 ---
 
-*Status (2026-06-26): SPEC BACKBONE + IGNITION + R-AL + R-P-FOUNDATION BUILT. B-FR/B-IG (ignition,
+*Status (2026-06-26): SPEC BACKBONE + IGNITION + R-AL + R-P PRIMITIVES BUILT. B-FR/B-IG (ignition,
 `gap2_ignition.rs`) + B-relnum-spec/B-W-assembly (`gap2_relnum.rs`) + **R-AL (n=4 assembler,
-`tm_assemble4.rs` 17/0)** + **R-P digit-string algebra (`tm_dstring.rs` 14/0)** DONE; crate 692/0. The
-whole remaining obligation is ONE spec: a machine satisfying `mm_decides_relnum`, built as Route (i) —
-a bespoke n=4 `tm_wf` TM `psc_tm(e)` over the assemble4 scaffold. Tape layout DECIDED = Option (B)
-canonicalize; α-digit algebra (`dpack`) in hand. NEXT = the digit-walk gadget → R-P copy-and-park
-assembly → R-relnum-gen / R-cmp / R-S / R-C / R-MC. The conditional chain already stands; this brick
-removes the last axiom.*
+`tm_assemble4.rs` 17/0)** + **R-P digit-string algebra (`tm_dstring.rs` 14/0)** + **R-P digit-walk
+gadgets left+right (`tm_dwalk.rs` 6/0)** DONE; crate 699/0. The whole remaining obligation is ONE spec:
+a machine satisfying `mm_decides_relnum`, built as Route (i) — a bespoke n=4 `tm_wf` TM `psc_tm(e)` over
+the assemble4 scaffold. Tape layout DECIDED = Option (B) canonicalize, blank-delimited regions
+(no free sentinel symbol at n=4 — see symbol-space note). α-digit algebra + walk gadgets in hand. NEXT =
+the R-P copy-and-park ASSEMBLY (pins `start` + the `psc_act` window layout) → R-relnum-gen / R-cmp /
+R-S / R-C / R-MC. The conditional chain already stands; this brick removes the last axiom.*
