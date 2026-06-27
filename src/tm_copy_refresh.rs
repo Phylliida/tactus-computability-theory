@@ -368,7 +368,11 @@ pub proof fn lemma_seek_right_blanks(tm: Tm, c: TmConfig, q_seek: nat, g: nat, r
         assert(pow_nat(m, 0) == 1);
         assert(1nat * rv == rv) by(nonlinear_arith);
         assert(c.v == rv);
-        assert(pow_nat(m, 1) == m) by { lemma_pow_nat_unfold(m, 1); assert(pow_nat(m, 0) == 1); }
+        assert(pow_nat(m, 1) == m) by {
+            lemma_pow_nat_unfold(m, 1);
+            assert(pow_nat(m, 0) == 1);
+            assert(m * pow_nat(m, 0) == m) by(nonlinear_arith) requires pow_nat(m, 0) == 1;
+        }
         assert(c.u * m + 0 == c.u * pow_nat(m, 1)) by(nonlinear_arith)
             requires pow_nat(m, 1) == m;
         assert(c_next == (TmConfig { u: c.u * pow_nat(m, (g + 1) as nat), v: rv / m, a: rv % m,
@@ -3359,6 +3363,205 @@ pub proof fn lemma_mark_terminate(
             c12.u == rm + pow_nat(m, g) * fives5,
             fives5 == 5 * rm,
             copy_u(big_m, big_m, g, m) == rm + pow_nat(m, g) * (5 * rm);
+}
+
+// ============================================================================
+// the FULL copy_refresh: loop ∘ (self-terminating bounce) ∘ unmark
+// ============================================================================
+
+/// **Total fuel of one `copy_refresh` (general case `M ≥ 3`, `g ≥ M + 2`):** the marked-copy loop
+/// (`full_copy_fuel`) + the self-terminating bounce + the un-mark sweep (each `2g + 2M + 2`).
+pub open spec fn copy_refresh_fuel(big_m: nat, g: nat) -> nat {
+    (full_copy_fuel(big_m, g) + 2 * (2 * g + 2 * big_m + 2)) as nat
+}
+
+/// **One full `copy_refresh` as a single deterministic machine run (`M ≥ 3`, `g ≥ M + 2`).**
+/// `copy_u(0) = m^g·R(M)` (master at gap `G = g`, fresh empty temp) → `dec_u(M, m^(g−M)·R(M))` (the master
+/// rebuilt below itself as a fresh `M`-counter, ready for the next `block_loop` home). Composes three
+/// verified pieces over ONE deterministic TM:
+///   1. [`lemma_copy_loop`] — the marked-copy loop `copy_u(0) → copy_u(M)`, ending on the pivot in
+///      `q_home` with the master all `M` fives. Self-terminating: at `j = M` the home peel runs the SAME
+///      forward, which detects the all-fives master via the dedicated `q_b`-on-blank turn.
+///   2. [`lemma_mark_terminate`] — the bounce `copy_u(M)@q_home → copy_u(M)@q_ret` (config unchanged; the
+///      forward+walk-back is non-destructive), switching the machine into the un-mark phase.
+///   3. [`lemma_unmark`] — the un-mark sweep `copy_u(M)@q_ret → dec_u(M, m^(g−M)·R(M))@q_urt` (`q_ret` is
+///      `lemma_unmark`'s home `q_uh`).
+/// The three phases SHARE the forward quints (loop ↔ terminate) and chain `q_home → q_ret → q_urt`. The
+/// `g = M` (no-gap) and small-`M` (`M ∈ {1, 2}`) refreshes are handled separately.
+pub proof fn lemma_copy_refresh(
+    tm: Tm, big_m: nat, g: nat, out: nat,
+    // j=0 deposit-first states
+    q_dh0: nat, q_dw0: nat, q_bk0: nat, q_t0: nat, q_a0: nat, q_rf0: nat, q_rg0: nat,
+    // home-cycle states (shared loop ↔ terminate forward)
+    q_home: nat, q_t: nat, q_a: nat, q_b: nat, q_rf: nat, q_rg: nat, q_rt: nat, q_dw: nat,
+    // terminate walk-back states
+    q_turn: nat, q_turng: nat, q_ret: nat,
+    // unmark states (home == q_ret)
+    q_ut: nat, q_ua: nat, q_uf: nat, q_ur: nat, q_urg: nat, q_urt: nat,
+    // j=0 quint indices
+    i_dpeel0: int, i_dtemp0: int, i_dins0: int, i_dwb0: int,
+    i_peel0: int, i_temp0: int, i_t2g0: int, i_gap0: int, i_mark0: int, i_rf2g0: int, i_rgap0: int,
+    i_rg2t0: int,
+    // home-cycle quint indices
+    i_peel: int, i_temp: int, i_t2g: int, i_gap: int, i_a2b: int, i_fives: int, i_mark: int,
+    i_rfives: int, i_rf2g: int, i_rgap: int, i_rg2t: int, i_rtemp: int,
+    i_dpeel: int, i_dtemp: int, i_dins: int, i_dwb: int,
+    // terminate walk-back quint indices
+    i_turn: int, i_master: int, i_tm2g: int, i_trgap: int, i_tg2t: int, i_trtemp: int,
+    // unmark quint indices
+    i_upeel: int, i_utemp: int, i_ut2g: int, i_ugap: int, i_uu1: int, i_uurest: int,
+    i_uturn: int, i_umaster: int, i_um2g: int, i_urgap: int, i_ug2t: int, i_urtemp: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        3 <= big_m,
+        g >= big_m + 2,
+        0 <= i_dpeel0 < tm.quints.len(),
+        0 <= i_dtemp0 < tm.quints.len(),
+        0 <= i_dins0 < tm.quints.len(),
+        0 <= i_dwb0 < tm.quints.len(),
+        0 <= i_peel0 < tm.quints.len(),
+        0 <= i_temp0 < tm.quints.len(),
+        0 <= i_t2g0 < tm.quints.len(),
+        0 <= i_gap0 < tm.quints.len(),
+        0 <= i_mark0 < tm.quints.len(),
+        0 <= i_rf2g0 < tm.quints.len(),
+        0 <= i_rgap0 < tm.quints.len(),
+        0 <= i_rg2t0 < tm.quints.len(),
+        0 <= i_peel < tm.quints.len(),
+        0 <= i_temp < tm.quints.len(),
+        0 <= i_t2g < tm.quints.len(),
+        0 <= i_gap < tm.quints.len(),
+        0 <= i_a2b < tm.quints.len(),
+        0 <= i_fives < tm.quints.len(),
+        0 <= i_mark < tm.quints.len(),
+        0 <= i_rfives < tm.quints.len(),
+        0 <= i_rf2g < tm.quints.len(),
+        0 <= i_rgap < tm.quints.len(),
+        0 <= i_rg2t < tm.quints.len(),
+        0 <= i_rtemp < tm.quints.len(),
+        0 <= i_dpeel < tm.quints.len(),
+        0 <= i_dtemp < tm.quints.len(),
+        0 <= i_dins < tm.quints.len(),
+        0 <= i_dwb < tm.quints.len(),
+        0 <= i_turn < tm.quints.len(),
+        0 <= i_master < tm.quints.len(),
+        0 <= i_tm2g < tm.quints.len(),
+        0 <= i_trgap < tm.quints.len(),
+        0 <= i_tg2t < tm.quints.len(),
+        0 <= i_trtemp < tm.quints.len(),
+        0 <= i_upeel < tm.quints.len(),
+        0 <= i_utemp < tm.quints.len(),
+        0 <= i_ut2g < tm.quints.len(),
+        0 <= i_ugap < tm.quints.len(),
+        0 <= i_uu1 < tm.quints.len(),
+        0 <= i_uurest < tm.quints.len(),
+        0 <= i_uturn < tm.quints.len(),
+        0 <= i_umaster < tm.quints.len(),
+        0 <= i_um2g < tm.quints.len(),
+        0 <= i_urgap < tm.quints.len(),
+        0 <= i_ug2t < tm.quints.len(),
+        0 <= i_urtemp < tm.quints.len(),
+        // ── j=0 deposit-first quints ──
+        tm.quints[i_dpeel0] == mk_quint(q_dh0, 0, 0, q_dw0, Dir::L),
+        tm.quints[i_dtemp0] == mk_quint(q_dw0, 1, 1, q_dw0, Dir::L),
+        tm.quints[i_dins0] == mk_quint(q_dw0, 0, 1, q_bk0, Dir::R),
+        tm.quints[i_dwb0] == mk_quint(q_bk0, 1, 1, q_bk0, Dir::R),
+        tm.quints[i_peel0] == mk_quint(q_bk0, 0, 0, q_t0, Dir::L),
+        tm.quints[i_temp0] == mk_quint(q_t0, 1, 1, q_t0, Dir::L),
+        tm.quints[i_t2g0] == mk_quint(q_t0, 0, 0, q_a0, Dir::L),
+        tm.quints[i_gap0] == mk_quint(q_a0, 0, 0, q_a0, Dir::L),
+        tm.quints[i_mark0] == mk_quint(q_a0, 1, 5, q_rf0, Dir::R),
+        tm.quints[i_rf2g0] == mk_quint(q_rf0, 0, 0, q_rg0, Dir::R),
+        tm.quints[i_rgap0] == mk_quint(q_rg0, 0, 0, q_rg0, Dir::R),
+        tm.quints[i_rg2t0] == mk_quint(q_rg0, 1, 1, q_home, Dir::R),
+        // ── home-cycle quints (loop iterations + the terminate forward) ──
+        tm.quints[i_peel] == mk_quint(q_home, 0, 0, q_t, Dir::L),
+        tm.quints[i_temp] == mk_quint(q_t, 1, 1, q_t, Dir::L),
+        tm.quints[i_t2g] == mk_quint(q_t, 0, 0, q_a, Dir::L),
+        tm.quints[i_gap] == mk_quint(q_a, 0, 0, q_a, Dir::L),
+        tm.quints[i_a2b] == mk_quint(q_a, 5, 5, q_b, Dir::L),
+        tm.quints[i_fives] == mk_quint(q_b, 5, 5, q_b, Dir::L),
+        tm.quints[i_mark] == mk_quint(q_b, 1, 5, q_rf, Dir::R),
+        tm.quints[i_rfives] == mk_quint(q_rf, 5, 5, q_rf, Dir::R),
+        tm.quints[i_rf2g] == mk_quint(q_rf, 0, 0, q_rg, Dir::R),
+        tm.quints[i_rgap] == mk_quint(q_rg, 0, 0, q_rg, Dir::R),
+        tm.quints[i_rg2t] == mk_quint(q_rg, 1, 1, q_rt, Dir::R),
+        tm.quints[i_rtemp] == mk_quint(q_rt, 1, 1, q_rt, Dir::R),
+        tm.quints[i_dpeel] == mk_quint(q_rt, 0, 0, q_dw, Dir::L),
+        tm.quints[i_dtemp] == mk_quint(q_dw, 1, 1, q_dw, Dir::L),
+        tm.quints[i_dins] == mk_quint(q_dw, 0, 1, q_home, Dir::R),
+        tm.quints[i_dwb] == mk_quint(q_home, 1, 1, q_home, Dir::R),
+        // ── terminate walk-back quints (the self-termination + bounce) ──
+        tm.quints[i_turn] == mk_quint(q_b, 0, 0, q_turn, Dir::R),
+        tm.quints[i_master] == mk_quint(q_turn, 5, 5, q_turn, Dir::R),
+        tm.quints[i_tm2g] == mk_quint(q_turn, 0, 0, q_turng, Dir::R),
+        tm.quints[i_trgap] == mk_quint(q_turng, 0, 0, q_turng, Dir::R),
+        tm.quints[i_tg2t] == mk_quint(q_turng, 1, 1, q_ret, Dir::R),
+        tm.quints[i_trtemp] == mk_quint(q_ret, 1, 1, q_ret, Dir::R),
+        // ── unmark quints (home == q_ret) ──
+        tm.quints[i_upeel] == mk_quint(q_ret, 0, 0, q_ut, Dir::L),
+        tm.quints[i_utemp] == mk_quint(q_ut, 1, 1, q_ut, Dir::L),
+        tm.quints[i_ut2g] == mk_quint(q_ut, 0, 0, q_ua, Dir::L),
+        tm.quints[i_ugap] == mk_quint(q_ua, 0, 0, q_ua, Dir::L),
+        tm.quints[i_uu1] == mk_quint(q_ua, 5, 1, q_uf, Dir::L),
+        tm.quints[i_uurest] == mk_quint(q_uf, 5, 1, q_uf, Dir::L),
+        tm.quints[i_uturn] == mk_quint(q_uf, 0, 0, q_ur, Dir::R),
+        tm.quints[i_umaster] == mk_quint(q_ur, 1, 1, q_ur, Dir::R),
+        tm.quints[i_um2g] == mk_quint(q_ur, 0, 0, q_urg, Dir::R),
+        tm.quints[i_urgap] == mk_quint(q_urg, 0, 0, q_urg, Dir::R),
+        tm.quints[i_ug2t] == mk_quint(q_urg, 1, 1, q_urt, Dir::R),
+        tm.quints[i_urtemp] == mk_quint(q_urt, 1, 1, q_urt, Dir::R),
+    ensures
+        tm_run(tm,
+            TmConfig { u: copy_u(0, big_m, g, tm.m), v: out, a: 0, q: q_dh0 },
+            copy_refresh_fuel(big_m, g))
+            == (TmConfig {
+                u: dec_u(big_m,
+                    (pow_nat(tm.m, (g - big_m) as nat) * repunit_m(big_m, tm.m)) as nat, tm.m),
+                v: out, a: 0, q: q_urt }),
+{
+    let m = tm.m;
+    let bounce = (2 * g + 2 * big_m + 2) as nat;
+    let c0 = TmConfig { u: copy_u(0, big_m, g, m), v: out, a: 0, q: q_dh0 };
+
+    // ── PHASE 1 — LOOP: copy_u(0) → copy_u(M), full_copy_fuel steps, ends on the pivot in q_home. ──
+    lemma_copy_loop(tm, big_m, g, out,
+        q_dh0, q_dw0, q_bk0, q_t0, q_a0, q_rf0, q_rg0,
+        q_home, q_t, q_a, q_b, q_rf, q_rg, q_rt, q_dw,
+        i_dpeel0, i_dtemp0, i_dins0, i_dwb0,
+        i_peel0, i_temp0, i_t2g0, i_gap0, i_mark0, i_rf2g0, i_rgap0, i_rg2t0,
+        i_peel, i_temp, i_t2g, i_gap, i_a2b, i_fives, i_mark, i_rfives, i_rf2g, i_rgap, i_rg2t, i_rtemp,
+        i_dpeel, i_dtemp, i_dins, i_dwb);
+    let c_loop = TmConfig { u: copy_u(big_m, big_m, g, m), v: out, a: 0, q: q_home };
+    assert(tm_run(tm, c0, full_copy_fuel(big_m, g)) == c_loop);
+
+    // ── PHASE 2 — TERMINATE: copy_u(M)@q_home → copy_u(M)@q_ret (non-destructive bounce). ──
+    lemma_mark_terminate(tm, big_m, g, out,
+        q_home, q_t, q_a, q_b, q_turn, q_turng, q_ret,
+        i_peel, i_temp, i_t2g, i_gap, i_a2b, i_fives,
+        i_turn, i_master, i_tm2g, i_trgap, i_tg2t, i_trtemp);
+    let c_term = TmConfig { u: copy_u(big_m, big_m, g, m), v: out, a: 0, q: q_ret };
+    assert(tm_run(tm, c_loop, bounce) == c_term);
+
+    // ── PHASE 3 — UNMARK: copy_u(M)@q_ret → dec_u(M, m^(g−M)·R(M))@q_urt. ──
+    lemma_unmark(tm, big_m, g, out,
+        q_ret, q_ut, q_ua, q_uf, q_ur, q_urg, q_urt,
+        i_upeel, i_utemp, i_ut2g, i_ugap, i_uu1, i_uurest,
+        i_uturn, i_umaster, i_um2g, i_urgap, i_ug2t, i_urtemp);
+    let c_end = TmConfig {
+        u: dec_u(big_m, (pow_nat(m, (g - big_m) as nat) * repunit_m(big_m, m)) as nat, m),
+        v: out, a: 0, q: q_urt };
+    assert(tm_run(tm, c_term, bounce) == c_end);
+
+    // ── chain: LOOP ∘ TERMINATE ∘ UNMARK. ──
+    lemma_tm_run_split(tm, c0, full_copy_fuel(big_m, g), bounce);
+    let mid = (full_copy_fuel(big_m, g) + bounce) as nat;
+    assert(tm_run(tm, c0, mid) == c_term);
+    lemma_tm_run_split(tm, c0, mid, bounce);
+    assert(copy_refresh_fuel(big_m, g) == (mid + bounce) as nat);
+    assert(tm_run(tm, c0, copy_refresh_fuel(big_m, g)) == c_end);
 }
 
 } // verus!
