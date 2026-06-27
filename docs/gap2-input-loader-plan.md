@@ -721,3 +721,29 @@ Both are robust to the master's exact representation (only need `r%m≠0` at the
 **NEXT:** resolve (1) [locate Danielle's recursive-functions resource — may reshape the approach], then build
 the marked-copy per (2) bottom-up (relocate → local marked copy → un-mark/un-seek), then `copy_refresh`
 assembly, then 16-block sequencing, then `psc_act` window + `ceer_realizes` wiring.
+
+### ✅ RESOLVED + PINNED (same session, N+5 cont.) — gate 1 closed, copy invariant nailed (tm_copy_refresh 24/0)
+
+- **Gate 1 (resource) RESOLVED — NOT missing.** Danielle's "computability of recursive functions" =
+  `ComputabilityOfRecursiveFunctions.pdf` (**Shepherdson-Sturgis URM** paper) in the crate root (read via
+  `pdftotext` / `nix-shell -p poppler-utils`). My "can't find it" was an error (searched for Lean/dirs, not a
+  top-level PDF; hadn't yet read `project_gap2_g2f_route_decision` which names it). S-S **confirms the bespoke
+  route (i)** compositional style: URM macros `C(m,n)` copy (= move-twice with auxiliary storage), `O(n)`
+  clear, all built from `P/D/J` and composed as subroutines — exactly the gadget-lemma discipline here. It does
+  NOT obviate the emitter. (S-S's copy uses a scratch register = the plan's rejected "option A"; the n=5 mark is
+  the in-place variant Danielle already chose — both are "move-twice with auxiliary storage", same idea.)
+- **Gate 2 (copy pre/post) PINNED — drift-free closed form, the uncertainty is GONE.** The marked-copy left
+  tape is `copy_u(j,M,G) = repunit(j) + m^(j+G)·(5·repunit(j) + m^j·repunit(M−j))` (`tm_copy_refresh.rs`),
+  reading low→high `[temp: j ones][G blanks: sep+gap][master: j fives (copied) then (M−j) ones]`. **NO position
+  drift**: depositing a temp one (`u·m+1`) + marking a master one (`1→5` in place) preserve `G` and the master
+  layout every iteration. Endpoints verified: `lemma_copy_u_start` (`copy_u(0,M,G)=m^G·repunit(M)`, the
+  post-`block_loop` input), `lemma_copy_u_end` (`copy_u(M,M,G)=repunit(M)+m^(M+G)·5·repunit(M)`, temp built /
+  master all fives), `lemma_copy_u_end_unmarked` (un-mark `5→1` ⟹ `dec_u(M, repunit(M)·m^G)` — fresh
+  `M`-counter, master preserved at gap `G`, ready for the next `block_loop`). Plus `lemma_pow_nat_add`
+  (`m^(a+b)=m^a·m^b`, was missing). So the master IS `M` ones (`M=exponent`); `G` is constant across a phase's
+  4 power-blocks. **REMAINING build (next session, all design-certain now):** the `j:0→M` iteration lemma
+  `copy_u(j)→copy_u(j+1)` — per step the region-walks `[seek over temp-`1`s (q_a) → gap-`0`s (q_b, reuse
+  `seek_left_blanks`) → master-`5`s (q_c) → stop on the first `1` = lowest unmarked master one]` + mark
+  `(q,1,5,q',R)` + symmetric return + deposit `u·m+1` — distinct STATES per region disambiguate temp-`1`s from
+  master-`1`s; then the `5→1` un-mark pass + `copy_refresh` assembly composing
+  `lemma_copy_u_start`→iteration×M→`lemma_copy_u_end`→unmark→`lemma_copy_u_end_unmarked`.
