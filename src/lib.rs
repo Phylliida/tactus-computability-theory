@@ -211,3 +211,9 @@
 // ceer_group_equiv ⟺ equiv(h3_pres,...). Conditional on the GAP-2 ceer_realizes hypothesis.
 // See ceer_fp_conditional.rs.
 #[cfg(verus_keep_ghost)] pub mod ceer_fp_conditional;
+
+// GAP-2 G2-F brick B-FR: the ignition/frame lemmas. Appending "ignition" quads (residue (i,0),
+// i!=0) to a base modular machine does not disturb H0-reachability on the running region
+// (beta%m != 0), so the (alpha,0)->running input transition can be spliced onto the existing
+// tm_to_modmachine H0 reduction. See gap2_ignition.rs / docs/gap2-input-loader-plan.md.
+#[cfg(verus_keep_ghost)] pub mod gap2_ignition;
