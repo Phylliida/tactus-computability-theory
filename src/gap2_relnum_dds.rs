@@ -56,6 +56,47 @@ pub proof fn lemma_seq_pow_snoc<A>(s: Seq<A>, k: nat)
     }
 }
 
+/// **`seq_pow` length.** `seq_pow(s,k).len() == k · |s|`. Induction on `k`.
+pub proof fn lemma_seq_pow_len<A>(s: Seq<A>, k: nat)
+    ensures
+        seq_pow(s, k).len() == k * s.len(),
+    decreases k,
+{
+    if k == 0 {
+        assert(seq_pow(s, 0) =~= Seq::<A>::empty());
+    } else {
+        lemma_seq_pow_len(s, (k - 1) as nat);
+        assert(seq_pow(s, k) == s + seq_pow(s, (k - 1) as nat));
+        assert(k * s.len() == s.len() + (k - 1) * s.len()) by(nonlinear_arith) requires k >= 1;
+    }
+}
+
+/// **`seq_pow` element bound.** If every element of `s` lies in `[lo, hi]`, so does every element of
+/// `seq_pow(s,k)` (it is just `k` copies of `s`). Induction on `k`.
+pub proof fn lemma_seq_pow_bound(s: Seq<nat>, k: nat, lo: nat, hi: nat)
+    requires
+        forall|j: int| 0 <= j < s.len() ==> lo <= #[trigger] s[j] <= hi,
+    ensures
+        forall|j: int| 0 <= j < seq_pow(s, k).len() ==> lo <= #[trigger] seq_pow(s, k)[j] <= hi,
+    decreases k,
+{
+    lemma_seq_pow_len(s, k);
+    if k == 0 {
+    } else {
+        lemma_seq_pow_bound(s, (k - 1) as nat, lo, hi);
+        let sp = seq_pow(s, k);
+        let rest = seq_pow(s, (k - 1) as nat);
+        assert(sp == s + rest);
+        assert forall|j: int| 0 <= j < sp.len() implies lo <= #[trigger] sp[j] <= hi by {
+            if j < s.len() {
+                assert(sp[j] == s[j]);
+            } else {
+                assert(sp[j] == rest[j - s.len()]);
+            }
+        }
+    }
+}
+
 /// **`decode_digit_seq` over concatenation (the REVERSAL law).** Since `decode_digit_seq` makes the LAST
 /// symbol the LOWEST digit, the low digits of `w1 ++ w2` come from `w2`:
 /// `dds(w1 ++ w2) == dds(w2) ++ dds(w1)`. The tool for decomposing `fam_relator = u_a ++ inverse_word(u_b)`

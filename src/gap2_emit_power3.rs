@@ -547,4 +547,41 @@ pub proof fn lemma_pbb3x_m1_phase(tm: Tm, len: nat, pc: nat, g: nat, od: Seq<nat
         i_pivot, i_one_l, i_erase, i_disc, i_one_r);
 }
 
+/// Unified per-block fuel for the triple power-block: `M = 1` uses the m1 step, `M ≥ 2` the general step.
+pub open spec fn pb3_fuel(big_m: nat, g: nat, odlen: nat) -> nat {
+    if big_m == 1 { power_block_fuel_b3_m1(g, odlen) } else { power_block_fuel_b3(big_m, g, odlen) }
+}
+
+/// **Unified triple power-block phase (`M ≥ 1`, the sequencer's dispatch atom).** Dispatches the symbolic
+/// master `M`: `M = 1` → [`lemma_pbb3x_m1_phase`], `M ≥ 2` → [`lemma_pbb3x_phase`]. Both emit
+/// `seq_pow([s0,s1,s2], M)` over the SAME `pbb3x_gen` window and end on the home pivot in `qexit`.
+pub proof fn lemma_pbb3x_phase_any(tm: Tm, len: nat, pc: nat, big_m: nat, g: nat, od: Seq<nat>,
+    s0: nat, s1: nat, s2: nat, qexit: nat)
+    requires
+        tm_wf(tm),
+        tm.n == 5,
+        tm.m == tm_mod5(len),
+        pc <= len,
+        tm.quints.len() == 288 * (len + 1),
+        forall|i: int| pc * 288 <= i < pc * 288 + 288 ==> #[trigger] tm.quints[i] == pbb3x_gen(s0, s1, s2, qexit, i as nat),
+        1 <= big_m,
+        g >= big_m + 2,
+        1 <= s0 <= 4,
+        1 <= s1 <= 4,
+        1 <= s2 <= 4,
+        forall|k: int| 0 <= k < od.len() ==> 1 <= #[trigger] od[k] <= 4,
+    ensures
+        tm_run(tm,
+            TmConfig { u: copy_u(0, big_m, g, tm.m), v: dpack(od, tm.m), a: 0, q: entry5(pc) },
+            pb3_fuel(big_m, g, od.len()))
+            == (TmConfig { u: copy_u(0, big_m, g, tm.m),
+                v: dpack(od + seq_pow(seq![s0, s1, s2], big_m), tm.m), a: 0, q: qexit }),
+{
+    if big_m == 1 {
+        lemma_pbb3x_m1_phase(tm, len, pc, g, od, s0, s1, s2, qexit);
+    } else {
+        lemma_pbb3x_phase(tm, len, pc, big_m, g, od, s0, s1, s2, qexit);
+    }
+}
+
 } // verus!
