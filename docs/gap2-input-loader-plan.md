@@ -754,3 +754,72 @@ assembly, then 16-block sequencing, then `psc_act` window + `ceer_realizes` wiri
     `v`, write a `1` at the separator (was `0`), walk-back restoring — reusing `lemma_walk_left_prefix` /
     `lemma_walk_back_prefix`. So the iteration is a `dec_temp`-shaped gadget (insert instead of erase), NOT new
     machinery — tractable, just careful. The output `v` round-trips through every region-walk (pile/un-pile).
+
+---
+
+## SESSION UPDATE 2026-06-27 (N+6) — copy_u switched to FIXED stationary-master; the GENERAL marked-copy ITERATION is DONE (crate 896/0)
+
+**The N+5 "deposit" design was WRONG and has been replaced (co-designed with Danielle, port 8051).** The N+5
+note above ("grow temp at its HIGH end") is arithmetically `u + m^j` (master stationary). But the *verified*
+`copy_u` endpoints at the time used the DRIFT closed form `m^(j+G)` (master drifts `G → M+G`), which forces a
+full `u·m+1` shift per iteration — and that shift cannot preserve the output `v` cleanly in our convention
+(`u` = LEFT tape, `v` = output = RIGHT tape; a raw R-move shift pops `v`'s low digit). The tension was real.
+
+**RESOLUTION = switch `copy_u` to the FIXED (stationary-master) closed form** so the cheap high-end deposit
+(`+m^j`, no shift, no `v`-corruption) is CORRECT:
+```
+  copy_u(j, M, G) = repunit(j) + m^G · (5·repunit(j) + m^j·repunit(M−j))      [master factor m^G, NOT m^(j+G)]
+```
+Master sits at the FIXED position `G`; temp grows at its HIGH end INTO the gap (gap shrinks `G → G−j`). Needs
+`G ≥ M` (else temp overruns the master), **guaranteed**: at every copy_refresh the gap `G = k·i ≥ i = M` (the
+phase's shared exponent). Endpoints re-proven: start IDENTICAL (`m^G·R(M)`); end `R(M)+m^G·5·R(M)`;
+end-unmarked `dec_u(M, m^(G−M)·R(M))` (now requires `G ≥ M`). **The N+5 "KEY MECHANICS NOTE" is superseded** —
+ignore its "deposit = high-end / NOT u·m+1" framing as a vestige of the drift design; the FIXED design's deposit
+IS the high-end insert and it IS correct.
+
+### What got BUILT and VERIFIED this session (`tm_copy_refresh.rs`, module 24→63, crate 857→896, all 0 errors)
+
+The **general marked-copy iteration `copy_u(j) → copy_u(j+1)` is COMPLETE** (case `2 ≤ j < M`, gap `g−j ≥ 2`):
+
+- **Arithmetic core.** `lemma_repunit_high` (`R(j+1)=R(j)+m^j`); `lemma_copy_u_iter_arith`
+  (`copy_u(j+1) = copy_u(j) + 4·m^(g+j) + m^j`, via `5+m·R(M−j−1)−R(M−j)=4`); `master_at(j,M)=5·R(j)+m^j·R(M−j)`
+  spec fn + `lemma_copy_u_master` (`copy_u = R(j)+m^G·master_at`) + `lemma_master_at_step`
+  (`master_at(j+1)=master_at(j)+4·m^j`). `lemma_pow_nat_add` (`m^(a+b)=m^a·m^b`).
+- **Generic single-symbol run-walks** (the `s`-generalization of `walk_left_prefix`/`walk_back_prefix`, reused
+  for temp `s=1` and master fives `s=5`): `lemma_run_walk_left`, `lemma_run_walk_right`, `lemma_pile_sym_div_mod`.
+- **The DEPOSIT** (`+m^j`): `lemma_deposit` — the `dec_temp` MIRROR, 4 quintuples (peel / walk-left temp /
+  INSERT-turnaround `(q_dw,0,1,q_bk,R)` writing `1` at the separator / walk-back), `dec_u(j,w)→dec_u(j,w)+m^j`,
+  `2j+2` steps, `w%m==0`.
+- **The MARK** (`+4·m^(g+j)`): `lemma_mark_fwd` (forward seek: peel→temp `q_t`→t2g transition→gap+fives `q_a`,
+  landing on the lowest unmarked master one, `g+j+1` steps) + `lemma_mark` (full: fwd ∘ mark-step
+  `(q_a,1,5,q_rf,R)` ∘ return leg [`run_walk_right` fives, rf2g, `seek_right_blanks` gap, rg2t, `run_walk_right`
+  temp], `2·(g+j+1)` steps, **11 quintuples**, output `v` fully round-tripped). State machine: temp in `q_t`,
+  gap+fives+mark in `q_a` (NO `(q_a,1,1,·)` quint, so the master-one STOP is unambiguous), return in `q_rf/q_rg/q_rt`.
+- **One iteration:** `lemma_copy_iter` — composes mark ∘ deposit, **wiring the deposit's home state to the
+  mark's exit `q_rt`** (peel `(q_rt,0,0,q_dw,L)` vs mark-return `(q_rt,1,1,q_rt,R)` disambiguated by symbol).
+  `{u: copy_u(j)}→{u: copy_u(j+1)}`, `2·(g+j+1)+(2j+2)` steps. ✅ FIRST-TRY verify on `lemma_mark`.
+
+### REMAINING (next session) — the iteration is the hard core; the rest is mechanical-but-lengthy
+
+1. **Edge iterations** (the loop needs ALL `j∈0..M−1`, and `g−j` can be `1`):
+   - **`j=0`** (no temp, no fives): mark = peel → `seek_left_blanks` gap → master-one, mark, `seek_right_blanks`
+     gap → pivot. No temp/fives walks. (And `master_at(0,M)%m = R(M)%m = 1`, so the gap-seek lands on a `1` not a `5`.)
+   - **`j=1`** (1 temp, 1 five): `lemma_mark_fwd`/`lemma_mark` ALMOST work (`run_walk_left`/`run_walk_right` handle
+     `len=0`), BUT the return's S10 (`run_walk_right` temp, `rem0=j−2`) is invalid; for `j=1` the return ENDS at
+     S9 (the `rg2t` transition lands `a=0` at the pivot directly). So `j=1` needs its own return tail.
+   - **`g−j=1`** (gap exactly 1; happens when `g=M`, `j=M−1`): the `t2g` transition consumes the only gap blank,
+     so `seek_left_blanks(g_seek=g−j−2=−1)` is invalid — skip the gap-seek (head already on the first five after
+     the transition). Likewise `seek_right_blanks` on the return. Combines with the `j` value.
+   These reuse all the existing primitives; each is a `lemma_copy_iter`-shaped variant with the affected
+   sub-steps dropped/adjusted. (Consider: a single edge-tolerant `lemma_mark` with `if` branches on
+   `j∈{0,1}` and `g−j==1`, vs. separate lemmas. Separate is probably cleaner for Z3.)
+2. **The `j:0→M` LOOP** — induct `copy_u(j)→copy_u(M)` composing `lemma_copy_iter` (+ edges). Needs a fuel
+   spec fn summing `2·(g+j+1)+(2j+2)` over `j`. Start = `lemma_copy_u_start` (`copy_u(0)=m^G·R(M)`).
+3. **UNMARK pass** — `5→1` over the master's `M` fives: `copy_u(M)=R(M)+m^G·5·R(M) → R(M)+m^G·R(M)` =
+   `dec_u(M, m^(G−M)·R(M))` (`lemma_copy_u_end_unmarked`). A `run_walk`-style pass writing `1` over each `5`
+   (seek to the master, walk the fives writing `1`, return). 
+4. **`copy_refresh` assembly** — start ∘ loop ∘ unmark ∘ end_unmarked → the next `block_loop` home config.
+5. Then `psc_act` window assembly (template `gap2_psc_rp.rs`), **16-block sequencing**, R-cmp/R-S/R-C/R-MC/B-W.
+
+⚠ `tm.n >= 5` (the `5` marker, per the N+4 n=5 bump decision) is a precondition of all the mark/copy lemmas.
+⚠ Use the crate-local `./check.sh` (Lean backend + group-theory export), NOT the top-level one.
