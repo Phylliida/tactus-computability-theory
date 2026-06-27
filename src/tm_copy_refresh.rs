@@ -341,6 +341,86 @@ pub proof fn lemma_run_walk_left(tm: Tm, c: TmConfig, q_walk: nat, s: nat, len: 
     }
 }
 
+/// Pop one symbol off a `pile_sym`: for `k ≥ 1` (and `s < m`), `pile_sym(w, s, k) % m == s` and
+/// `/ m == pile_sym(w, s, k − 1)`. The symbol-`s` analog of [`crate::tm_walk::lemma_pile_ones_div_mod`],
+/// driving the [`lemma_run_walk_right`] induction.
+pub proof fn lemma_pile_sym_div_mod(w: nat, s: nat, k: nat, m: nat)
+    requires
+        k >= 1,
+        s < m,
+        m > 0,
+    ensures
+        pile_sym(w, s, k, m) % m == s,
+        pile_sym(w, s, k, m) / m == pile_sym(w, s, (k - 1) as nat, m),
+{
+    assert(pile_sym(w, s, k, m) == pile_sym(w, s, (k - 1) as nat, m) * m + s);
+    lemma_div_mod_step(pile_sym(w, s, (k - 1) as nat, m), m, s);
+}
+
+/// **Non-destructive walk-RIGHT over a homogeneous run of symbol `s` (the mirror of [`lemma_run_walk_left`],
+/// `u ↔ v`, `L ↔ R`).** The symbol-`s` generalization of [`crate::tm_dec_master::lemma_walk_back_prefix`]:
+/// from a config in state `q_back` scanning an `s`, with `k0` `s`s already reconstructed atop `w_hi` in `u`
+/// (`u == s·repunit(k0) + m^k0·w_hi`) and a `pile_sym` of `rem0` more `s`s above `w_pile` in `v`
+/// (`v == pile_sym(w_pile, s, rem0)`), the `(q_back, s, s, q_back, R)` step fires `rem0 + 1` times — writing
+/// each `s` back onto `u`'s low end (pushing `w_hi` up) and popping the pile — landing
+/// `u == s·repunit(k0 + rem0 + 1) + m^(k0+rem0+1)·w_hi` with the head on `w_pile`'s low cell
+/// (`a == w_pile % m`, `v == w_pile / m`). The return leg of the MARK over the fives (`s = 5`) and temp
+/// (`s = 1`). Induction on `rem0`.
+pub proof fn lemma_run_walk_right(
+    tm: Tm, c: TmConfig, q_back: nat, s: nat, k0: nat, rem0: nat, w_pile: nat, w_hi: nat, i1b: int,
+)
+    requires
+        tm_wf(tm),
+        1 <= s <= tm.n,
+        0 <= i1b < tm.quints.len(),
+        tm.quints[i1b] == mk_quint(q_back, s, s, q_back, Dir::R),
+        c.u == s * repunit_m(k0, tm.m) + pow_nat(tm.m, k0) * w_hi,
+        c.v == pile_sym(w_pile, s, rem0, tm.m),
+        c.a == s,
+        c.q == q_back,
+    ensures
+        tm_run(tm, c, (rem0 + 1) as nat)
+            == (TmConfig {
+                u: s * repunit_m((k0 + rem0 + 1) as nat, tm.m)
+                    + pow_nat(tm.m, (k0 + rem0 + 1) as nat) * w_hi,
+                v: w_pile / tm.m, a: w_pile % tm.m, q: q_back }),
+    decreases rem0,
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 1 && s < m);
+    lemma_tm_step_picks(tm, c, i1b);
+    let c_next = TmConfig { u: c.u * m + s, v: c.v / m, a: c.v % m, q: q_back };
+    assert(tm_step(tm, c) == Some(c_next));
+    // c_next.u == s·repunit(k0+1) + m^(k0+1)·w_hi.
+    let nk = (k0 + 1) as nat;
+    assert(repunit_m(nk, m) == m * repunit_m(k0, m) + 1);   // repunit recurrence
+    lemma_pow_nat_unfold(m, nk);                            // m^(k0+1) == m·m^k0
+    assert(c_next.u == s * repunit_m(nk, m) + pow_nat(m, nk) * w_hi) by(nonlinear_arith)
+        requires
+            c.u == s * repunit_m(k0, m) + pow_nat(m, k0) * w_hi,
+            c_next.u == c.u * m + s,
+            repunit_m(nk, m) == m * repunit_m(k0, m) + 1,
+            pow_nat(m, nk) == m * pow_nat(m, k0);
+    if rem0 == 0 {
+        // c.v == pile_sym(w_pile, s, 0) == w_pile.
+        assert(pile_sym(w_pile, s, 0, m) == w_pile);
+        assert((k0 + 0 + 1) as nat == nk);
+        assert(c_next == (TmConfig {
+            u: s * repunit_m(nk, m) + pow_nat(m, nk) * w_hi, v: w_pile / m, a: w_pile % m, q: q_back }));
+        assert(tm_run(tm, c_next, 0) == c_next);
+        assert(tm_run(tm, c, 1) == c_next);
+    } else {
+        // pop a pile-s: c.v % m == s, c.v / m == pile_sym(w_pile, s, rem0-1).
+        lemma_pile_sym_div_mod(w_pile, s, rem0, m);
+        assert(c_next.a == s);
+        assert(c_next.v == pile_sym(w_pile, s, (rem0 - 1) as nat, m));
+        lemma_run_walk_right(tm, c_next, q_back, s, nk, (rem0 - 1) as nat, w_pile, w_hi, i1b);
+        assert(((k0 + 1) + (rem0 - 1) + 1) as nat == (k0 + rem0 + 1) as nat);
+        assert(tm_run(tm, c, (rem0 + 1) as nat) == tm_run(tm, c_next, rem0));
+    }
+}
+
 // ============================================================================
 // the deposit (high-end temp grow) — the dec_temp MIRROR (insert, not discard)
 // ============================================================================
