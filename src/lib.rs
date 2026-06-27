@@ -229,3 +229,9 @@
 // from a pluggable per-position action table; the alphabet-widened analog of tm_assemble.rs. The
 // counter gadget step-lemmas (all tm.n>=2-monotone) fire verbatim on it. See tm_assemble4.rs.
 #[cfg(verus_keep_ghost)] pub mod tm_assemble4;
+
+// GAP-2 G2-F Route (i) brick R-P (foundation): the base-m digit-string algebra. alpha's digits 1..4
+// as a Seq<nat> packed low-first by dpack; pop/push/digits_le/append lemmas -- the symbol-agnostic
+// analog of repunit_m, the foundation the copy-and-park (R-P) + ping-pong compare (R-cmp) digit-walk
+// loops read. See tm_dstring.rs.
+#[cfg(verus_keep_ghost)] pub mod tm_dstring;
