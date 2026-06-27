@@ -744,6 +744,13 @@ assembly, then 16-block sequencing, then `psc_act` window + `ceer_realizes` wiri
   4 power-blocks. **REMAINING build (next session, all design-certain now):** the `j:0→M` iteration lemma
   `copy_u(j)→copy_u(j+1)` — per step the region-walks `[seek over temp-`1`s (q_a) → gap-`0`s (q_b, reuse
   `seek_left_blanks`) → master-`5`s (q_c) → stop on the first `1` = lowest unmarked master one]` + mark
-  `(q,1,5,q',R)` + symmetric return + deposit `u·m+1` — distinct STATES per region disambiguate temp-`1`s from
-  master-`1`s; then the `5→1` un-mark pass + `copy_refresh` assembly composing
-  `lemma_copy_u_start`→iteration×M→`lemma_copy_u_end`→unmark→`lemma_copy_u_end_unmarked`.
+  `(q,1,5,q',R)` + symmetric return + **deposit a temp one**; then the `5→1` un-mark pass + `copy_refresh`
+  assembly composing `lemma_copy_u_start`→iteration×M→`lemma_copy_u_end`→unmark→`lemma_copy_u_end_unmarked`.
+  - **⚠ KEY MECHANICS NOTE (uncovered this session):** distinct STATES per region disambiguate temp-`1`s from
+    master-`1`s (the seek can't "walk until a 1" — temp is also `1`s). And the **deposit is NOT a raw `u·m+1`**:
+    an R-move that prepends a `1` to `u` PULLS the output's low digit off `v` (corrupts output) and a single
+    R+L round-trips to a no-op. The correct deposit **mirrors `dec_temp`'s erase** (`tm_dec_master.rs`): grow
+    temp at its HIGH end (the temp/master separator) via the **pile round-trip** — walk-out piling temp onto
+    `v`, write a `1` at the separator (was `0`), walk-back restoring — reusing `lemma_walk_left_prefix` /
+    `lemma_walk_back_prefix`. So the iteration is a `dec_temp`-shaped gadget (insert instead of erase), NOT new
+    machinery — tractable, just careful. The output `v` round-trips through every region-walk (pile/un-pile).
