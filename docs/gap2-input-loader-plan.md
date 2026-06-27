@@ -1892,3 +1892,40 @@ which folds in B-cmp.2's marker work (restore `V_k`, step to `k-1`, load `V_{k-1
 B-cmp.3 output read+consume, then the B-cmp.4 round step. The design is fully pinned and confirmed against
 the reading — no further design gate before the build. (B-cmp.0 skip-blank + B-cmp.1 foundation DONE,
 crate 1731/0.)
+
+### N+21 — R-cmp B-cmp.1 round-trip COMPLETE (the balanced probe). Marker-direction inconsistency flagged for B-cmp.2.
+
+**Built this session (2026-06-27):** `lemma_cmp_balanced_roundtrip` in `src/tm_cmp_traverse.rs` — the
+B-cmp.1 composition that §N+20 left as REMAINING. It glues the three sub-walks into one config-level move:
+  1. `lemma_dwalk_right_gen` over the already-compared prefix `blk` (peels it onto `u`, lands scanning the
+     `5`-mark — the tail is `w == m·whi + 5`, so `w % m == 5`);
+  2. a **single L-move turnaround** on the marker quintuple `(q_back, 5, 5, q_walk, L)` — it re-writes the
+     `5` (so `v`'s marker cell is value-preserved: the L-move's `a2 = 5` push reconstitutes `v = (w/m)·m + 5
+     = w`) and flips to the leftward state, the L-move's free `u`-pop handing the head `drev(blk)[0] =
+     blk[k-1]`, exactly the low digit the left walk needs;
+  3. `lemma_dwalk_left_gen` over `drev(blk)` with tail `c.u` (peels the prefix back onto `v`).
+
+**Net config effect (the ensures):** `tm_run(tm, c, 2·|blk|+1) == { u: c.u/m, v: dpack(blk) + m^{|blk|}·w,
+a: c.u % m, q: q_walk }`. I.e. `v` is restored to the **full α stack** (the scanned α digit `blk[0]` folded
+back in, the `5`-mark intact), `u` content untouched, and the head has stepped **one cell left into `u`**,
+now scanning the output frontier `c.u % m` — precisely the position B-cmp.3 reads. The balanced there-and-
+back is net-identity on the α content; the proof rides the `drev`-involution / `dpile_is_dpack_drev` bridges
+in `tm_dwalk_prefix.rs`. Requires `n ≥ 5` (the `5`-mark must be a real symbol). Crate **1735/0**, committed
+(50e92c8). No verifier escape hatches.
+
+**⚠ Marker-direction inconsistency to resolve in B-cmp.2.** §N+20's prose says comparison starts at `k = 0`
+(α low digit, no traverse) and the marker moves **deeper** (`k` increasing, traverse grows) — O(|α|²) total.
+But the §N+20/§N+19 B-cmp.2 brick line says "restore `V_k`, **step to `k-1`**, load `V_{k-1}`, write `5`"
+(`k` decreasing, toward the boundary). These disagree on direction. The B-cmp.1 round-trip above is
+**direction-agnostic** (it just probes to the current marker and returns), so nothing built is affected.
+But B-cmp.2 must pick one. Leaning toward the §N+20-prose direction (marker starts at the boundary `k=0`,
+walks deeper): it makes the **first** round need no traverse (cheapest base case) and matches "the traverse
+grows as the marker moves deeper." Under that reading the marker-advance middle is: at the `5` (position
+`k`), write `V_k` back, move **R** one more cell to read `α[k+1]` into state as `V_{k+1}`, write `5` there,
+then the LEFT walk returns over `blk ++ [V_k]` (now `k+1` digits). Confirm with the port-8051 consult when
+opening B-cmp.2.
+
+**Brick queue (updated):** B-cmp.0 ✅, B-cmp.1 ✅ (foundation + composition). NEXT = **B-cmp.2 marker
+advance** (resolve direction first), then B-cmp.3 output read+consume, B-cmp.4 round step, B-cmp.5 compare
+loop, B-cmp.6 accept/reject dispatch, B-cmp.7 park-time sentinels + relocation. After R-cmp: R-S dovetail →
+R-C/R-MC/B-W → discharge `ceer_realizes` → drop `axiom_ceer_fp_embedding`.
