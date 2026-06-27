@@ -18,12 +18,12 @@ use crate::tm_dstring::{dpack, dpile, pow_nat, lemma_dpack_pop, lemma_pow_nat_un
 use crate::tm_dwalk_prefix::{drev, lemma_drev_len, lemma_drev_digit_bound, lemma_dpile_is_dpack_drev,
     lemma_dpile_concat};
 use crate::tm_block_iter::{lemma_surge, lemma_return_walk, lemma_surge_emit_return_block1,
-    lemma_block_iter_block1};
+    lemma_block_iter_block1, lemma_surge_emit_return_block3, lemma_block_iter_block3};
 use crate::tm_dec_master::lemma_dec_temp;
-use crate::tm_block_loop::{loop_fuel_b1, lemma_guard_continue, lemma_guard_exit,
-    lemma_block_loop_block1};
+use crate::tm_block_loop::{loop_fuel_b1, loop_fuel_b3, lemma_guard_continue, lemma_guard_exit,
+    lemma_block_loop_block1, lemma_block_loop_block3};
 use crate::tm_block_loop::{lemma_dec_u_step, lemma_dec_u_zero};
-use crate::tm_shuttle::lemma_emit_block1_frontier;
+use crate::tm_shuttle::{lemma_emit_block1_frontier, lemma_emit_block3_frontier};
 use crate::tm_run_lemmas::lemma_tm_run_split;
 use crate::tm_two_counter::{repunit_m, lemma_repunit_zero};
 use crate::tm_dec_master::{dec_u, lemma_walk_left_prefix, lemma_walk_back_prefix};
@@ -808,6 +808,348 @@ pub proof fn lemma_block_loop_block1_tail_safe(
         // chain (guard·body) · recurse.
         lemma_tail_chain(tm, c0, (2 + body) as nat, rec, h, h, h);
         assert(loop_fuel_b1(od.len(), temp) == (2 + body + rec) as nat);
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// block3 variants — emit a TRIPLE [s0,s1,s2] (the only multi-digit fam_digits blocks). Structurally
+// identical to the block1 variants; the only difference is the 3-step emit.
+// ════════════════════════════════════════════════════════════════════════════
+
+/// **`surge_emit_return_block3` is tail-safe** for its `2·od.len() + 8` steps, net-disp-0 for ANY entry
+/// offset `h`. Mirror of [`crate::tm_block_iter::lemma_surge_emit_return_block3`]: surge ∘ emit-triple
+/// (3 R-steps) ∘ return.
+pub proof fn lemma_surge_emit_return_block3_tail_safe(
+    tm: Tm, big_u: nat, od: Seq<nat>, s0: nat, s1: nat, s2: nat,
+    q_iter: nat, q_surge: nat, q_e1: nat, q_e2: nat, q_eret: nat, q_home: nat,
+    i_pivot_r: int, ir1: int, ir2: int, ir3: int, ir4: int,
+    i_e0: int, i_e1: int, i_e2: int, i_off_l: int, il1: int, il2: int, il3: int, il4: int, h: nat,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 4,
+        1 <= s0 <= 4,
+        1 <= s1 <= 4,
+        1 <= s2 <= 4,
+        forall|k: int| 0 <= k < od.len() ==> 1 <= #[trigger] od[k] <= 4,
+        0 <= i_pivot_r < tm.quints.len(),
+        0 <= ir1 < tm.quints.len(),
+        0 <= ir2 < tm.quints.len(),
+        0 <= ir3 < tm.quints.len(),
+        0 <= ir4 < tm.quints.len(),
+        0 <= i_e0 < tm.quints.len(),
+        0 <= i_e1 < tm.quints.len(),
+        0 <= i_e2 < tm.quints.len(),
+        0 <= i_off_l < tm.quints.len(),
+        0 <= il1 < tm.quints.len(),
+        0 <= il2 < tm.quints.len(),
+        0 <= il3 < tm.quints.len(),
+        0 <= il4 < tm.quints.len(),
+        tm.quints[i_pivot_r] == mk_quint(q_iter, 0, 0, q_surge, Dir::R),
+        tm.quints[ir1] == mk_quint(q_surge, 1, 1, q_surge, Dir::R),
+        tm.quints[ir2] == mk_quint(q_surge, 2, 2, q_surge, Dir::R),
+        tm.quints[ir3] == mk_quint(q_surge, 3, 3, q_surge, Dir::R),
+        tm.quints[ir4] == mk_quint(q_surge, 4, 4, q_surge, Dir::R),
+        tm.quints[i_e0] == mk_quint(q_surge, 0, s0, q_e1, Dir::R),
+        tm.quints[i_e1] == mk_quint(q_e1, 0, s1, q_e2, Dir::R),
+        tm.quints[i_e2] == mk_quint(q_e2, 0, s2, q_eret, Dir::R),
+        tm.quints[i_off_l] == mk_quint(q_eret, 0, 0, q_home, Dir::L),
+        tm.quints[il1] == mk_quint(q_home, 1, 1, q_home, Dir::L),
+        tm.quints[il2] == mk_quint(q_home, 2, 2, q_home, Dir::L),
+        tm.quints[il3] == mk_quint(q_home, 3, 3, q_home, Dir::L),
+        tm.quints[il4] == mk_quint(q_home, 4, 4, q_home, Dir::L),
+    ensures
+        tail_safe(tm, TmConfig { u: big_u, v: dpack(od, tm.m), a: 0, q: q_iter },
+            (2 * od.len() + 8) as nat, h),
+        tail_end_h(tm, TmConfig { u: big_u, v: dpack(od, tm.m), a: 0, q: q_iter },
+            (2 * od.len() + 8) as nat, h) == h,
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    let c0 = TmConfig { u: big_u, v: dpack(od, m), a: 0, q: q_iter };
+    let blk = seq![s0, s1, s2];
+    let combined = od + blk;
+
+    // ── surge: offset h → h+|od|+1. ──
+    lemma_surge(tm, big_u, od, q_iter, q_surge, i_pivot_r, ir1, ir2, ir3, ir4);
+    let c2 = TmConfig { u: dpile(big_u * m, od, m), v: 0, a: 0, q: q_surge };
+    assert(tm_run(tm, c0, (od.len() + 1) as nat) == c2);
+    lemma_surge_tail_safe(tm, big_u, od, q_iter, q_surge, i_pivot_r, ir1, ir2, ir3, ir4, h);
+
+    // ── emit s0 (R): offset h+|od|+1 → h+|od|+2. ──
+    lemma_tm_step_picks(tm, c2, i_e0);
+    let c_e1 = apply_quint(tm.quints[i_e0], c2, m);
+    assert(tm_step(tm, c2) == Some(c_e1));
+    assert(c_e1.u == c2.u * m + s0 && c_e1.v == 0 && c_e1.a == 0 && c_e1.q == q_e1);
+    assert(tm_run(tm, c_e1, 0) == c_e1);
+    assert(tm_run(tm, c2, 1) == c_e1);
+    lemma_tm_run_split(tm, c0, (od.len() + 1) as nat, 1);
+    assert((od.len() + 1 + 1) as nat == (od.len() + 2) as nat);
+    assert(tm_run(tm, c0, (od.len() + 2) as nat) == c_e1);
+    assert(quint_matches(tm.quints[i_e0], c2));
+    lemma_step_tail_safe(tm, c2, i_e0, (h + od.len() + 1) as nat);
+    assert(((h + od.len() + 1) + 1) as nat == (h + od.len() + 2) as nat);
+    lemma_tail_chain(tm, c0, (od.len() + 1) as nat, 1, h, (h + od.len() + 1) as nat,
+        (h + od.len() + 2) as nat);
+
+    // ── emit s1 (R): offset h+|od|+2 → h+|od|+3. ──
+    lemma_tm_step_picks(tm, c_e1, i_e1);
+    let c_e2 = apply_quint(tm.quints[i_e1], c_e1, m);
+    assert(tm_step(tm, c_e1) == Some(c_e2));
+    assert(c_e2.u == c_e1.u * m + s1 && c_e2.v == 0 && c_e2.a == 0 && c_e2.q == q_e2);
+    assert(tm_run(tm, c_e2, 0) == c_e2);
+    assert(tm_run(tm, c_e1, 1) == c_e2);
+    lemma_tm_run_split(tm, c0, (od.len() + 2) as nat, 1);
+    assert((od.len() + 2 + 1) as nat == (od.len() + 3) as nat);
+    assert(tm_run(tm, c0, (od.len() + 3) as nat) == c_e2);
+    assert(quint_matches(tm.quints[i_e1], c_e1));
+    lemma_step_tail_safe(tm, c_e1, i_e1, (h + od.len() + 2) as nat);
+    assert(((h + od.len() + 2) + 1) as nat == (h + od.len() + 3) as nat);
+    lemma_tail_chain(tm, c0, (od.len() + 2) as nat, 1, h, (h + od.len() + 2) as nat,
+        (h + od.len() + 3) as nat);
+
+    // ── emit s2 (R): offset h+|od|+3 → h+|od|+4. ──
+    lemma_tm_step_picks(tm, c_e2, i_e2);
+    let c3 = apply_quint(tm.quints[i_e2], c_e2, m);
+    assert(tm_step(tm, c_e2) == Some(c3));
+    assert(c3.u == c_e2.u * m + s2 && c3.v == 0 && c3.a == 0 && c3.q == q_eret);
+    assert(tm_run(tm, c3, 0) == c3);
+    assert(tm_run(tm, c_e2, 1) == c3);
+    lemma_tm_run_split(tm, c0, (od.len() + 3) as nat, 1);
+    assert((od.len() + 3 + 1) as nat == (od.len() + 4) as nat);
+    assert(tm_run(tm, c0, (od.len() + 4) as nat) == c3);
+    assert(quint_matches(tm.quints[i_e2], c_e2));
+    lemma_step_tail_safe(tm, c_e2, i_e2, (h + od.len() + 3) as nat);
+    assert(((h + od.len() + 3) + 1) as nat == (h + od.len() + 4) as nat);
+    lemma_tail_chain(tm, c0, (od.len() + 3) as nat, 1, h, (h + od.len() + 3) as nat,
+        (h + od.len() + 4) as nat);
+
+    // ── c3.u == dpile(big_u·m, combined) (via the source emit + dpile_concat). ──
+    lemma_tm_run_split(tm, c2, 1, 1);
+    assert(tm_run(tm, c2, 2) == c_e2);
+    lemma_tm_run_split(tm, c2, 2, 1);
+    assert(tm_run(tm, c2, 3) == c3);
+    lemma_emit_block3_frontier(tm, c2, q_surge, s0, s1, s2, q_e1, q_e2, q_eret, i_e0, i_e1, i_e2);
+    // emit lemma: tm_run(c2, 3) == {dpile(c2.u, [s0,s1,s2]), 0, 0, q_eret}; determinism ⟹ c3.u == that.
+    assert(c3.u == dpile(c2.u, blk, m));
+    lemma_dpile_concat(big_u * m, od, blk, m);
+    assert(c3.u == dpile(big_u * m, combined, m));
+
+    // ── return: offset h+|od|+4 → h. ──
+    assert(blk.len() == 3 && combined.len() == od.len() + 3);
+    assert forall|k: int| 0 <= k < combined.len() implies 1 <= #[trigger] combined[k] <= 4 by {
+        if k < od.len() { assert(combined[k] == od[k]); } else { assert(combined[k] == blk[k - od.len()]); }
+    }
+    lemma_return_walk(tm, big_u, combined, q_eret, q_home, i_off_l, il1, il2, il3, il4);
+    let c5 = TmConfig { u: big_u, v: dpack(combined, m), a: 0, q: q_home };
+    assert(tm_run(tm, c3, (combined.len() + 1) as nat) == c5);
+    lemma_return_walk_tail_safe(tm, big_u, combined, q_eret, q_home, i_off_l, il1, il2, il3, il4,
+        (h + od.len() + 4) as nat);
+    assert(((h + od.len() + 4) - combined.len() - 1) as nat == h);
+    lemma_tm_run_split(tm, c0, (od.len() + 4) as nat, (combined.len() + 1) as nat);
+    assert((od.len() + 4 + (combined.len() + 1)) as nat == (2 * od.len() + 8) as nat);
+    lemma_tail_chain(tm, c0, (od.len() + 4) as nat, (combined.len() + 1) as nat, h,
+        (h + od.len() + 4) as nat, h);
+}
+
+/// **`block_iter_block3` is tail-safe** (`2·od.len() + 2·temp + 10` steps, net-disp-0, `h ≥ temp + 1`).
+/// Mirror of [`crate::tm_block_iter::lemma_block_iter_block3`]: serb3 ∘ dec_temp.
+pub proof fn lemma_block_iter_block3_tail_safe(
+    tm: Tm, temp: nat, w: nat, od: Seq<nat>, s0: nat, s1: nat, s2: nat,
+    q_iter: nat, q_surge: nat, q_e1: nat, q_e2: nat, q_eret: nat, q_home: nat,
+    q_dwalk: nat, q_disc: nat, q_back: nat,
+    i_pivot_r: int, ir1: int, ir2: int, ir3: int, ir4: int,
+    i_e0: int, i_e1: int, i_e2: int, i_off_l: int, il1: int, il2: int, il3: int, il4: int,
+    i_pivot: int, i_one_l: int, i_erase: int, i_disc: int, i_one_r: int, h: nat,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 4,
+        temp >= 1,
+        w % tm.m == 0,
+        1 <= s0 <= 4,
+        1 <= s1 <= 4,
+        1 <= s2 <= 4,
+        forall|k: int| 0 <= k < od.len() ==> 1 <= #[trigger] od[k] <= 4,
+        0 <= i_pivot_r < tm.quints.len(),
+        0 <= ir1 < tm.quints.len(),
+        0 <= ir2 < tm.quints.len(),
+        0 <= ir3 < tm.quints.len(),
+        0 <= ir4 < tm.quints.len(),
+        0 <= i_e0 < tm.quints.len(),
+        0 <= i_e1 < tm.quints.len(),
+        0 <= i_e2 < tm.quints.len(),
+        0 <= i_off_l < tm.quints.len(),
+        0 <= il1 < tm.quints.len(),
+        0 <= il2 < tm.quints.len(),
+        0 <= il3 < tm.quints.len(),
+        0 <= il4 < tm.quints.len(),
+        0 <= i_pivot < tm.quints.len(),
+        0 <= i_one_l < tm.quints.len(),
+        0 <= i_erase < tm.quints.len(),
+        0 <= i_disc < tm.quints.len(),
+        0 <= i_one_r < tm.quints.len(),
+        tm.quints[i_pivot_r] == mk_quint(q_iter, 0, 0, q_surge, Dir::R),
+        tm.quints[ir1] == mk_quint(q_surge, 1, 1, q_surge, Dir::R),
+        tm.quints[ir2] == mk_quint(q_surge, 2, 2, q_surge, Dir::R),
+        tm.quints[ir3] == mk_quint(q_surge, 3, 3, q_surge, Dir::R),
+        tm.quints[ir4] == mk_quint(q_surge, 4, 4, q_surge, Dir::R),
+        tm.quints[i_e0] == mk_quint(q_surge, 0, s0, q_e1, Dir::R),
+        tm.quints[i_e1] == mk_quint(q_e1, 0, s1, q_e2, Dir::R),
+        tm.quints[i_e2] == mk_quint(q_e2, 0, s2, q_eret, Dir::R),
+        tm.quints[i_off_l] == mk_quint(q_eret, 0, 0, q_home, Dir::L),
+        tm.quints[il1] == mk_quint(q_home, 1, 1, q_home, Dir::L),
+        tm.quints[il2] == mk_quint(q_home, 2, 2, q_home, Dir::L),
+        tm.quints[il3] == mk_quint(q_home, 3, 3, q_home, Dir::L),
+        tm.quints[il4] == mk_quint(q_home, 4, 4, q_home, Dir::L),
+        tm.quints[i_pivot] == mk_quint(q_home, 0, 0, q_dwalk, Dir::L),
+        tm.quints[i_one_l] == mk_quint(q_dwalk, 1, 1, q_dwalk, Dir::L),
+        tm.quints[i_erase] == mk_quint(q_dwalk, 0, 0, q_disc, Dir::R),
+        tm.quints[i_disc] == mk_quint(q_disc, 1, 0, q_back, Dir::R),
+        tm.quints[i_one_r] == mk_quint(q_back, 1, 1, q_back, Dir::R),
+        h >= temp + 1,
+    ensures
+        tail_safe(tm, TmConfig { u: dec_u(temp, w, tm.m), v: dpack(od, tm.m), a: 0, q: q_iter },
+            (2 * od.len() + 2 * temp + 10) as nat, h),
+        tail_end_h(tm, TmConfig { u: dec_u(temp, w, tm.m), v: dpack(od, tm.m), a: 0, q: q_iter },
+            (2 * od.len() + 2 * temp + 10) as nat, h) == h,
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    let big_u = dec_u(temp, w, m);
+    let c0 = TmConfig { u: big_u, v: dpack(od, m), a: 0, q: q_iter };
+    lemma_surge_emit_return_block3(tm, big_u, od, s0, s1, s2, q_iter, q_surge, q_e1, q_e2, q_eret, q_home,
+        i_pivot_r, ir1, ir2, ir3, ir4, i_e0, i_e1, i_e2, i_off_l, il1, il2, il3, il4);
+    let out2 = dpack(od + seq![s0, s1, s2], m);
+    let c_mid = TmConfig { u: big_u, v: out2, a: 0, q: q_home };
+    assert(tm_run(tm, c0, (2 * od.len() + 8) as nat) == c_mid);
+    lemma_surge_emit_return_block3_tail_safe(tm, big_u, od, s0, s1, s2, q_iter, q_surge, q_e1, q_e2,
+        q_eret, q_home, i_pivot_r, ir1, ir2, ir3, ir4, i_e0, i_e1, i_e2, i_off_l, il1, il2, il3, il4, h);
+    lemma_dec_temp_tail_safe(tm, temp, w, out2, q_home, q_dwalk, q_disc, q_back,
+        i_pivot, i_one_l, i_erase, i_disc, i_one_r, h);
+    lemma_tail_chain(tm, c0, (2 * od.len() + 8) as nat, (2 * temp + 2) as nat, h, h, h);
+    assert((2 * od.len() + 8 + (2 * temp + 2)) as nat == (2 * od.len() + 2 * temp + 10) as nat);
+}
+
+/// **`block_loop_block3` is tail-safe** for its `loop_fuel_b3(od.len(), temp)` steps, net-disp-0,
+/// `h ≥ temp + 1`. Mirror of [`crate::tm_block_loop::lemma_block_loop_block3`]: induct on `temp`, chaining
+/// the continue-guard, one [`lemma_block_iter_block3_tail_safe`], and the recursion.
+pub proof fn lemma_block_loop_block3_tail_safe(
+    tm: Tm, temp: nat, w: nat, od: Seq<nat>, s0: nat, s1: nat, s2: nat,
+    q_loop: nat, q_guard: nat, q_iter: nat, q_surge: nat, q_e1: nat, q_e2: nat, q_eret: nat,
+    q_home: nat, q_dwalk: nat, q_disc: nat, q_exit: nat,
+    i_peek: int, i_cont: int, i_exit: int,
+    i_pivot_r: int, ir1: int, ir2: int, ir3: int, ir4: int,
+    i_e0: int, i_e1: int, i_e2: int, i_off_l: int, il1: int, il2: int, il3: int, il4: int,
+    i_pivot: int, i_one_l: int, i_erase: int, i_disc: int, i_one_r: int, h: nat,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 4,
+        w % tm.m == 0,
+        1 <= s0 <= 4,
+        1 <= s1 <= 4,
+        1 <= s2 <= 4,
+        forall|k: int| 0 <= k < od.len() ==> 1 <= #[trigger] od[k] <= 4,
+        0 <= i_peek < tm.quints.len(),
+        0 <= i_cont < tm.quints.len(),
+        0 <= i_exit < tm.quints.len(),
+        0 <= i_pivot_r < tm.quints.len(),
+        0 <= ir1 < tm.quints.len(),
+        0 <= ir2 < tm.quints.len(),
+        0 <= ir3 < tm.quints.len(),
+        0 <= ir4 < tm.quints.len(),
+        0 <= i_e0 < tm.quints.len(),
+        0 <= i_e1 < tm.quints.len(),
+        0 <= i_e2 < tm.quints.len(),
+        0 <= i_off_l < tm.quints.len(),
+        0 <= il1 < tm.quints.len(),
+        0 <= il2 < tm.quints.len(),
+        0 <= il3 < tm.quints.len(),
+        0 <= il4 < tm.quints.len(),
+        0 <= i_pivot < tm.quints.len(),
+        0 <= i_one_l < tm.quints.len(),
+        0 <= i_erase < tm.quints.len(),
+        0 <= i_disc < tm.quints.len(),
+        0 <= i_one_r < tm.quints.len(),
+        tm.quints[i_peek] == mk_quint(q_loop, 0, 0, q_guard, Dir::L),
+        tm.quints[i_cont] == mk_quint(q_guard, 1, 1, q_iter, Dir::R),
+        tm.quints[i_exit] == mk_quint(q_guard, 0, 0, q_exit, Dir::R),
+        tm.quints[i_pivot_r] == mk_quint(q_iter, 0, 0, q_surge, Dir::R),
+        tm.quints[ir1] == mk_quint(q_surge, 1, 1, q_surge, Dir::R),
+        tm.quints[ir2] == mk_quint(q_surge, 2, 2, q_surge, Dir::R),
+        tm.quints[ir3] == mk_quint(q_surge, 3, 3, q_surge, Dir::R),
+        tm.quints[ir4] == mk_quint(q_surge, 4, 4, q_surge, Dir::R),
+        tm.quints[i_e0] == mk_quint(q_surge, 0, s0, q_e1, Dir::R),
+        tm.quints[i_e1] == mk_quint(q_e1, 0, s1, q_e2, Dir::R),
+        tm.quints[i_e2] == mk_quint(q_e2, 0, s2, q_eret, Dir::R),
+        tm.quints[i_off_l] == mk_quint(q_eret, 0, 0, q_home, Dir::L),
+        tm.quints[il1] == mk_quint(q_home, 1, 1, q_home, Dir::L),
+        tm.quints[il2] == mk_quint(q_home, 2, 2, q_home, Dir::L),
+        tm.quints[il3] == mk_quint(q_home, 3, 3, q_home, Dir::L),
+        tm.quints[il4] == mk_quint(q_home, 4, 4, q_home, Dir::L),
+        tm.quints[i_pivot] == mk_quint(q_home, 0, 0, q_dwalk, Dir::L),
+        tm.quints[i_one_l] == mk_quint(q_dwalk, 1, 1, q_dwalk, Dir::L),
+        tm.quints[i_erase] == mk_quint(q_dwalk, 0, 0, q_disc, Dir::R),
+        tm.quints[i_disc] == mk_quint(q_disc, 1, 0, q_loop, Dir::R),
+        tm.quints[i_one_r] == mk_quint(q_loop, 1, 1, q_loop, Dir::R),
+        h >= temp + 1,
+    ensures
+        tail_safe(tm, TmConfig { u: dec_u(temp, w, tm.m), v: dpack(od, tm.m), a: 0, q: q_loop },
+            loop_fuel_b3(od.len(), temp), h),
+        tail_end_h(tm, TmConfig { u: dec_u(temp, w, tm.m), v: dpack(od, tm.m), a: 0, q: q_loop },
+            loop_fuel_b3(od.len(), temp), h) == h,
+    decreases temp,
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    let c0 = TmConfig { u: dec_u(temp, w, m), v: dpack(od, m), a: 0, q: q_loop };
+    if temp == 0 {
+        lemma_guard_exit_tail_safe(tm, w, dpack(od, m), q_loop, q_guard, q_exit, i_peek, i_exit, h);
+        assert(loop_fuel_b3(od.len(), 0) == 2);
+        assert(dec_u(0, w, m) == w) by { lemma_dec_u_zero(w, m); }
+    } else {
+        lemma_guard_continue(tm, temp, w, dpack(od, m), q_loop, q_guard, q_iter, i_peek, i_cont);
+        let c1 = TmConfig { u: dec_u(temp, w, m), v: dpack(od, m), a: 0, q: q_iter };
+        assert(tm_run(tm, c0, 2) == c1);
+        lemma_guard_continue_tail_safe(tm, temp, w, dpack(od, m), q_loop, q_guard, q_iter, i_peek,
+            i_cont, h);
+
+        lemma_block_iter_block3(tm, temp, w, od, s0, s1, s2,
+            q_iter, q_surge, q_e1, q_e2, q_eret, q_home, q_dwalk, q_disc, q_loop,
+            i_pivot_r, ir1, ir2, ir3, ir4, i_e0, i_e1, i_e2, i_off_l, il1, il2, il3, il4,
+            i_pivot, i_one_l, i_erase, i_disc, i_one_r);
+        let od2 = od + seq![s0, s1, s2];
+        let body = (2 * od.len() + 2 * temp + 10) as nat;
+        let c2 = TmConfig { u: dec_u((temp - 1) as nat, (m * w) as nat, m), v: dpack(od2, m), a: 0,
+            q: q_loop };
+        assert(tm_run(tm, c1, body) == c2);
+        lemma_block_iter_block3_tail_safe(tm, temp, w, od, s0, s1, s2,
+            q_iter, q_surge, q_e1, q_e2, q_eret, q_home, q_dwalk, q_disc, q_loop,
+            i_pivot_r, ir1, ir2, ir3, ir4, i_e0, i_e1, i_e2, i_off_l, il1, il2, il3, il4,
+            i_pivot, i_one_l, i_erase, i_disc, i_one_r, h);
+        lemma_tm_run_split(tm, c0, 2, body);
+        assert(tm_run(tm, c0, (2 + body) as nat) == c2);
+        lemma_tail_chain(tm, c0, 2, body, h, h, h);
+
+        assert forall|k: int| 0 <= k < od2.len() implies 1 <= #[trigger] od2[k] <= 4 by {
+            if k < od.len() { assert(od2[k] == od[k]); } else { assert(od2[k] == seq![s0, s1, s2][k - od.len()]); }
+        }
+        assert((m * w) % m == 0) by {
+            assert(m * w == w * m) by(nonlinear_arith);
+            lemma_div_mod_step(w, m, 0);
+        }
+        lemma_block_loop_block3(tm, (temp - 1) as nat, (m * w) as nat, od2, s0, s1, s2,
+            q_loop, q_guard, q_iter, q_surge, q_e1, q_e2, q_eret, q_home, q_dwalk, q_disc, q_exit,
+            i_peek, i_cont, i_exit, i_pivot_r, ir1, ir2, ir3, ir4,
+            i_e0, i_e1, i_e2, i_off_l, il1, il2, il3, il4, i_pivot, i_one_l, i_erase, i_disc, i_one_r);
+        let rec = loop_fuel_b3(od2.len(), (temp - 1) as nat);
+        lemma_block_loop_block3_tail_safe(tm, (temp - 1) as nat, (m * w) as nat, od2, s0, s1, s2,
+            q_loop, q_guard, q_iter, q_surge, q_e1, q_e2, q_eret, q_home, q_dwalk, q_disc, q_exit,
+            i_peek, i_cont, i_exit, i_pivot_r, ir1, ir2, ir3, ir4,
+            i_e0, i_e1, i_e2, i_off_l, il1, il2, il3, il4, i_pivot, i_one_l, i_erase, i_disc, i_one_r, h);
+        lemma_tail_chain(tm, c0, (2 + body) as nat, rec, h, h, h);
+        assert(loop_fuel_b3(od.len(), temp) == (2 + body + rec) as nat);
     }
 }
 
