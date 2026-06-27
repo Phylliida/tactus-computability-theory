@@ -1765,3 +1765,72 @@ the only things between here and `mm_decides_relnum` -> `ceer_realizes` -> dropp
 **NEXT (once Danielle picks marker / markerless):** build the chosen compare as a self-contained gadget over
 the `assemble5` scaffold (interface pinned above), then R-S (dovetail), R-C/R-MC/B-W -> discharge
 `ceer_realizes`.
+
+### N+19 — R-cmp fork RESOLVED = M1 (marker-5, α immutable). Two §N+18 errors corrected from the model. First brick built (skip-blank loops).
+
+**Decision (port-8051 consult, this session): build M1.** The fork is closed in favour of the
+marker-based compare. Two corrections to the §N+18 analysis, both re-derived directly from `tm.rs`, were
+folded into the call:
+
+- **§N+18 Finding 2 is WRONG.** It claimed "the Minsky model has no delete; every move is a swap, so a
+  markerless dual-consume loops." But `apply_quint` (`tm.rs:90`) writes `qt.a2` on *every* move
+  (R: `u'=u·m+a2`; L: `v'=v·m+a2`). Writing `a2=0` deletes a cell to blank. The existing
+  `lemma_dwalk_left`/`right` already peel nonzero-digit blocks and **stop at `0`** — `0` is the toolkit's
+  universal delimiter. So a markerless-via-`0` compare is *feasible* (it reuses the `0`-delimited walks),
+  not blocked. This was the load-bearing correction.
+- **§N+18 / older "no free sentinel at n=4" is OUTDATED.** The committed machine is **n=5**
+  (`tm_assemble5`: `0`=blank, `1..4`=digits, `5`=the `copy_refresh` mark). Symbol `5` is FREE during
+  R-cmp (post-emit, all `copy_refresh` marks restored), so a marker-based compare can use `5` as the
+  α-frontier mark/sentinel, and `dwalk-to-5` is just the `dwalk` template with the stop-constant `0→5`.
+
+**Why M1 wins anyway (the consult's call, which I agree with after the corrections):** the deciding cost
+is **α-survival**. α is the loop invariant of the generate-and-compare dovetail — it must be intact for
+every stage `s`. Markerless-via-`0` *destroys* α as it compares, forcing a copy-then-compare wrapper
+(copy α into the spent-master scratch in `u`, Θ(|α|) head-travel per stage). M1 keeps α in place: mark
+the frontier with `5`, read it, restore it. Since `5` is free and `dwalk-to-5` is a trivial template
+instantiation, M1's "new primitive" cost is small while its lifecycle cost (α never copied) is much
+lower. **Verdict: M1, α treated as a read-only resource during R-cmp.**
+
+**Exhaustion / length-mismatch detection (the part §N+18 underweighted): SENTINEL-5 at each string's far
+end.** You cannot test `v==0` (an empty right half-tape is an infinite sea of blanks; moving R just loops
+scanning `0`). So at park/relocate time, write a single `5` *below* (far end of) BOTH the parked α block
+and the relocated output block. Then exhaustion becomes a *search for a marker*, not a search for nothing:
+hit `5` scanning the output side ⟹ output exhausted; hit `5` on the α side ⟹ α exhausted; both reached
+together with all digits matched ⟹ **ACCEPT**; one exhausts before the other ⟹ lengths differ ⟹ REJECT
+(clear output, advance `s`, loop). This is the standard marker-boundary trick used in formal TM
+constructions (Aanderaa–Cohen) to dodge the blank-tape trap.
+
+**Precise M1 micro-algorithm (worked out at the quintuple level this session, for the build to follow):**
+post-relocation layout, head at the gap: `u = dpack(drev(output)) ++ [5] ++ scratch` (output reversed,
+its low digit = `output[L-1]` nearest the head, then a far-end sentinel `5`, then disposable scratch);
+`v = dpack(drev(alpha)) ++ [5]` (α reversed, low digit `alpha[L'-1]` nearest, far-end sentinel `5`);
+`a=0`, `q=q_cmp`. Per round (peeling the frontier pair inward):
+  1. **Onto the α-frontier:** from the gap, move R onto α's low digit `d_a` (∈1..4 or the sentinel `5`).
+     Record `d_a` in state (4 states), **write `5`** (mark this cell), move L back toward output.
+  2. **Cross the gap left:** skip-blank-left loop `(q,0,0,q,L)` over the gap `0`s (the original gap plus
+     the cells of already-consumed output, now `0`) until the first nonblank = `output` frontier `d_o`
+     (∈1..4) or the output sentinel `5`.
+  3. **Compare:** `d_o` vs the recorded `d_a`. `5` on either side here = exhaustion (see above). If
+     `d_o == d_a`, **write `0`** (consume the output digit — output is disposable), move R.
+  4. **Cross the gap right + restore:** skip-blank-right loop `(q,0,0,q,R)` until the first nonblank =
+     the `5`-mark from step 1. **Write `d_a` back** (restore α — α is now value-preserved, relocated one
+     cell toward `u`), move R to the next α frontier. Loop to step 1.
+  5. **Accept/reject:** when step 1 reads sentinel `5` AND the matching output frontier is sentinel `5`
+     ⟹ equal lengths, all matched ⟹ drive to `tm_origin` (ACCEPT). Any digit mismatch or single-sided
+     `5` ⟹ clear remaining output to `0`, rewind α from `u` back into `v` (a single `dwalk`), `INC s`,
+     re-enter `q_cmp` (REJECT/loop). Note α ends a successful run relocated into `u` (value-preserved);
+     the reject path's α-rewind is a clean extra brick.
+
+**Brick breakdown (the build queue):**
+  - **B-cmp.0 `skip-blank` loops** — `lemma_skip0_left` / `lemma_skip0_right`: peel `k` blanks off the
+    near stack onto the far stack, land on the first nonblank. *(BUILT this session — `tm_skip_blank.rs`,
+    the blank analog of `tm_walk::lemma_walk_left_inner`; gap-crossing for steps 2 & 4.)*
+  - **B-cmp.1 mark/restore** — read-record-mark-`5` (step 1) and find-`5`-restore (step 4) single-cell ops.
+  - **B-cmp.2 round step** — one frontier-pair comparison (steps 1–4) as a fuel lemma.
+  - **B-cmp.3 compare loop** — iterate B-cmp.2, decreasing on remaining α length; threads the gap-size.
+  - **B-cmp.4 accept/reject dispatch** — sentinel handling, drive-to-origin, clear+rewind+INC.
+  - **B-cmp.5 park-time sentinels** — add the two far-end `5`s (touches `tm_rp` park + the relocation;
+    deferred — done last to avoid perturbing verified emit lemmas).
+
+**NEXT:** B-cmp.1 (mark/restore single-cell ops), then B-cmp.2 round step. Then R-S (dovetail) →
+R-C/R-MC/B-W → discharge `ceer_realizes` → drop `axiom_ceer_fp_embedding`.
