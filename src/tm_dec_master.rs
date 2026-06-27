@@ -19,9 +19,9 @@ use vstd::prelude::*;
 use verus_group_theory::machine_group::Dir;
 use verus_group_theory::word_numbering::lemma_div_mod_step;
 use crate::tm::{Tm, TmConfig, tm_wf, tm_step, tm_run};
-use crate::tm_two_counter::{repunit_m, lemma_repunit_zero};
+use crate::tm_two_counter::{repunit_m, lemma_repunit_zero, lemma_repunit_step};
 use crate::tm_gadget::{mk_quint, lemma_tm_step_picks};
-use crate::tm_walk::{pile_ones, lemma_pile_ones_shift};
+use crate::tm_walk::{pile_ones, lemma_pile_ones_shift, lemma_pile_ones_div_mod};
 use crate::tm_dstring::{pow_nat, lemma_pow_nat_unfold};
 
 verus! {
@@ -85,6 +85,71 @@ pub proof fn lemma_walk_left_prefix(tm: Tm, c: TmConfig, q_walk: nat, j0: nat, w
         // IH: tm_run(c_next, j0) == (w/m, pile_ones(c.v·m+1, j0), w%m, q_walk).
         lemma_pile_ones_shift(c.v, j0, m);   // pile_ones(c.v·m+1, j0) == pile_ones(c.v, j0+1)
         assert(tm_run(tm, c, (j0 + 1) as nat) == tm_run(tm, c_next, j0));
+    }
+}
+
+/// **Generalized walk-back-right over a pile, preserving a high tail `w_hi` in `u`.** The back-direction
+/// twin of [`lemma_walk_left_prefix`] (and the generalization of [`crate::tm_walk::lemma_walk_back_inner`]
+/// that carries the preserved high content `w_hi`). From a config in state `q_back` scanning a `1`, with
+/// `k0` ones already reconstructed atop `w_hi` in `u` (`u == repunit_m(k0) + pow_nat(m,k0)·w_hi`) and a
+/// pile of `rem0` ones above `w_pile` in `v` (`v == pile_ones(w_pile, rem0)`), the `(q_back, 1, 1, q_back,
+/// R)` step fires `rem0 + 1` times — writing each `1` back onto `u`'s low end (pushing `w_hi` up) and
+/// popping the pile — landing `u == repunit_m(k0 + rem0 + 1) + pow_nat(m, k0+rem0+1)·w_hi` with the head on
+/// `w_pile`'s low cell (`a == w_pile % m`, `v == w_pile / m`). The walk-BACK of `dec_temp` (reconstructs
+/// the decremented temp counter while leaving the master `w_hi` intact — though shifted up by the gap the
+/// erase/discard introduced). Induction on `rem0`, mirroring `lemma_walk_back_inner`.
+pub proof fn lemma_walk_back_prefix(
+    tm: Tm, c: TmConfig, q_back: nat, k0: nat, rem0: nat, w_pile: nat, w_hi: nat, i1b: int,
+)
+    requires
+        tm_wf(tm),
+        0 <= i1b < tm.quints.len(),
+        tm.quints[i1b] == mk_quint(q_back, 1, 1, q_back, Dir::R),
+        c.u == repunit_m(k0, tm.m) + pow_nat(tm.m, k0) * w_hi,
+        c.v == pile_ones(w_pile, rem0, tm.m),
+        c.a == 1,
+        c.q == q_back,
+    ensures
+        tm_run(tm, c, (rem0 + 1) as nat)
+            == (TmConfig {
+                u: repunit_m((k0 + rem0 + 1) as nat, tm.m)
+                    + pow_nat(tm.m, (k0 + rem0 + 1) as nat) * w_hi,
+                v: w_pile / tm.m, a: w_pile % tm.m, q: q_back }),
+    decreases rem0,
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 1);
+    lemma_tm_step_picks(tm, c, i1b);
+    let c_next = TmConfig { u: c.u * m + 1, v: c.v / m, a: c.v % m, q: q_back };
+    assert(tm_step(tm, c) == Some(c_next));
+    // c_next.u == repunit(k0+1) + m^(k0+1)·w_hi.
+    let nk = (k0 + 1) as nat;
+    assert(repunit_m(nk, m) == m * repunit_m(k0, m) + 1);   // repunit recurrence
+    lemma_pow_nat_unfold(m, nk);                            // m^(k0+1) == m·m^k0
+    assert(c_next.u == repunit_m(nk, m) + pow_nat(m, nk) * w_hi) by(nonlinear_arith)
+        requires
+            c.u == repunit_m(k0, m) + pow_nat(m, k0) * w_hi,
+            c_next.u == c.u * m + 1,
+            repunit_m(nk, m) == m * repunit_m(k0, m) + 1,
+            pow_nat(m, nk) == m * pow_nat(m, k0);
+    if rem0 == 0 {
+        // c.v == pile_ones(w_pile, 0) == w_pile.
+        assert(pile_ones(w_pile, 0, m) == w_pile);
+        assert((k0 + 0 + 1) as nat == nk);
+        assert(c_next == (TmConfig {
+            u: repunit_m(nk, m) + pow_nat(m, nk) * w_hi, v: w_pile / m, a: w_pile % m, q: q_back }));
+        assert(tm_run(tm, c_next, 0) == c_next);
+        assert(tm_run(tm, c, 1) == c_next);
+    } else {
+        // pop a pile-one: c.v % m == 1, c.v / m == pile_ones(w_pile, rem0-1).
+        lemma_pile_ones_div_mod(w_pile, rem0, m);
+        assert(c_next.a == 1);
+        assert(c_next.v == pile_ones(w_pile, (rem0 - 1) as nat, m));
+        lemma_walk_back_prefix(tm, c_next, q_back, nk, (rem0 - 1) as nat, w_pile, w_hi, i1b);
+        // IH: lands u == repunit((k0+1)+(rem0-1)+1) + m^(...)·w_hi == repunit(k0+rem0+1) + m^(k0+rem0+1)·w_hi.
+        assert(((k0 + 1) + (rem0 - 1) + 1) as nat == (k0 + rem0 + 1) as nat);
+        assert(tm_run(tm, c, (rem0 + 1) as nat) == tm_run(tm, c_next, rem0));
     }
 }
 
