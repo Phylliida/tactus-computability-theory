@@ -21,9 +21,118 @@ use verus_group_theory::machine_group::Dir;
 use verus_group_theory::word_numbering::lemma_div_mod_step;
 use crate::tm::{Tm, TmConfig, tm_wf, tm_step, tm_run, quint_matches, apply_quint};
 use crate::tm_gadget::{mk_quint, lemma_tm_step_picks};
+use crate::tm_two_counter::{repunit_m, lemma_repunit_zero};
 use crate::tm_dstring::{pow_nat, lemma_pow_nat_unfold};
+use crate::tm_dec_master::dec_u;
 
 verus! {
+
+/// `m^(a+b) == m^a · m^b` (the additive place-value law; induction on `b`).
+pub proof fn lemma_pow_nat_add(m: nat, a: nat, b: nat)
+    ensures
+        pow_nat(m, (a + b) as nat) == pow_nat(m, a) * pow_nat(m, b),
+    decreases b,
+{
+    if b == 0 {
+        assert(pow_nat(m, 0) == 1);
+        assert((a + 0) as nat == a);
+        assert(pow_nat(m, a) * 1 == pow_nat(m, a)) by(nonlinear_arith);
+    } else {
+        lemma_pow_nat_add(m, a, (b - 1) as nat);   // m^(a+b-1) == m^a·m^(b-1)
+        assert((a + (b - 1)) as nat == (a + b - 1) as nat);
+        lemma_pow_nat_unfold(m, (a + b) as nat);   // m^(a+b) == m·m^(a+b-1)
+        lemma_pow_nat_unfold(m, b);                // m^b == m·m^(b-1)
+        assert(pow_nat(m, (a + b) as nat) == pow_nat(m, a) * pow_nat(m, b)) by(nonlinear_arith)
+            requires
+                pow_nat(m, (a + b) as nat) == m * pow_nat(m, (a + b - 1) as nat),
+                pow_nat(m, (a + b - 1) as nat) == pow_nat(m, a) * pow_nat(m, (b - 1) as nat),
+                pow_nat(m, b) == m * pow_nat(m, (b - 1) as nat);
+    }
+}
+
+// ============================================================================
+// the marked-copy invariant (closed form, drift-free)
+// ============================================================================
+
+/// **The left-tape value during the marked unary copy.** After `j` of the master's `big_m` ones have been
+/// copied (marked `1 → 5` low-to-high), reading `u` low→high from the home pivot:
+///   `[temp: j ones][G blanks: separator + gap][master: j fives (copied, low) then (big_m − j) ones (high)]`
+/// where `G` is the (separator + blank-gap) width. Closed form — **NO position drift**: depositing a fresh
+/// temp one (`u·m+1`, shifts everything up one) and marking a master one (`1 → 5`, in place) keep `G` and the
+/// master's relative layout constant, so every copy iteration preserves this shape with the SAME `G`:
+///   `copy_u(j, M, G) = repunit(j) + m^(j+G)·(5·repunit(j) + m^j·repunit(M−j))`.
+/// Endpoints: `copy_u(0,M,G) = m^G·repunit(M)` (the post-[`crate::tm_block_loop`] state — master floated up
+/// the gap, no counter), and `copy_u(M,M,G) = repunit(M) + m^(M+G)·5·repunit(M)` (fresh temp built, master
+/// all fives), which the un-mark pass `5 → 1` turns into `dec_u(M, repunit(M)·m^G)` — a fresh `M`-counter
+/// with the master (M ones at gap G) preserved, ready for the next `block_loop`.
+pub open spec fn copy_u(j: nat, big_m: nat, g: nat, m: nat) -> nat {
+    repunit_m(j, m)
+        + pow_nat(m, (j + g) as nat)
+            * (5 * repunit_m(j, m) + pow_nat(m, j) * repunit_m((big_m - j) as nat, m))
+}
+
+/// **Start endpoint:** `copy_u(0, M, G) == m^G · repunit(M)` — the post-`block_loop` left tape (the master's
+/// `M` ones floated up by the consumed counter to gap `G`, nothing below the pivot). The input to the copy.
+pub proof fn lemma_copy_u_start(big_m: nat, g: nat, m: nat)
+    ensures
+        copy_u(0, big_m, g, m) == pow_nat(m, g) * repunit_m(big_m, m),
+{
+    lemma_repunit_zero(m);          // repunit_m(0) == 0
+    assert(pow_nat(m, 0) == 1);
+    // copy_u(0,M,G) = 0 + m^(0+G)·(5·0 + m^0·repunit(M)) = m^G·repunit(M).
+    assert((0 + g) as nat == g);
+    assert(5 * repunit_m(0, m) == 0) by(nonlinear_arith) requires repunit_m(0, m) == 0;
+    assert(pow_nat(m, 0) * repunit_m((big_m - 0) as nat, m) == repunit_m(big_m, m)) by(nonlinear_arith)
+        requires pow_nat(m, 0) == 1;
+    assert(copy_u(0, big_m, g, m) == pow_nat(m, g) * repunit_m(big_m, m)) by(nonlinear_arith)
+        requires
+            copy_u(0, big_m, g, m)
+                == repunit_m(0, m) + pow_nat(m, g) * (5 * repunit_m(0, m)
+                    + pow_nat(m, 0) * repunit_m(big_m, m)),
+            repunit_m(0, m) == 0,
+            5 * repunit_m(0, m) == 0,
+            pow_nat(m, 0) * repunit_m(big_m, m) == repunit_m(big_m, m);
+}
+
+/// **End endpoint (pre-unmark):** `copy_u(M, M, G) == repunit(M) + m^(M+G)·(5·repunit(M))` — the fresh temp
+/// counter (`M` ones) is built at the pivot, and the whole master block is now `M` fives (every one copied).
+/// The subsequent un-mark pass rewrites those `M` fives back to ones, yielding `dec_u(M, repunit(M)·m^G)`
+/// (see [`lemma_copy_u_end_unmarked`]).
+pub proof fn lemma_copy_u_end(big_m: nat, g: nat, m: nat)
+    ensures
+        copy_u(big_m, big_m, g, m)
+            == repunit_m(big_m, m) + pow_nat(m, (big_m + g) as nat) * (5 * repunit_m(big_m, m)),
+{
+    lemma_repunit_zero(m);
+    assert(pow_nat(m, big_m) * repunit_m((big_m - big_m) as nat, m) == 0) by(nonlinear_arith)
+        requires repunit_m((big_m - big_m) as nat, m) == 0, (big_m - big_m) as nat == 0;
+    // copy_u(M,M,G) = repunit(M) + m^(M+G)·(5·repunit(M) + m^M·repunit(0)) = repunit(M) + m^(M+G)·5·repunit(M).
+    assert(copy_u(big_m, big_m, g, m)
+        == repunit_m(big_m, m) + pow_nat(m, (big_m + g) as nat) * (5 * repunit_m(big_m, m)))
+        by(nonlinear_arith)
+        requires
+            copy_u(big_m, big_m, g, m)
+                == repunit_m(big_m, m) + pow_nat(m, (big_m + g) as nat)
+                    * (5 * repunit_m(big_m, m) + pow_nat(m, big_m) * repunit_m((big_m - big_m) as nat, m)),
+            pow_nat(m, big_m) * repunit_m((big_m - big_m) as nat, m) == 0;
+}
+
+/// **The un-marked end state IS a `dec_u` home config.** After the copy builds `copy_u(M,M,G)` and the
+/// un-mark pass rewrites the master's `M` fives back to ones (subtracting `(5−1)·repunit(M)·m^(M+G)` from
+/// `u`, i.e. replacing the `5·repunit(M)` factor by `repunit(M)`), the left tape is exactly
+/// `dec_u(M, repunit(M)·m^G)` — a fresh `M`-counter (`repunit(M)`) below the preserved master (`M` ones at
+/// gap `G`). This pins the post-copy-refresh home config for the next `block_loop`.
+pub proof fn lemma_copy_u_end_unmarked(big_m: nat, g: nat, m: nat)
+    ensures
+        repunit_m(big_m, m) + pow_nat(m, (big_m + g) as nat) * repunit_m(big_m, m)
+            == dec_u(big_m, (pow_nat(m, g) * repunit_m(big_m, m)) as nat, m),
+{
+    lemma_pow_nat_add(m, big_m, g);   // m^(M+G) == m^M·m^G
+    // dec_u(M, w) = repunit(M) + m^M·w with w = m^G·repunit(M); m^M·(m^G·repunit(M)) = m^(M+G)·repunit(M).
+    assert(pow_nat(m, big_m) * (pow_nat(m, g) * repunit_m(big_m, m))
+        == pow_nat(m, (big_m + g) as nat) * repunit_m(big_m, m)) by(nonlinear_arith)
+        requires pow_nat(m, (big_m + g) as nat) == pow_nat(m, big_m) * pow_nat(m, g);
+}
 
 /// **Seek-left over a blank gap to the master.** From `{u: m^g·r, a: 0, q: q_seek}` with `r % m != 0`
 /// (the target's low digit is nonzero — the master), the loop quintuple `(q_seek, 0, 0, q_seek, L)` fires
