@@ -1484,6 +1484,33 @@ gadget; the deepest excursion (terminate) is the tight one and is already done.
 2. **Power-block + phase-block tail_safe** — `power_block_b1`/`b3` (+ `_m1`) wrap `copy_refresh`; then
    `pbb1x_phase`/`pbb3x_phase`/`pbb*_phase_any` and the `seret1x`/`seret3x` singletons (shallow reach, easy).
    Each enters at `H_0`, net-disp-0.
+   **✅ LOWER HALF DONE (the emit loop): new module `gap2_tail_emit.rs`, 26/0.** ALL verified first-try
+   (one trivial dpile-determinism fix): `lemma_dwalk_right_tail_safe` + `lemma_dwalk_left_prefix_tail_safe`
+   (the output digit-walks, R-only/L-only) → `lemma_surge_tail_safe` + `lemma_return_walk_tail_safe`
+   (+ the `drev` bridge) → `lemma_surge_emit_return_block1_tail_safe` (net-disp-0 for ANY `h` — the surge
+   raises the offset before the return lowers it, so the return is never tight) → `lemma_dec_temp_tail_safe`
+   (the decrement; REUSES the phase-1 s=1 walk companions + `lemma_pile_ones_eq_pile_sym`) →
+   `lemma_block_iter_block1_tail_safe` → `lemma_guard_continue_tail_safe` + `lemma_guard_exit_tail_safe` →
+   `lemma_block_loop_block1_tail_safe` (the loop induction on `temp`, `h ≥ temp+1`) → the **block3** mirrors
+   (`surge_emit_return_block3`/`block_iter_block3`/`block_loop_block3`, triple-emit). The emit loop never
+   goes within `g` of the tail (deepest reach is over the temp counter), so `h ≥ temp+1` is the only
+   constraint and it holds trivially at `H_0 = g+M+1`.
+   **REMAINING UPPER HALF (power_block + the per-window phases) — all pure COMPOSITION of proven pieces:**
+   - `lemma_power_block_step_block1_tail_safe` = `lemma_copy_refresh_tail_safe` ∘
+     `lemma_block_loop_block1_tail_safe`, both at `H_0`, net-disp-0. The block_loop runs at `temp = M`,
+     `w = m^(g-M)·R(M)` (`w%m==0` since `g≥M+2`), home state `q_urt`, loop quint `i_one_r = i_urtemp`.
+     Constraint `H_0 ≥ M+1` ✓. **SIGNATURE = copy the source `lemma_power_block_step_block1` requires
+     VERBATIM (≈170 lines, lines 54–225 of tm_power_block.rs); only swap the `ensures` to tail_safe and the
+     body to the 2-piece chain.** Same for `_block3` (uses `lemma_block_loop_block3_tail_safe`).
+   - `power_block_*_m1` (M=1): needs the **M=1 copy_refresh path** (`lemma_copy_refresh_m1` +
+     sub-gadgets, NOT yet done — item 1 leftover) tail-safe'd first (same recipe, shallower), then the same
+     2-piece composition with `block_loop_*` at `temp=1`.
+   - `pbb1x_phase`/`pbb3x_phase`/`pbb*_phase_any` + `seret1x`/`seret3x` phases (gap2_emit_window/power/power3):
+     each wraps a `power_block` (or a singleton emit) + a `walkback` into the per-window "phase" that runs
+     on `{copy_u(0,M,g), dpack(od), 0, entry5(pc)}` → `{copy_u(0,M,g), dpack(od++digits), 0, entry5(pc+1)}`.
+     `u == copy_u(0,M,g)` UNCHANGED, net-disp-0 at `H_0`. The walkback is a short shallow R/L hop — mirror it.
+   - The `seret` singletons (`seret1x`/`seret3x`) are NOT power-blocks — they emit ONE block via a single
+     `surge_emit_return` (already have `_block1`/`_block3` companions) + a walkback. Shallowest of all.
 3. **`lemma_uinv_phase_tail`** — apply `lemma_run_tail` to the whole 8-block phase run: discharge `tail_safe`
    over `uinv_phase_fuel` by `lemma_tail_chain`-ing the 8 block-companions (each net-disp-0 at `H_0`), then the
    lift gives `tm_run(add_hi(c0, H_0, R(a+1))) == add_hi(uinv_phase result, H_0, R(a+1))` — i.e. the phase-1
