@@ -493,3 +493,48 @@ proved to PRODUCE `fam_digits(a,b)` on tape, one loop iteration per `seq_pow` bl
 scaffold (template `gap2_psc_rp.rs`); then (3) R-cmp / R-S / R-C / R-MC. Also TODO on R-P assembly:
 retarget the `(q_walk,0)` turnaround to R-S entry, thread `tm_config_wf`, the single-digit-α divergence
 branch. The conditional chain already stands; this brick removes the last axiom.*
+
+---
+
+*Status (2026-06-26, session N+3): R-relnum-gen STEP 2 KICKOFF — architecture fork RESOLVED + first two
+emit bricks BUILT; crate 771/0.*
+
+**THIS SESSION:**
+- **MODEL (B) HOME/SHUTTLE decided with Danielle (port 8051)** — see the "✅ STEP 2 ARCHITECTURE DECIDED"
+  block in §5 (R-P/R-relnum-gen). Tape `[iₐ]0[i_b]0[output]0[blanks]`, head shuttles, masters never
+  popped; per-block iter = peek/dec master at home, surge right to frontier, sequential write, return
+  home. Model A (consume-counter-while-piling) ABANDONED (can't preserve masters across blocks).
+- **`tm_emit.rs` (766/0)** — `lemma_emit_symbol_power_inner` (model-A symbol-power loop;
+  `pile_sym`/`lemma_pile_sym_shift`/`lemma_pile_sym_is_dpile`). Written pre-decision; the
+  `pile_sym`/`dpile` output-accounting ALGEBRA is reused under B even though B's per-block loop is the
+  shuttle one, not this direct-consume loop.
+- **`tm_shuttle.rs` (771/0)** — the "sequential write" step. `lemma_emit_one_frontier` (1-step R-move
+  writing a digit onto `u` over the frontier blank, `v==0`) + `lemma_emit_block1_frontier` /
+  `lemma_emit_block3_frontier` (→ `dpile(c.u, blk)`, the only `fam_digits` block sizes).
+- **KEY REUSE FINDING:** the safe write-back traversals model B needs ALREADY EXIST —
+  `tm_dwalk::lemma_dwalk_right` (surge to frontier: block `v→u` via `dpile(c.u,blk)`, stops at the blank)
+  and `lemma_dwalk_left` (return home: block `u→v`, stops at the blank). They write back the scanned
+  symbol (`a2=s`), so they are the non-destructive shuttles.
+
+**NEXT (model-B per-block loop — the substantial remaining STEP-2 work):**
+1. **`home_config(iₐ, i_b, output, m)` spec** — the layout config: `a=0` (home pivot, the 0 before
+   output), `u = [i_b ones] 0 [iₐ ones]` (low=i_b inner one), `v = [output digits] 0 [blanks]` (low=output
+   first digit; trailing 0s vanish under `dpack` so `v == dpack(output)`).
+2. **`dec_master` gadget** — decrement `i_b` (or `iₐ`) and return to the home pivot. MIRROR `lemma_dec`
+   but with `iₐ` present as extra HIGH content in `u` beyond the `i_b/iₐ` separator 0. Erase the OUTER
+   `i_b` one (walk left to the `i_b/iₐ` sep 0, erase-turnaround, walk back) so `i_b` stays adjacent to the
+   pivot — NO gap growth (the gap-at-pivot approach is wrong; outer-erase is the lemma_dec discipline).
+   Pivot MUST stay `0` (dwalk stops at 0; a sep=2 pivot would be walked over since digit 2 ∈ fam_digits).
+3. **per-block-iteration lemma** — from `home_config`, ONE iter: move R off pivot → `dwalk_right` over
+   output to frontier → `emit_block{1,3}` → move L onto block → `dwalk_left` back to pivot → `dec_master`.
+   Net: output ← `output ++ blk` (or the dpile-reversed form — TRACK the order vs `fam_digits` low-first),
+   `i_b ← i_b - 1`. Bounded composition (no cross-iter induction yet).
+4. **per-block LOOP lemma** — induct on the master counter: `i` iters emit `seq_pow(blk, i)` onto output,
+   master → 0. Growing-output invariant. Use `pile_sym`/`dpile` accounting (the reused tm_emit algebra).
+5. **16-block sequencing** — chain the per-block loops for `uinv_digits(b) ++ u_digits(a)` (8 blocks each;
+   masters iₐ=a+1, i_b=b+1; singletons via `emit_block1`-style direct writes between power-blocks). Prove
+   the produced output `== fam_digits(a,b)` (compose with `lemma_dds_fam_relator`/`lemma_relnum_is_fam_digits`).
+6. Then the `psc_act` window assembly (template `gap2_psc_rp.rs`), then R-cmp / R-S / R-C / R-MC / B-W wiring.
+
+⚠ Use the CRATE-LOCAL `./check.sh` (Lean backend + group-theory export), NOT the top-level `verus-cad/check.sh`
+(verus-dev, fails to compile the Lean-backend group-theory dep) and NOT the verus MCP `check`.*
