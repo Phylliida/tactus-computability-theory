@@ -266,6 +266,11 @@
 // matched rounds INV(k0) -> INV(k0+n). See tm_cmp_loop.rs and docs/gap2-input-loader-plan.md sec N+24.
 #[cfg(verus_keep_ghost)] pub mod tm_cmp_loop;
 
+// GAP-2 G2-F Route (i) brick R-cmp (B-cmp.6): the accept/reject decision bricks. The comparator is a pure
+// predicate -- failure paths sink to q_reject (R-S owns the cleanup). lemma_cmp_mismatch_round = the
+// MISMATCH reject (gap-cross + (q_cmp,d_o,d_o,q_reject,R)). See tm_cmp_decide.rs + plan sec N+26.
+#[cfg(verus_keep_ghost)] pub mod tm_cmp_decide;
+
 // GAP-2 G2-F Route (i) brick R-P: the copy-and-park core. lemma_rp_entry (2-step handshake depositing
 // the ignition-held low digit d0 onto v) + lemma_rp_copy_park (entry o dwalk_left) park alpha's digit
 // sequence reversed in v, freeing u as workspace -- the canonical layout R-cmp reads. See tm_rp.rs.
