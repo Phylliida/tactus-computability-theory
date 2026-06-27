@@ -357,3 +357,7 @@
 // GAP-2 G2-F Route (i): the TRIPLE power-block window (block3, (s0,s1,s2)^M) over assemble5 -- 34 states,
 // the triple-emit block_loop. The (4,1,2)^i / (4,3,2)^i power-blocks. See gap2_emit_power3.rs / §N+11.
 #[cfg(verus_keep_ghost)] pub mod gap2_emit_power3;
+
+// GAP-2 G2-F Route (i): the EMITTER SEQUENCER -- chains per-block phase lemmas (state-id splice, no glue)
+// into the full fam_digits emission. See gap2_emit_seq.rs / §N+12.
+#[cfg(verus_keep_ghost)] pub mod gap2_emit_seq;

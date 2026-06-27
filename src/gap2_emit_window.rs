@@ -545,4 +545,50 @@ pub proof fn lemma_seret3x_phase(tm: Tm, len: nat, pc: nat, big_u: nat, od: Seq<
         i_e0, i_e1, i_e2, i_off_l, jl1, jl2, jl3, jl4);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Walk-back exposers — the off-0 self-loops `(q_iter, sym, sym, q_iter, L)` (`sym ∈ 1..4`) of a singleton
+// window. Walk-back-compatible quints a PRECEDING singleton consumes when its `q_home := entry5(pc)`
+// (the two-window splice). The chain supplies `jl1..jl4` by calling on the next window for sym = 1..4.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// **Expose one off-0 self-loop of a `seret1x` window** (`(entry5(pc), sym, sym, entry5(pc), L)`).
+pub proof fn lemma_seret1x_walkback(tm: Tm, len: nat, pc: nat, s: nat, qexit: nat, sym: nat)
+    requires
+        tm.m == tm_mod5(len),
+        pc <= len,
+        1 <= sym <= 4,
+        tm.quints.len() == 288 * (len + 1),
+        forall|i: int| pc * 288 <= i < pc * 288 + 288 ==> #[trigger] tm.quints[i] == seret1x_gen(s, qexit, i as nat),
+    ensures
+        0 <= pc * 288 + sym < tm.quints.len(),
+        tm.quints[(pc * 288 + sym) as int] == mk_quint(entry5(pc), sym, sym, entry5(pc), Dir::L),
+{
+    assert(pc * 288 + 288 <= 288 * (len + 1)) by(nonlinear_arith) requires pc <= len;
+    let idx = (pc * 288 + sym) as int;
+    assert(pc * 288 <= idx < pc * 288 + 288);
+    lemma_slot_index5(pc, 0, sym);
+    assert(idx == pc * 288 + 0 * 6 + sym);
+    assert(tm.quints[idx] == seret1x_gen(s, qexit, idx as nat));
+}
+
+/// **Expose one off-0 self-loop of a `seret3x` window** (`(entry5(pc), sym, sym, entry5(pc), L)`).
+pub proof fn lemma_seret3x_walkback(tm: Tm, len: nat, pc: nat, s0: nat, s1: nat, s2: nat, qexit: nat, sym: nat)
+    requires
+        tm.m == tm_mod5(len),
+        pc <= len,
+        1 <= sym <= 4,
+        tm.quints.len() == 288 * (len + 1),
+        forall|i: int| pc * 288 <= i < pc * 288 + 288 ==> #[trigger] tm.quints[i] == seret3x_gen(s0, s1, s2, qexit, i as nat),
+    ensures
+        0 <= pc * 288 + sym < tm.quints.len(),
+        tm.quints[(pc * 288 + sym) as int] == mk_quint(entry5(pc), sym, sym, entry5(pc), Dir::L),
+{
+    assert(pc * 288 + 288 <= 288 * (len + 1)) by(nonlinear_arith) requires pc <= len;
+    let idx = (pc * 288 + sym) as int;
+    assert(pc * 288 <= idx < pc * 288 + 288);
+    lemma_slot_index5(pc, 0, sym);
+    assert(idx == pc * 288 + 0 * 6 + sym);
+    assert(tm.quints[idx] == seret3x_gen(s0, s1, s2, qexit, idx as nat));
+}
+
 } // verus!

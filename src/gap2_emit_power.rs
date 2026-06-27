@@ -281,6 +281,25 @@ proof fn locate_pbb1(tm: Tm, len: nat, pc: nat, s: nat, off: nat, sym: nat, w: n
 // The reusable power-block phase lemma (abstract over the full machine).
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// **Expose one off-0 self-loop** of a `pbb1x` window: `(q_dh0, sym, sym, q_dh0, L)` for `sym ∈ 1..4`
+/// (the inert read-1..4 self-loops at `entry5(pc)`). These are exactly the WALK-BACK-COMPATIBLE quints a
+/// PRECEDING singleton needs when its `q_home := entry5(pc)` (the two-window splice, §N+12). The chain
+/// supplies `jl1..jl4` to `lemma_seret*x_phase` by calling this on the next window for `sym = 1,2,3,4`.
+pub proof fn lemma_pbb1x_walkback(tm: Tm, len: nat, pc: nat, s: nat, qexit: nat, sym: nat)
+    requires
+        tm.m == tm_mod5(len),
+        pc <= len,
+        1 <= sym <= 4,
+        tm.quints.len() == 288 * (len + 1),
+        forall|i: int| pc * 288 <= i < pc * 288 + 288 ==> #[trigger] tm.quints[i] == pbb1x_gen(s, qexit, i as nat),
+    ensures
+        0 <= pc * 288 + sym < tm.quints.len(),
+        tm.quints[(pc * 288 + sym) as int] == mk_quint(entry5(pc), sym, sym, entry5(pc), Dir::L),
+{
+    locate_pbb1x(tm, len, pc, s, qexit, 0, sym, sym, 0, Dir::L);
+    assert(pc * 288 + 0 * 6 + sym == pc * 288 + sym);
+}
+
 /// **Power-block phase (one window, the `(s)^M` periodic step).** Any well-formed n=5 assemble5 machine
 /// whose window `pc` carries the block1 action table (`tm.quints[i] == pbb1_gen(s, i)` for `i` in window
 /// `pc`) runs one full `copy_refresh ∘ block_loop`: from `{u: copy_u(0,M,g), v: dpack(od), a: 0,
