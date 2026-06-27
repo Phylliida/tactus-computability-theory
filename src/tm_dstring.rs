@@ -47,6 +47,20 @@ pub open spec fn dpack(ds: Seq<nat>, m: nat) -> nat
     }
 }
 
+/// `dpile(v, blk, m)` is the value of stack `v` after a left-walk peels the digit block `blk` off the
+/// head and pushes each digit onto `v`: `blk[0]` is pushed first (ends up deepest), `blk[blk.len()-1]`
+/// last (ends up on top / lowest). Each push is `·m + digit`. The closed form the digit-walk gadget's
+/// postcondition reads.
+pub open spec fn dpile(v: nat, blk: Seq<nat>, m: nat) -> nat
+    decreases blk.len()
+{
+    if blk.len() == 0 {
+        v
+    } else {
+        dpile(v * m + blk[0], blk.drop_first(), m)
+    }
+}
+
 /// The empty string packs to `0` (a blank tape).
 pub proof fn lemma_dpack_empty(m: nat)
     ensures
