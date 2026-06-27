@@ -157,9 +157,20 @@ chained through ignition to `mm_in_H0(mm, α, 0) ⟺ α declared word-number`.
   its reject branch is RETIRED per Danielle). *Couples with the ignition handoff states `start(i)` =
   the read loop's per-digit entry states (B-IG left `start` abstract for exactly this).* Needs the new
   `n≥4` TM assembly scaffolding first (B-AL re-assembly). **← next.**
-- **B-relnum** — `relnum(a,b)` = word-number of `ρ(collapse(g_a g_b⁻¹))` as (1) a spec target tying to
-  the GAP-1 family relators / `decode_word`, and (2) a forward RM sub-machine (fixed-count collapse
-  loops + base-m digit-pack). The bridge between the machine's accept condition and `ceer_realizes`.
+- **B-relnum (spec target)** ✅ **DONE (`gap2_relnum.rs`, 2026-06-26, crate 661/0).** `relnum(e,mm,m,a,b)`
+  = `decode_word(cb,2,m, ρ(fam_relator(a,b)))`, with `fam_relator(a,b)` the canonical collapsed family
+  relator (Miller collapse of `[Gen(a),Inv(b)]` at the minimal slice). The **family-relator ↔
+  declared-pair set-equality** is proven both ways: `lemma_fam_relator_from_dbar` (a nonempty
+  `dbar_union_pred(ceer_decls_fam(e),·)` relator comes from a declared pair) + `lemma_dbar_from_declared`
+  (every declared pair contributes its `fam_relator`), sharing `lemma_dbar_slice_is_fam_relator`
+  (slice-independence of the collapse). The *forward RM sub-machine* half of B-relnum (computing relnum
+  in-machine) is MACHINE work, still open — gated on the architecture call below.
+- **B-W (assembly half)** ✅ **DONE (`gap2_relnum.rs`, 2026-06-26).** `lemma_ceer_realizes_from_machine`
+  discharges `ceer_realizes` from the **abstract machine contract** `mm_decides_relnum(e,mm,m)` (FWD: a
+  declared pair `(a,b)` ⟹ `relnum(a,b)∈H₀`; BWD: a nonzero word-number in `H₀` is some declared pair's
+  `relnum`). The `ceer_realizes` BWD `r≠ε` clause is free (`α≠0` ⟹ `decode_word(cb,2,m,ρ(ε))=0≠α`, via
+  `lemma_rho_empty`). **This isolates the ENTIRE remaining GAP-2 obligation to building a machine
+  satisfying `mm_decides_relnum` — architecture-independent (TM read-loop OR modmachine prefix).**
 - **B-S** — the dovetail search (generate-and-compare): reuse the `search_rm(e)` skeleton with predicate
   `relnum(declared_pair(s)) == R_α` in place of `declared_match`. Halts iff α is a declared relator
   word-number. No reject branch (non-relator ⟹ diverges).
@@ -167,8 +178,22 @@ chained through ignition to `mm_in_H0(mm, α, 0) ⟺ α declared word-number`.
 - **B-PSC** — assemble P∘S∘C into `psc_tm(e)` + the halts-iff (mirror `tm_run_sim.rs`).
 - **B-MC** — the machine-content lemma (§4.3): `lemma_ignition_yields` (1 step) ∘ `lemma_frame_reaches`
   + `lemma_mm_extend_reaches_mono` (both H0 directions) ∘ `lemma_tm_h0_iff` (on `psc_tm`) ∘ B-PSC.
-  The B-FR/B-IG interface is built precisely to make this a splice.
-- **B-W** — the family-relator bridge (§4.4) + fill `modular_reduction.rs` + drop the axiom (§4.5).
+  The B-FR/B-IG interface is built precisely to make this a splice. **Now retargets `mm_decides_relnum`
+  (B-W's contract), not `ceer_realizes` directly.**
+- **B-W (machine wiring)** — fill `modular_reduction.rs` placeholders with the real machine + prove
+  `mm_decides_relnum` (B-MC ∘ B-PSC ∘ B-S ∘ B-relnum-submachine) + drop the axiom via
+  `lemma_ceer_word_problem_in_h3` (§4.5). The assembly bridge (above) is already done.
+
+> **⚠ ARCHITECTURE RE-OPENED (2026-06-26, after B-relnum/B-W-assembly).** With the spec backbone done,
+> the remaining work is the machine for `mm_decides_relnum`, and the read-loop architecture (§6 q2)
+> deserves a real re-decision before ~1000 lines of code. **Two routes:** (i) the documented n≥4 TM
+> read-loop (B-AL re-assembly + new read gadget — large, re-derives gadgetry), vs (ii) a base-m→unary
+> **modular-machine prefix** feeding the EXISTING proven `rm_to_tm(match_rm(e))` n=2 pipeline verbatim
+> (reuses the whole `tm_h0`/`rm_to_tm`/`search_rm` stack; cost = the residue-arithmetic of the prefix).
+> A port-8051 design pass leaned (ii) — re-deriving the n≥4 gadget framework is high-entropy, while the
+> modmachine is *natively* a base-m digit popper. But the committed plan is (i); this is a genuine fork.
+> **Danielle's call needed before the machine build.** Either way, B-relnum-spec/B-W-assembly stand
+> (machine-independent).
 
 ## 6. Open sub-design questions (for Danielle before / during coding)
 
@@ -198,5 +223,7 @@ chained through ignition to `mm_in_H0(mm, α, 0) ⟺ α declared word-number`.
 
 ---
 
-*Status: PLAN — awaiting Danielle's confirm on §6 before coding. The conditional chain already stands;
-this brick removes the last axiom.*
+*Status (2026-06-26): SPEC BACKBONE + IGNITION BUILT. B-FR/B-IG (ignition, `gap2_ignition.rs`) +
+B-relnum-spec/B-W-assembly (`gap2_relnum.rs`) DONE; crate 661/0. The whole remaining obligation is now
+ONE spec: a machine satisfying `mm_decides_relnum`. Gated on the §5 architecture re-decision (TM
+read-loop vs modmachine prefix). The conditional chain already stands; this brick removes the last axiom.*
