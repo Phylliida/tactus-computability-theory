@@ -1,0 +1,557 @@
+//! # GAP-2 G2-F Route (i) brick R-relnum-gen (STEP 2, model B) — the per-power-block PERIODIC step.
+//!
+//! Composes the two STEP-2 capstones into one deterministic machine run that emits a single power block
+//! `(blk)^M` onto the output and returns the left tape to its starting shape — the **stationary-master**
+//! periodic cycle the 16-block sequencer iterates:
+//!
+//! ```text
+//!   copy_u(0, M, g) @ q_dh0                     master R(M) parked at gap g, no temp
+//!     ──[ lemma_copy_refresh ]──▶  dec_u(M, m^(g−M)·R(M)) @ q_urt   fresh temp R(M) rebuilt below master
+//!     ──[ lemma_block_loop    ]──▶  copy_u(0, M, g) @ q_exit         temp consumed, (blk)^M appended to v
+//! ```
+//!
+//! **The gap is CONSTANT (no migration).** `block_loop` leaves `u = dec_u(0, m^M·w) = m^M·m^(g−M)·R(M) =
+//! m^g·R(M) = copy_u(0, M, g)` — the master returns to the *same* absolute position `g` it started at. So
+//! one fixed gap `g = M + 2` serves every power-block in a phase (see `docs/gap2-input-loader-plan.md` §N+10
+//! design note): `g − M = 2 ≥ 1` gives `block_loop`'s `w % m == 0` separator, and `g ≥ M + 2` meets
+//! `copy_refresh`'s precondition. Only `M ∈ {1, ≥2}` dispatch is needed — the no-gap / `g = M+1` edge
+//! refreshes are unused by the sequencer.
+//!
+//! **The bridge is free.** `copy_refresh`'s end config equals `block_loop`'s start config except for the
+//! state, so identifying `q_urt := q_loop` (and sharing the one quint `(q_urt,1,1,q_urt,R) = i_one_r =
+//! i_urtemp`) splices the two with no glue steps. The copy-refresh states/quints and the loop's are
+//! otherwise disjoint (only `q_home` names collide → kept distinct as `q_bhome`).
+//!
+//! `docs/gap2-input-loader-plan.md` §5 / §N+10. Fully verified, no verifier escape hatches.
+
+use vstd::prelude::*;
+use verus_group_theory::machine_group::Dir;
+use verus_group_theory::word_numbering::lemma_div_mod_step;
+use crate::tm::{Tm, TmConfig, tm_wf, tm_run};
+use crate::tm_gadget::mk_quint;
+use crate::tm_run_lemmas::lemma_tm_run_split;
+use crate::tm_two_counter::repunit_m;
+use crate::tm_dstring::{dpack, pow_nat, lemma_pow_nat_unfold};
+use crate::tm_dec_master::dec_u;
+use crate::tm_block_loop::{loop_fuel_b1, lemma_block_loop_block1, loop_fuel_b3, lemma_block_loop_block3,
+    lemma_dec_u_zero};
+use crate::tm_copy_refresh::{copy_u, copy_refresh_fuel, lemma_copy_refresh, lemma_copy_u_start,
+    lemma_pow_nat_add};
+use crate::gap2_relnum_dds::seq_pow;
+
+verus! {
+
+/// Total fuel of one singleton (1-digit) power-block step: the copy-refresh rebuild + the consuming loop.
+pub open spec fn power_block_fuel_b1(big_m: nat, g: nat, odlen: nat) -> nat {
+    (copy_refresh_fuel(big_m, g) + loop_fuel_b1(odlen, big_m)) as nat
+}
+
+/// **One singleton power-block `(s)^M`, the periodic step (`M ≥ 2`, `g ≥ M + 2`).** From `copy_u(0, M, g)`
+/// (master parked at gap `g`, no temp) the machine rebuilds a fresh temp ([`lemma_copy_refresh`]) and then
+/// consumes it emitting the run `(s)^M` ([`lemma_block_loop_block1`]), landing back at `copy_u(0, M, g)` —
+/// the master at the *same* position, the output grown by `seq_pow([s], M)`. The copy-refresh end state
+/// `q_urt` IS the loop's home `q_loop` (shared quint `i_urtemp = i_one_r`), so the two splice with no glue.
+pub proof fn lemma_power_block_step_block1(
+    tm: Tm, big_m: nat, g: nat, od: Seq<nat>, s: nat,
+    // ── copy_refresh states ──
+    // j=0 deposit-first
+    q_dh0: nat, q_dw0: nat, q_bk0: nat, q_t0: nat, q_a0: nat, q_rf0: nat, q_rg0: nat,
+    // home-cycle (q_home here is the COPY-side home, distinct from the loop's q_bhome)
+    q_home: nat, q_t: nat, q_a: nat, q_b: nat, q_rf: nat, q_rg: nat, q_rt: nat, q_dw: nat,
+    // terminate walk-back
+    q_turn: nat, q_turng: nat, q_ret: nat,
+    // unmark (q_urt is the SHARED bridge state = the loop's q_loop)
+    q_ut: nat, q_ua: nat, q_uf: nat, q_ur: nat, q_urg: nat, q_urt: nat,
+    // ── block_loop states (q_loop := q_urt) ──
+    q_guard: nat, q_iter: nat, q_surge: nat, q_eret: nat, q_bhome: nat, q_dwalk: nat, q_disc: nat,
+    q_exit: nat,
+    // ── copy_refresh quint indices ──
+    i_dpeel0: int, i_dtemp0: int, i_dins0: int, i_dwb0: int,
+    i_peel0: int, i_temp0: int, i_t2g0: int, i_gap0: int, i_mark0: int, i_rf2g0: int, i_rgap0: int,
+    i_rg2t0: int,
+    i_peel: int, i_temp: int, i_t2g: int, i_gap: int, i_a2b: int, i_fives: int, i_mark: int,
+    i_rfives: int, i_rf2g: int, i_rgap: int, i_rg2t: int, i_rtemp: int,
+    i_dpeel: int, i_dtemp: int, i_dins: int, i_dwb: int,
+    i_turn: int, i_master: int, i_tm2g: int, i_trgap: int, i_tg2t: int, i_trtemp: int,
+    i_upeel: int, i_utemp: int, i_ut2g: int, i_ugap: int, i_uu1: int, i_uurest: int,
+    i_uturn: int, i_umaster: int, i_um2g: int, i_urgap: int, i_ug2t: int, i_urtemp: int,
+    // ── block_loop quint indices (i_one_r := i_urtemp) ──
+    i_peek: int, i_cont: int, i_exit: int,
+    i_pivot_r: int, ir1: int, ir2: int, ir3: int, ir4: int,
+    i_emit: int, i_off_l: int, il1: int, il2: int, il3: int, il4: int,
+    i_pivot: int, i_one_l: int, i_erase: int, i_disc: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        2 <= big_m,
+        g >= big_m + 2,
+        1 <= s <= 4,
+        forall|k: int| 0 <= k < od.len() ==> 1 <= #[trigger] od[k] <= 4,
+        // ── copy_refresh index bounds ──
+        0 <= i_dpeel0 < tm.quints.len(),
+        0 <= i_dtemp0 < tm.quints.len(),
+        0 <= i_dins0 < tm.quints.len(),
+        0 <= i_dwb0 < tm.quints.len(),
+        0 <= i_peel0 < tm.quints.len(),
+        0 <= i_temp0 < tm.quints.len(),
+        0 <= i_t2g0 < tm.quints.len(),
+        0 <= i_gap0 < tm.quints.len(),
+        0 <= i_mark0 < tm.quints.len(),
+        0 <= i_rf2g0 < tm.quints.len(),
+        0 <= i_rgap0 < tm.quints.len(),
+        0 <= i_rg2t0 < tm.quints.len(),
+        0 <= i_peel < tm.quints.len(),
+        0 <= i_temp < tm.quints.len(),
+        0 <= i_t2g < tm.quints.len(),
+        0 <= i_gap < tm.quints.len(),
+        0 <= i_a2b < tm.quints.len(),
+        0 <= i_fives < tm.quints.len(),
+        0 <= i_mark < tm.quints.len(),
+        0 <= i_rfives < tm.quints.len(),
+        0 <= i_rf2g < tm.quints.len(),
+        0 <= i_rgap < tm.quints.len(),
+        0 <= i_rg2t < tm.quints.len(),
+        0 <= i_rtemp < tm.quints.len(),
+        0 <= i_dpeel < tm.quints.len(),
+        0 <= i_dtemp < tm.quints.len(),
+        0 <= i_dins < tm.quints.len(),
+        0 <= i_dwb < tm.quints.len(),
+        0 <= i_turn < tm.quints.len(),
+        0 <= i_master < tm.quints.len(),
+        0 <= i_tm2g < tm.quints.len(),
+        0 <= i_trgap < tm.quints.len(),
+        0 <= i_tg2t < tm.quints.len(),
+        0 <= i_trtemp < tm.quints.len(),
+        0 <= i_upeel < tm.quints.len(),
+        0 <= i_utemp < tm.quints.len(),
+        0 <= i_ut2g < tm.quints.len(),
+        0 <= i_ugap < tm.quints.len(),
+        0 <= i_uu1 < tm.quints.len(),
+        0 <= i_uurest < tm.quints.len(),
+        0 <= i_uturn < tm.quints.len(),
+        0 <= i_umaster < tm.quints.len(),
+        0 <= i_um2g < tm.quints.len(),
+        0 <= i_urgap < tm.quints.len(),
+        0 <= i_ug2t < tm.quints.len(),
+        0 <= i_urtemp < tm.quints.len(),
+        // ── block_loop index bounds ──
+        0 <= i_peek < tm.quints.len(),
+        0 <= i_cont < tm.quints.len(),
+        0 <= i_exit < tm.quints.len(),
+        0 <= i_pivot_r < tm.quints.len(),
+        0 <= ir1 < tm.quints.len(),
+        0 <= ir2 < tm.quints.len(),
+        0 <= ir3 < tm.quints.len(),
+        0 <= ir4 < tm.quints.len(),
+        0 <= i_emit < tm.quints.len(),
+        0 <= i_off_l < tm.quints.len(),
+        0 <= il1 < tm.quints.len(),
+        0 <= il2 < tm.quints.len(),
+        0 <= il3 < tm.quints.len(),
+        0 <= il4 < tm.quints.len(),
+        0 <= i_pivot < tm.quints.len(),
+        0 <= i_one_l < tm.quints.len(),
+        0 <= i_erase < tm.quints.len(),
+        0 <= i_disc < tm.quints.len(),
+        // ── copy_refresh quints (j=0 deposit-first) ──
+        tm.quints[i_dpeel0] == mk_quint(q_dh0, 0, 0, q_dw0, Dir::L),
+        tm.quints[i_dtemp0] == mk_quint(q_dw0, 1, 1, q_dw0, Dir::L),
+        tm.quints[i_dins0] == mk_quint(q_dw0, 0, 1, q_bk0, Dir::R),
+        tm.quints[i_dwb0] == mk_quint(q_bk0, 1, 1, q_bk0, Dir::R),
+        tm.quints[i_peel0] == mk_quint(q_bk0, 0, 0, q_t0, Dir::L),
+        tm.quints[i_temp0] == mk_quint(q_t0, 1, 1, q_t0, Dir::L),
+        tm.quints[i_t2g0] == mk_quint(q_t0, 0, 0, q_a0, Dir::L),
+        tm.quints[i_gap0] == mk_quint(q_a0, 0, 0, q_a0, Dir::L),
+        tm.quints[i_mark0] == mk_quint(q_a0, 1, 5, q_rf0, Dir::R),
+        tm.quints[i_rf2g0] == mk_quint(q_rf0, 0, 0, q_rg0, Dir::R),
+        tm.quints[i_rgap0] == mk_quint(q_rg0, 0, 0, q_rg0, Dir::R),
+        tm.quints[i_rg2t0] == mk_quint(q_rg0, 1, 1, q_home, Dir::R),
+        // ── copy_refresh quints (home-cycle) ──
+        tm.quints[i_peel] == mk_quint(q_home, 0, 0, q_t, Dir::L),
+        tm.quints[i_temp] == mk_quint(q_t, 1, 1, q_t, Dir::L),
+        tm.quints[i_t2g] == mk_quint(q_t, 0, 0, q_a, Dir::L),
+        tm.quints[i_gap] == mk_quint(q_a, 0, 0, q_a, Dir::L),
+        tm.quints[i_a2b] == mk_quint(q_a, 5, 5, q_b, Dir::L),
+        tm.quints[i_fives] == mk_quint(q_b, 5, 5, q_b, Dir::L),
+        tm.quints[i_mark] == mk_quint(q_b, 1, 5, q_rf, Dir::R),
+        tm.quints[i_rfives] == mk_quint(q_rf, 5, 5, q_rf, Dir::R),
+        tm.quints[i_rf2g] == mk_quint(q_rf, 0, 0, q_rg, Dir::R),
+        tm.quints[i_rgap] == mk_quint(q_rg, 0, 0, q_rg, Dir::R),
+        tm.quints[i_rg2t] == mk_quint(q_rg, 1, 1, q_rt, Dir::R),
+        tm.quints[i_rtemp] == mk_quint(q_rt, 1, 1, q_rt, Dir::R),
+        tm.quints[i_dpeel] == mk_quint(q_rt, 0, 0, q_dw, Dir::L),
+        tm.quints[i_dtemp] == mk_quint(q_dw, 1, 1, q_dw, Dir::L),
+        tm.quints[i_dins] == mk_quint(q_dw, 0, 1, q_home, Dir::R),
+        tm.quints[i_dwb] == mk_quint(q_home, 1, 1, q_home, Dir::R),
+        // ── copy_refresh quints (terminate walk-back) ──
+        tm.quints[i_turn] == mk_quint(q_b, 0, 0, q_turn, Dir::R),
+        tm.quints[i_master] == mk_quint(q_turn, 5, 5, q_turn, Dir::R),
+        tm.quints[i_tm2g] == mk_quint(q_turn, 0, 0, q_turng, Dir::R),
+        tm.quints[i_trgap] == mk_quint(q_turng, 0, 0, q_turng, Dir::R),
+        tm.quints[i_tg2t] == mk_quint(q_turng, 1, 1, q_ret, Dir::R),
+        tm.quints[i_trtemp] == mk_quint(q_ret, 1, 1, q_ret, Dir::R),
+        // ── copy_refresh quints (unmark; home == q_ret) ──
+        tm.quints[i_upeel] == mk_quint(q_ret, 0, 0, q_ut, Dir::L),
+        tm.quints[i_utemp] == mk_quint(q_ut, 1, 1, q_ut, Dir::L),
+        tm.quints[i_ut2g] == mk_quint(q_ut, 0, 0, q_ua, Dir::L),
+        tm.quints[i_ugap] == mk_quint(q_ua, 0, 0, q_ua, Dir::L),
+        tm.quints[i_uu1] == mk_quint(q_ua, 5, 1, q_uf, Dir::L),
+        tm.quints[i_uurest] == mk_quint(q_uf, 5, 1, q_uf, Dir::L),
+        tm.quints[i_uturn] == mk_quint(q_uf, 0, 0, q_ur, Dir::R),
+        tm.quints[i_umaster] == mk_quint(q_ur, 1, 1, q_ur, Dir::R),
+        tm.quints[i_um2g] == mk_quint(q_ur, 0, 0, q_urg, Dir::R),
+        tm.quints[i_urgap] == mk_quint(q_urg, 0, 0, q_urg, Dir::R),
+        tm.quints[i_ug2t] == mk_quint(q_urg, 1, 1, q_urt, Dir::R),
+        tm.quints[i_urtemp] == mk_quint(q_urt, 1, 1, q_urt, Dir::R),
+        // ── block_loop quints (q_loop := q_urt, i_one_r := i_urtemp) ──
+        tm.quints[i_peek] == mk_quint(q_urt, 0, 0, q_guard, Dir::L),
+        tm.quints[i_cont] == mk_quint(q_guard, 1, 1, q_iter, Dir::R),
+        tm.quints[i_exit] == mk_quint(q_guard, 0, 0, q_exit, Dir::R),
+        tm.quints[i_pivot_r] == mk_quint(q_iter, 0, 0, q_surge, Dir::R),
+        tm.quints[ir1] == mk_quint(q_surge, 1, 1, q_surge, Dir::R),
+        tm.quints[ir2] == mk_quint(q_surge, 2, 2, q_surge, Dir::R),
+        tm.quints[ir3] == mk_quint(q_surge, 3, 3, q_surge, Dir::R),
+        tm.quints[ir4] == mk_quint(q_surge, 4, 4, q_surge, Dir::R),
+        tm.quints[i_emit] == mk_quint(q_surge, 0, s, q_eret, Dir::R),
+        tm.quints[i_off_l] == mk_quint(q_eret, 0, 0, q_bhome, Dir::L),
+        tm.quints[il1] == mk_quint(q_bhome, 1, 1, q_bhome, Dir::L),
+        tm.quints[il2] == mk_quint(q_bhome, 2, 2, q_bhome, Dir::L),
+        tm.quints[il3] == mk_quint(q_bhome, 3, 3, q_bhome, Dir::L),
+        tm.quints[il4] == mk_quint(q_bhome, 4, 4, q_bhome, Dir::L),
+        tm.quints[i_pivot] == mk_quint(q_bhome, 0, 0, q_dwalk, Dir::L),
+        tm.quints[i_one_l] == mk_quint(q_dwalk, 1, 1, q_dwalk, Dir::L),
+        tm.quints[i_erase] == mk_quint(q_dwalk, 0, 0, q_disc, Dir::R),
+        tm.quints[i_disc] == mk_quint(q_disc, 1, 0, q_urt, Dir::R),
+    ensures
+        tm_run(tm,
+            TmConfig { u: copy_u(0, big_m, g, tm.m), v: dpack(od, tm.m), a: 0, q: q_dh0 },
+            power_block_fuel_b1(big_m, g, od.len()))
+            == (TmConfig { u: copy_u(0, big_m, g, tm.m),
+                v: dpack(od + seq_pow(seq![s], big_m), tm.m), a: 0, q: q_exit }),
+{
+    let m = tm.m;
+    reveal(tm_wf);
+    assert(m > 4);
+    let c0 = TmConfig { u: copy_u(0, big_m, g, m), v: dpack(od, m), a: 0, q: q_dh0 };
+
+    // ── PHASE A — COPY-REFRESH: copy_u(0,M,g) → dec_u(M, m^(g−M)·R(M)) @ q_urt. ──
+    lemma_copy_refresh(tm, big_m, g, dpack(od, m),
+        q_dh0, q_dw0, q_bk0, q_t0, q_a0, q_rf0, q_rg0,
+        q_home, q_t, q_a, q_b, q_rf, q_rg, q_rt, q_dw,
+        q_turn, q_turng, q_ret,
+        q_ut, q_ua, q_uf, q_ur, q_urg, q_urt,
+        i_dpeel0, i_dtemp0, i_dins0, i_dwb0,
+        i_peel0, i_temp0, i_t2g0, i_gap0, i_mark0, i_rf2g0, i_rgap0, i_rg2t0,
+        i_peel, i_temp, i_t2g, i_gap, i_a2b, i_fives, i_mark, i_rfives, i_rf2g, i_rgap, i_rg2t, i_rtemp,
+        i_dpeel, i_dtemp, i_dins, i_dwb,
+        i_turn, i_master, i_tm2g, i_trgap, i_tg2t, i_trtemp,
+        i_upeel, i_utemp, i_ut2g, i_ugap, i_uu1, i_uurest,
+        i_uturn, i_umaster, i_um2g, i_urgap, i_ug2t, i_urtemp);
+    let w = (pow_nat(m, (g - big_m) as nat) * repunit_m(big_m, m)) as nat;
+    let c1 = TmConfig { u: dec_u(big_m, w, m), v: dpack(od, m), a: 0, q: q_urt };
+    assert(tm_run(tm, c0, copy_refresh_fuel(big_m, g)) == c1);
+
+    // ── w % m == 0 (the loop's separator): g − M ≥ 2 ⟹ m | m^(g−M) | w. ──
+    assert(g - big_m >= 1);
+    lemma_pow_nat_unfold(m, (g - big_m) as nat);   // m^(g−M) == m·m^(g−M−1)
+    let xx = (pow_nat(m, (g - big_m - 1) as nat) * repunit_m(big_m, m)) as nat;
+    assert(w == m * xx) by(nonlinear_arith)
+        requires
+            w == pow_nat(m, (g - big_m) as nat) * repunit_m(big_m, m),
+            pow_nat(m, (g - big_m) as nat) == m * pow_nat(m, (g - big_m - 1) as nat),
+            xx == pow_nat(m, (g - big_m - 1) as nat) * repunit_m(big_m, m);
+    assert(w % m == 0) by {
+        assert(w == xx * m) by(nonlinear_arith) requires w == m * xx;
+        lemma_div_mod_step(xx, m, 0);
+    }
+
+    // ── PHASE B — CONSUME LOOP: dec_u(M, w) @ q_urt → dec_u(0, m^M·w) @ q_exit, append (s)^M. ──
+    lemma_block_loop_block1(tm, big_m, w, od, s,
+        q_urt, q_guard, q_iter, q_surge, q_eret, q_bhome, q_dwalk, q_disc, q_exit,
+        i_peek, i_cont, i_exit, i_pivot_r, ir1, ir2, ir3, ir4,
+        i_emit, i_off_l, il1, il2, il3, il4,
+        i_pivot, i_one_l, i_erase, i_disc, i_urtemp);
+    let c2 = TmConfig {
+        u: dec_u(0, (pow_nat(m, big_m) * w) as nat, m),
+        v: dpack(od + seq_pow(seq![s], big_m), m), a: 0, q: q_exit };
+    assert(tm_run(tm, c1, loop_fuel_b1(od.len(), big_m)) == c2);
+
+    // ── dec_u(0, m^M·w) == copy_u(0,M,g): m^M·m^(g−M)·R(M) == m^g·R(M). ──
+    lemma_dec_u_zero((pow_nat(m, big_m) * w) as nat, m);   // dec_u(0,X) == X
+    lemma_pow_nat_add(m, big_m, (g - big_m) as nat);       // m^g == m^M·m^(g−M)
+    assert((big_m + (g - big_m)) as nat == g);
+    lemma_copy_u_start(big_m, g, m);                       // copy_u(0,M,g) == m^g·R(M)
+    assert(dec_u(0, (pow_nat(m, big_m) * w) as nat, m) == copy_u(0, big_m, g, m)) by(nonlinear_arith)
+        requires
+            dec_u(0, (pow_nat(m, big_m) * w) as nat, m) == pow_nat(m, big_m) * w,
+            w == pow_nat(m, (g - big_m) as nat) * repunit_m(big_m, m),
+            pow_nat(m, g) == pow_nat(m, big_m) * pow_nat(m, (g - big_m) as nat),
+            copy_u(0, big_m, g, m) == pow_nat(m, g) * repunit_m(big_m, m);
+    assert(c2.u == copy_u(0, big_m, g, m));
+
+    // ── chain: COPY-REFRESH ∘ CONSUME-LOOP. ──
+    lemma_tm_run_split(tm, c0, copy_refresh_fuel(big_m, g), loop_fuel_b1(od.len(), big_m));
+    assert(power_block_fuel_b1(big_m, g, od.len())
+        == (copy_refresh_fuel(big_m, g) + loop_fuel_b1(od.len(), big_m)) as nat);
+    assert(tm_run(tm, c0, power_block_fuel_b1(big_m, g, od.len())) == c2);
+}
+
+/// Total fuel of one triple (3-digit) power-block step: the copy-refresh rebuild + the consuming loop.
+pub open spec fn power_block_fuel_b3(big_m: nat, g: nat, odlen: nat) -> nat {
+    (copy_refresh_fuel(big_m, g) + loop_fuel_b3(odlen, big_m)) as nat
+}
+
+/// **One triple power-block `(s0,s1,s2)^M`, the periodic step (`M ≥ 2`, `g ≥ M + 2`).** The 3-digit analog
+/// of [`lemma_power_block_step_block1`] — same copy-refresh rebuild, but the consuming loop
+/// ([`lemma_block_loop_block3`]) emits a 3-symbol run per turn. Master stationary, output grown by
+/// `seq_pow([s0,s1,s2], M)`.
+pub proof fn lemma_power_block_step_block3(
+    tm: Tm, big_m: nat, g: nat, od: Seq<nat>, s0: nat, s1: nat, s2: nat,
+    // ── copy_refresh states ──
+    q_dh0: nat, q_dw0: nat, q_bk0: nat, q_t0: nat, q_a0: nat, q_rf0: nat, q_rg0: nat,
+    q_home: nat, q_t: nat, q_a: nat, q_b: nat, q_rf: nat, q_rg: nat, q_rt: nat, q_dw: nat,
+    q_turn: nat, q_turng: nat, q_ret: nat,
+    q_ut: nat, q_ua: nat, q_uf: nat, q_ur: nat, q_urg: nat, q_urt: nat,
+    // ── block_loop states (q_loop := q_urt; q_e1/q_e2 are the triple-emit intermediates) ──
+    q_guard: nat, q_iter: nat, q_surge: nat, q_e1: nat, q_e2: nat, q_eret: nat, q_bhome: nat,
+    q_dwalk: nat, q_disc: nat, q_exit: nat,
+    // ── copy_refresh quint indices ──
+    i_dpeel0: int, i_dtemp0: int, i_dins0: int, i_dwb0: int,
+    i_peel0: int, i_temp0: int, i_t2g0: int, i_gap0: int, i_mark0: int, i_rf2g0: int, i_rgap0: int,
+    i_rg2t0: int,
+    i_peel: int, i_temp: int, i_t2g: int, i_gap: int, i_a2b: int, i_fives: int, i_mark: int,
+    i_rfives: int, i_rf2g: int, i_rgap: int, i_rg2t: int, i_rtemp: int,
+    i_dpeel: int, i_dtemp: int, i_dins: int, i_dwb: int,
+    i_turn: int, i_master: int, i_tm2g: int, i_trgap: int, i_tg2t: int, i_trtemp: int,
+    i_upeel: int, i_utemp: int, i_ut2g: int, i_ugap: int, i_uu1: int, i_uurest: int,
+    i_uturn: int, i_umaster: int, i_um2g: int, i_urgap: int, i_ug2t: int, i_urtemp: int,
+    // ── block_loop quint indices (i_one_r := i_urtemp) ──
+    i_peek: int, i_cont: int, i_exit: int,
+    i_pivot_r: int, ir1: int, ir2: int, ir3: int, ir4: int,
+    i_e0: int, i_e1: int, i_e2: int, i_off_l: int, il1: int, il2: int, il3: int, il4: int,
+    i_pivot: int, i_one_l: int, i_erase: int, i_disc: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        2 <= big_m,
+        g >= big_m + 2,
+        1 <= s0 <= 4,
+        1 <= s1 <= 4,
+        1 <= s2 <= 4,
+        forall|k: int| 0 <= k < od.len() ==> 1 <= #[trigger] od[k] <= 4,
+        // ── copy_refresh index bounds ──
+        0 <= i_dpeel0 < tm.quints.len(),
+        0 <= i_dtemp0 < tm.quints.len(),
+        0 <= i_dins0 < tm.quints.len(),
+        0 <= i_dwb0 < tm.quints.len(),
+        0 <= i_peel0 < tm.quints.len(),
+        0 <= i_temp0 < tm.quints.len(),
+        0 <= i_t2g0 < tm.quints.len(),
+        0 <= i_gap0 < tm.quints.len(),
+        0 <= i_mark0 < tm.quints.len(),
+        0 <= i_rf2g0 < tm.quints.len(),
+        0 <= i_rgap0 < tm.quints.len(),
+        0 <= i_rg2t0 < tm.quints.len(),
+        0 <= i_peel < tm.quints.len(),
+        0 <= i_temp < tm.quints.len(),
+        0 <= i_t2g < tm.quints.len(),
+        0 <= i_gap < tm.quints.len(),
+        0 <= i_a2b < tm.quints.len(),
+        0 <= i_fives < tm.quints.len(),
+        0 <= i_mark < tm.quints.len(),
+        0 <= i_rfives < tm.quints.len(),
+        0 <= i_rf2g < tm.quints.len(),
+        0 <= i_rgap < tm.quints.len(),
+        0 <= i_rg2t < tm.quints.len(),
+        0 <= i_rtemp < tm.quints.len(),
+        0 <= i_dpeel < tm.quints.len(),
+        0 <= i_dtemp < tm.quints.len(),
+        0 <= i_dins < tm.quints.len(),
+        0 <= i_dwb < tm.quints.len(),
+        0 <= i_turn < tm.quints.len(),
+        0 <= i_master < tm.quints.len(),
+        0 <= i_tm2g < tm.quints.len(),
+        0 <= i_trgap < tm.quints.len(),
+        0 <= i_tg2t < tm.quints.len(),
+        0 <= i_trtemp < tm.quints.len(),
+        0 <= i_upeel < tm.quints.len(),
+        0 <= i_utemp < tm.quints.len(),
+        0 <= i_ut2g < tm.quints.len(),
+        0 <= i_ugap < tm.quints.len(),
+        0 <= i_uu1 < tm.quints.len(),
+        0 <= i_uurest < tm.quints.len(),
+        0 <= i_uturn < tm.quints.len(),
+        0 <= i_umaster < tm.quints.len(),
+        0 <= i_um2g < tm.quints.len(),
+        0 <= i_urgap < tm.quints.len(),
+        0 <= i_ug2t < tm.quints.len(),
+        0 <= i_urtemp < tm.quints.len(),
+        // ── block_loop index bounds ──
+        0 <= i_peek < tm.quints.len(),
+        0 <= i_cont < tm.quints.len(),
+        0 <= i_exit < tm.quints.len(),
+        0 <= i_pivot_r < tm.quints.len(),
+        0 <= ir1 < tm.quints.len(),
+        0 <= ir2 < tm.quints.len(),
+        0 <= ir3 < tm.quints.len(),
+        0 <= ir4 < tm.quints.len(),
+        0 <= i_e0 < tm.quints.len(),
+        0 <= i_e1 < tm.quints.len(),
+        0 <= i_e2 < tm.quints.len(),
+        0 <= i_off_l < tm.quints.len(),
+        0 <= il1 < tm.quints.len(),
+        0 <= il2 < tm.quints.len(),
+        0 <= il3 < tm.quints.len(),
+        0 <= il4 < tm.quints.len(),
+        0 <= i_pivot < tm.quints.len(),
+        0 <= i_one_l < tm.quints.len(),
+        0 <= i_erase < tm.quints.len(),
+        0 <= i_disc < tm.quints.len(),
+        // ── copy_refresh quints (j=0 deposit-first) ──
+        tm.quints[i_dpeel0] == mk_quint(q_dh0, 0, 0, q_dw0, Dir::L),
+        tm.quints[i_dtemp0] == mk_quint(q_dw0, 1, 1, q_dw0, Dir::L),
+        tm.quints[i_dins0] == mk_quint(q_dw0, 0, 1, q_bk0, Dir::R),
+        tm.quints[i_dwb0] == mk_quint(q_bk0, 1, 1, q_bk0, Dir::R),
+        tm.quints[i_peel0] == mk_quint(q_bk0, 0, 0, q_t0, Dir::L),
+        tm.quints[i_temp0] == mk_quint(q_t0, 1, 1, q_t0, Dir::L),
+        tm.quints[i_t2g0] == mk_quint(q_t0, 0, 0, q_a0, Dir::L),
+        tm.quints[i_gap0] == mk_quint(q_a0, 0, 0, q_a0, Dir::L),
+        tm.quints[i_mark0] == mk_quint(q_a0, 1, 5, q_rf0, Dir::R),
+        tm.quints[i_rf2g0] == mk_quint(q_rf0, 0, 0, q_rg0, Dir::R),
+        tm.quints[i_rgap0] == mk_quint(q_rg0, 0, 0, q_rg0, Dir::R),
+        tm.quints[i_rg2t0] == mk_quint(q_rg0, 1, 1, q_home, Dir::R),
+        // ── copy_refresh quints (home-cycle) ──
+        tm.quints[i_peel] == mk_quint(q_home, 0, 0, q_t, Dir::L),
+        tm.quints[i_temp] == mk_quint(q_t, 1, 1, q_t, Dir::L),
+        tm.quints[i_t2g] == mk_quint(q_t, 0, 0, q_a, Dir::L),
+        tm.quints[i_gap] == mk_quint(q_a, 0, 0, q_a, Dir::L),
+        tm.quints[i_a2b] == mk_quint(q_a, 5, 5, q_b, Dir::L),
+        tm.quints[i_fives] == mk_quint(q_b, 5, 5, q_b, Dir::L),
+        tm.quints[i_mark] == mk_quint(q_b, 1, 5, q_rf, Dir::R),
+        tm.quints[i_rfives] == mk_quint(q_rf, 5, 5, q_rf, Dir::R),
+        tm.quints[i_rf2g] == mk_quint(q_rf, 0, 0, q_rg, Dir::R),
+        tm.quints[i_rgap] == mk_quint(q_rg, 0, 0, q_rg, Dir::R),
+        tm.quints[i_rg2t] == mk_quint(q_rg, 1, 1, q_rt, Dir::R),
+        tm.quints[i_rtemp] == mk_quint(q_rt, 1, 1, q_rt, Dir::R),
+        tm.quints[i_dpeel] == mk_quint(q_rt, 0, 0, q_dw, Dir::L),
+        tm.quints[i_dtemp] == mk_quint(q_dw, 1, 1, q_dw, Dir::L),
+        tm.quints[i_dins] == mk_quint(q_dw, 0, 1, q_home, Dir::R),
+        tm.quints[i_dwb] == mk_quint(q_home, 1, 1, q_home, Dir::R),
+        // ── copy_refresh quints (terminate walk-back) ──
+        tm.quints[i_turn] == mk_quint(q_b, 0, 0, q_turn, Dir::R),
+        tm.quints[i_master] == mk_quint(q_turn, 5, 5, q_turn, Dir::R),
+        tm.quints[i_tm2g] == mk_quint(q_turn, 0, 0, q_turng, Dir::R),
+        tm.quints[i_trgap] == mk_quint(q_turng, 0, 0, q_turng, Dir::R),
+        tm.quints[i_tg2t] == mk_quint(q_turng, 1, 1, q_ret, Dir::R),
+        tm.quints[i_trtemp] == mk_quint(q_ret, 1, 1, q_ret, Dir::R),
+        // ── copy_refresh quints (unmark; home == q_ret) ──
+        tm.quints[i_upeel] == mk_quint(q_ret, 0, 0, q_ut, Dir::L),
+        tm.quints[i_utemp] == mk_quint(q_ut, 1, 1, q_ut, Dir::L),
+        tm.quints[i_ut2g] == mk_quint(q_ut, 0, 0, q_ua, Dir::L),
+        tm.quints[i_ugap] == mk_quint(q_ua, 0, 0, q_ua, Dir::L),
+        tm.quints[i_uu1] == mk_quint(q_ua, 5, 1, q_uf, Dir::L),
+        tm.quints[i_uurest] == mk_quint(q_uf, 5, 1, q_uf, Dir::L),
+        tm.quints[i_uturn] == mk_quint(q_uf, 0, 0, q_ur, Dir::R),
+        tm.quints[i_umaster] == mk_quint(q_ur, 1, 1, q_ur, Dir::R),
+        tm.quints[i_um2g] == mk_quint(q_ur, 0, 0, q_urg, Dir::R),
+        tm.quints[i_urgap] == mk_quint(q_urg, 0, 0, q_urg, Dir::R),
+        tm.quints[i_ug2t] == mk_quint(q_urg, 1, 1, q_urt, Dir::R),
+        tm.quints[i_urtemp] == mk_quint(q_urt, 1, 1, q_urt, Dir::R),
+        // ── block_loop quints (q_loop := q_urt, i_one_r := i_urtemp; triple emit) ──
+        tm.quints[i_peek] == mk_quint(q_urt, 0, 0, q_guard, Dir::L),
+        tm.quints[i_cont] == mk_quint(q_guard, 1, 1, q_iter, Dir::R),
+        tm.quints[i_exit] == mk_quint(q_guard, 0, 0, q_exit, Dir::R),
+        tm.quints[i_pivot_r] == mk_quint(q_iter, 0, 0, q_surge, Dir::R),
+        tm.quints[ir1] == mk_quint(q_surge, 1, 1, q_surge, Dir::R),
+        tm.quints[ir2] == mk_quint(q_surge, 2, 2, q_surge, Dir::R),
+        tm.quints[ir3] == mk_quint(q_surge, 3, 3, q_surge, Dir::R),
+        tm.quints[ir4] == mk_quint(q_surge, 4, 4, q_surge, Dir::R),
+        tm.quints[i_e0] == mk_quint(q_surge, 0, s0, q_e1, Dir::R),
+        tm.quints[i_e1] == mk_quint(q_e1, 0, s1, q_e2, Dir::R),
+        tm.quints[i_e2] == mk_quint(q_e2, 0, s2, q_eret, Dir::R),
+        tm.quints[i_off_l] == mk_quint(q_eret, 0, 0, q_bhome, Dir::L),
+        tm.quints[il1] == mk_quint(q_bhome, 1, 1, q_bhome, Dir::L),
+        tm.quints[il2] == mk_quint(q_bhome, 2, 2, q_bhome, Dir::L),
+        tm.quints[il3] == mk_quint(q_bhome, 3, 3, q_bhome, Dir::L),
+        tm.quints[il4] == mk_quint(q_bhome, 4, 4, q_bhome, Dir::L),
+        tm.quints[i_pivot] == mk_quint(q_bhome, 0, 0, q_dwalk, Dir::L),
+        tm.quints[i_one_l] == mk_quint(q_dwalk, 1, 1, q_dwalk, Dir::L),
+        tm.quints[i_erase] == mk_quint(q_dwalk, 0, 0, q_disc, Dir::R),
+        tm.quints[i_disc] == mk_quint(q_disc, 1, 0, q_urt, Dir::R),
+    ensures
+        tm_run(tm,
+            TmConfig { u: copy_u(0, big_m, g, tm.m), v: dpack(od, tm.m), a: 0, q: q_dh0 },
+            power_block_fuel_b3(big_m, g, od.len()))
+            == (TmConfig { u: copy_u(0, big_m, g, tm.m),
+                v: dpack(od + seq_pow(seq![s0, s1, s2], big_m), tm.m), a: 0, q: q_exit }),
+{
+    let m = tm.m;
+    reveal(tm_wf);
+    assert(m > 4);
+    let c0 = TmConfig { u: copy_u(0, big_m, g, m), v: dpack(od, m), a: 0, q: q_dh0 };
+
+    // ── PHASE A — COPY-REFRESH: copy_u(0,M,g) → dec_u(M, m^(g−M)·R(M)) @ q_urt. ──
+    lemma_copy_refresh(tm, big_m, g, dpack(od, m),
+        q_dh0, q_dw0, q_bk0, q_t0, q_a0, q_rf0, q_rg0,
+        q_home, q_t, q_a, q_b, q_rf, q_rg, q_rt, q_dw,
+        q_turn, q_turng, q_ret,
+        q_ut, q_ua, q_uf, q_ur, q_urg, q_urt,
+        i_dpeel0, i_dtemp0, i_dins0, i_dwb0,
+        i_peel0, i_temp0, i_t2g0, i_gap0, i_mark0, i_rf2g0, i_rgap0, i_rg2t0,
+        i_peel, i_temp, i_t2g, i_gap, i_a2b, i_fives, i_mark, i_rfives, i_rf2g, i_rgap, i_rg2t, i_rtemp,
+        i_dpeel, i_dtemp, i_dins, i_dwb,
+        i_turn, i_master, i_tm2g, i_trgap, i_tg2t, i_trtemp,
+        i_upeel, i_utemp, i_ut2g, i_ugap, i_uu1, i_uurest,
+        i_uturn, i_umaster, i_um2g, i_urgap, i_ug2t, i_urtemp);
+    let w = (pow_nat(m, (g - big_m) as nat) * repunit_m(big_m, m)) as nat;
+    let c1 = TmConfig { u: dec_u(big_m, w, m), v: dpack(od, m), a: 0, q: q_urt };
+    assert(tm_run(tm, c0, copy_refresh_fuel(big_m, g)) == c1);
+
+    // ── w % m == 0 (the loop's separator). ──
+    assert(g - big_m >= 1);
+    lemma_pow_nat_unfold(m, (g - big_m) as nat);
+    let xx = (pow_nat(m, (g - big_m - 1) as nat) * repunit_m(big_m, m)) as nat;
+    assert(w == m * xx) by(nonlinear_arith)
+        requires
+            w == pow_nat(m, (g - big_m) as nat) * repunit_m(big_m, m),
+            pow_nat(m, (g - big_m) as nat) == m * pow_nat(m, (g - big_m - 1) as nat),
+            xx == pow_nat(m, (g - big_m - 1) as nat) * repunit_m(big_m, m);
+    assert(w % m == 0) by {
+        assert(w == xx * m) by(nonlinear_arith) requires w == m * xx;
+        lemma_div_mod_step(xx, m, 0);
+    }
+
+    // ── PHASE B — CONSUME LOOP (triple): dec_u(M, w) @ q_urt → dec_u(0, m^M·w) @ q_exit. ──
+    lemma_block_loop_block3(tm, big_m, w, od, s0, s1, s2,
+        q_urt, q_guard, q_iter, q_surge, q_e1, q_e2, q_eret, q_bhome, q_dwalk, q_disc, q_exit,
+        i_peek, i_cont, i_exit, i_pivot_r, ir1, ir2, ir3, ir4,
+        i_e0, i_e1, i_e2, i_off_l, il1, il2, il3, il4,
+        i_pivot, i_one_l, i_erase, i_disc, i_urtemp);
+    let c2 = TmConfig {
+        u: dec_u(0, (pow_nat(m, big_m) * w) as nat, m),
+        v: dpack(od + seq_pow(seq![s0, s1, s2], big_m), m), a: 0, q: q_exit };
+    assert(tm_run(tm, c1, loop_fuel_b3(od.len(), big_m)) == c2);
+
+    // ── dec_u(0, m^M·w) == copy_u(0,M,g). ──
+    lemma_dec_u_zero((pow_nat(m, big_m) * w) as nat, m);
+    lemma_pow_nat_add(m, big_m, (g - big_m) as nat);
+    assert((big_m + (g - big_m)) as nat == g);
+    lemma_copy_u_start(big_m, g, m);
+    assert(dec_u(0, (pow_nat(m, big_m) * w) as nat, m) == copy_u(0, big_m, g, m)) by(nonlinear_arith)
+        requires
+            dec_u(0, (pow_nat(m, big_m) * w) as nat, m) == pow_nat(m, big_m) * w,
+            w == pow_nat(m, (g - big_m) as nat) * repunit_m(big_m, m),
+            pow_nat(m, g) == pow_nat(m, big_m) * pow_nat(m, (g - big_m) as nat),
+            copy_u(0, big_m, g, m) == pow_nat(m, g) * repunit_m(big_m, m);
+    assert(c2.u == copy_u(0, big_m, g, m));
+
+    // ── chain: COPY-REFRESH ∘ CONSUME-LOOP. ──
+    lemma_tm_run_split(tm, c0, copy_refresh_fuel(big_m, g), loop_fuel_b3(od.len(), big_m));
+    assert(power_block_fuel_b3(big_m, g, od.len())
+        == (copy_refresh_fuel(big_m, g) + loop_fuel_b3(od.len(), big_m)) as nat);
+    assert(tm_run(tm, c0, power_block_fuel_b3(big_m, g, od.len())) == c2);
+}
+
+} // verus!
