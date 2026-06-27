@@ -344,3 +344,8 @@
 // GAP-2 G2-F Route (i) brick R-relnum-gen (STEP 2, model B): the M=1 (exp=0) dispatch of the per-power-block
 // step, using lemma_copy_refresh_m1. See tm_power_block_m1.rs / docs/gap2-input-loader-plan.md §5, §N+10.
 #[cfg(verus_keep_ghost)] pub mod tm_power_block_m1;
+
+// GAP-2 G2-F Route (i): emitter WINDOWS over the assemble5 scaffold. Each fam_digits block becomes one
+// STRIDE=48 window; a phase lemma (analog of gap2_psc_rp::lemma_rp_phase) proves the block's step about
+// the concrete machine. Starts with the singleton-emit window. See gap2_emit_window.rs / §N+11.
+#[cfg(verus_keep_ghost)] pub mod gap2_emit_window;
