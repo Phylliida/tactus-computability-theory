@@ -241,3 +241,8 @@
 // 1..4 walks the head over a dpack block of nonzero digits onto v, landing on the blank turnaround.
 // The engine of the copy-and-park relocation of alpha. See tm_dwalk.rs.
 #[cfg(verus_keep_ghost)] pub mod tm_dwalk;
+
+// GAP-2 G2-F Route (i) brick R-P: the copy-and-park core. lemma_rp_entry (2-step handshake depositing
+// the ignition-held low digit d0 onto v) + lemma_rp_copy_park (entry o dwalk_left) park alpha's digit
+// sequence reversed in v, freeing u as workspace -- the canonical layout R-cmp reads. See tm_rp.rs.
+#[cfg(verus_keep_ghost)] pub mod tm_rp;
