@@ -1374,3 +1374,46 @@ sum in a `uinv_phase_fuel`/`u_phase_fuel` spec fn to keep the ensures readable. 
 exit so qend needs NO walk-back). Then prove the produced concatenation `=~= od ++ uinv_digits(b)` (and the u
 phase `++ u_digits(a)`) by unfolding the spec fns (the emits already match term-for-term). Keep each block's
 sub-proof isolated (let-bound) to stay under rlimit; extract per-block helpers if a monolith blows up.
+
+### N+13 — `q_clean` COMPLETE (master-mgmt gadget #1), position-parametric over the high-tail backup (crate 1254 → 1277/0)
+
+**Design gate resolved (2026-06-27, w/ Danielle port 8051):** the N+12 placement guidance ("backup BELOW the
+master in `0..g`") is **inconsistent** — the phase invariant is `u == copy_u(0,M,g)` EXACTLY and the temp
+counter GROWS into the gap `0..g` during emission, so a backup there is overwritten. **Resolution = option
+(A): the backup `T` lives ABOVE the master**, a preserved high tail at a parametric offset (mark/deposit ops
+are bounded by `g ≥ M+2` and never reach it). All master-mgmt gadgets are built **parametric over `T`**, so
+the concrete offset (R-P/dovetail) plugs in only at the final `psc_act` — zero rip-out risk, the
+exit-parametric-window pattern. This also means **the phase lemmas need additive high-tail variants
+(`lemma_uinv_phase_tail`/`lemma_u_phase_tail`)** so the backup actually survives a phase (NEXT, item 1b).
+
+**✅ `q_clean` (new module `gap2_master_mgmt.rs`, +23 verified, additive):** the master-erase half of
+WIPE-AND-LOAD. `lemma_q_clean`: from a phase-boundary tape `u == m^g·(R(K) + m^(K+1)·T)` (gap `g`, old master
+`K = old+1` ones, separator blank, backup `T` above) with output `v0` (low digit `1..4`) on the right and the
+head on the pivot in `q_s`, it erases the master and returns home in `q_home`, leaving `u == m^(g+K+1)·T`
+(master region `g..g+K` blank, `T` floated up one separator place, untouched) and `v0` restored — in
+`2g+2K+4` steps over **9 quintuples / 3 states** `q_s`/`q_w`/`q_r`. Bricks:
+- `lemma_wipe_ones_left` — the `(q,1,0,q,L)` erase sweep (mirror of `tm_copy_refresh::lemma_unmark_fives_left`).
+- `lemma_pile_sym_zero` — `pile_sym(v,0,k) == v·m^k` (bridges seek/wipe `v`-formats).
+- `lemma_q_clean_erase` — seek-left over the gap (`lemma_seek_left_blanks`) + seek→wipe transition + wipe;
+  `K==1`/`K≥2` split; lands at the separator with the master gone, blanks piled on `v`.
+- `lemma_q_clean_return` — wipe→return transition + seek-right (`lemma_seek_right_blanks`) + **4-way digit
+  walk-back** (one quint per `1..4`, the `q_cmp` walk-back-compatible hand-off) onto the pivot blank. ⚠ the
+  blank seek-right can't distinguish the pivot from the piled blanks, so it overshoots by one onto the output
+  digit and the walk-back recovers it — that's why the 4 digit quints are needed (not a plain blank return).
+- `lemma_q_clean` — composes erase+return; `q_clean_fuel(g,K) = 2g+2K+4`.
+
+⚠ DETERMINISM NOTE for `psc_act`: the 9 quints occupy distinct `(state,symbol)` pairs — `q_w` carries BOTH
+`(q_w,1,·)` (wipe) and `(q_w,0,·)` (→return), and the digit walk-backs MUST be in `q_r` (NOT `q_w`, which
+already binds symbol `1`).
+
+**NEXT (master-mgmt #2 + wiring):**
+1. **`load_master`** — rebuild the `a+1` master at position `g` from the backup `T` (a `copy_refresh`-style
+   marked copy-DOWN from `T`'s offset to `g`). NOT a direct `lemma_copy_refresh` reuse (that produces the
+   fresh counter at the BOTTOM `0..M` with the source preserved at `g`; load_master needs the master AT `g`).
+   Own gadget; can reuse the seek/walk/mark primitives. Output must be `copy_u(0, a+1, g)` so phase 2 starts.
+   1b. **High-tail phase variants** (option A) — additive `lemma_uinv_phase_tail`/`lemma_u_phase_tail` carrying
+   the preserved `T` tail (the walk primitives already thread a `w`; the block phase lemmas need the tail
+   threaded). Without these the backup doesn't survive a phase.
+2. **Two-phase wiring** — phase1(tail) → `lemma_q_clean` → `load_master` → phase2(tail) ⟹
+   `v == dpack(od ++ uinv_digits(b) ++ u_digits(a)) == dpack(od ++ fam_digits(a,b))`.
+3–4. concrete `psc_act` tm/tm_wf + `fam_digits ⟹ relnum` → discharge `ceer_realizes` (unchanged from N+12).
