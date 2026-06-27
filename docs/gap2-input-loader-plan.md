@@ -516,11 +516,29 @@ emit bricks BUILT; crate 771/0.*
   and `lemma_dwalk_left` (return home: block `u→v`, stops at the blank). They write back the scanned
   symbol (`a2=s`), so they are the non-destructive shuttles.
 
-**THIS SESSION (N+3) BUILT (crate 760/0 → 774/0):** model-B fork resolved (above); `tm_emit.rs`
+**THIS SESSION (N+3) BUILT (crate 760/0 → 783/0):** model-B fork resolved (above); `tm_emit.rs`
 (symbol-power emit + pile_sym/dpile algebra, 766/0); `tm_shuttle.rs` (frontier block-emit, 771/0);
-`tm_dec_master.rs` (`lemma_walk_left_prefix`, the generalized walk-left over a repunit prefix with a
-preserved high tail `w`, 774/0). Found: the safe-walk shuttles already exist (`dwalk_left`/`dwalk_right`);
-the gap-growth pitfall ⟹ the `[master]0[temp]0[output]` per-power-block layout (above).
+`tm_dec_master.rs`: `lemma_walk_left_prefix` (generalized walk-left over a repunit prefix with preserved
+high tail `w`, 774/0) + `lemma_walk_back_prefix` (the back-direction twin, 776/0) + **`lemma_dec_temp`**
+(the full master-decrement at home, 783/0): `{dec_u(temp,w), output, 0, q_home}` →`2·temp+2`→
+`{dec_u(temp−1, m·w), output, 0, q_back}`, `dec_u(temp,w,m)=repunit(temp)+m^temp·w`. Found: the safe-walk
+shuttles already exist (`dwalk_left`/`dwalk_right`); the gap-growth pitfall ⟹ the `[master]0[temp]0[output]`
+per-power-block layout, gap absorbed into `w ← m·w`.
+
+**NEXT (the per-block integration — start here):** the **per-block ITERATION** lemma (home→home, one
+`(blk)` emitted + temp decremented), composing two home→home halves:
+  (a) **surge+emit+return** (output → output++blk): from home, move R off pivot → `dwalk_right` over
+      output to frontier → `emit_block{1,3}_frontier` → move L onto blk → `dwalk_left` back to pivot.
+      ⚠ During the surge the output moves `v→u` (head pushes it onto `u` atop the pivot-0); the masters
+      `[temp][master]` sit DEEPER in `u` and are untouched. Track the `dpile`/`dpack` ordering — the block
+      lands reversed via `dpile`; reconcile vs `fam_digits`' low-first order (may need the return as
+      `dwalk_left` then a re-pass, or emit in the matching order).
+  (b) **`lemma_dec_temp`** (temp → temp−1) — DONE, drops straight in (home→home, output preserved).
+Then the per-block **LOOP** (induct on temp: `i` iters ⟹ output gains `seq_pow(blk,i)` via `pile_sym`/
+`dpile` accounting, temp→0, `w` grows ×m per step). Then the **copy-refresh** gadget (rebuild temp from a
+preserved master before each of a phase's 4 power-blocks). Then **16-block sequencing** (== `fam_digits`,
+via `lemma_dds_fam_relator`/`lemma_relnum_is_fam_digits`). Then `psc_act` window assembly + R-cmp/R-S/R-C/
+R-MC/B-W.
 
 **NEXT (model-B per-block loop — the substantial remaining STEP-2 work):**
 1. **`home_config(iₐ, i_b, output, m)` spec** — the layout config: `a=0` (home pivot, the 0 before
