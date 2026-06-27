@@ -1152,3 +1152,39 @@ loop's is `q_bhome`). `w % m == 0` is established in-body (`g−M ≥ 2 ⟹ m | 
 > output) — pin that layout when building the assemble5 windows (couples with R-P's `[counters]0[scratch]
 > 0[α-block]0` and the dovetail). The 4 verified `lemma_power_block_step_*` primitives are the per-block
 > atoms that concrete assembly consumes.
+
+## SESSION UPDATE 2026-06-27 (N+11) — GLOBAL TAPE LAYOUT PINNED + assemble5 STRIDE LOCKED (Danielle co-designed, port 8051)
+
+**✅ GLOBAL TAPE LAYOUT (LOCKED).** The whole `psc_tm` tape, left→right:
+
+```
+  [ dovetail state: s | a+1 | b+1 ] 0 [ emit scratch: master 0 temp 0 output ] 0 [ α-block: stored digits ] 0 [ blanks ]
+```
+
+- **Separate output / α-block regions** (NOT a local-zip adjacency). R-cmp is a linear scan that walks
+  between `emit-output` and `α-block`; the cost is negligible vs. the boundary/overflow complexity a fused
+  region would force on R-P and the emitter. (Danielle's call.)
+- **R-P (n=5 re-do) deposits α into the dedicated α-block region to the RIGHT**, NOT in `v` over the
+  scratch. Reason: the emitter's local `v` (right of the scratch pivot) must be unobstructed so a
+  power-block can grow its output without colliding; parking α in `v` would force a per-block shift-right.
+  So the n=5 R-P parks α in the α-block; `v` (within the scratch's local frame) is the emitter output.
+- **Confirmed flow:** `load_master` (copy persistent `a+1` → emit-scratch master) → emitter (produce
+  output in scratch-`v`) → R-cmp (walk between emit-output ↔ α-block). `q_clean` wipes the scratch master
+  zone between the two phases (`uinv_digits(b)` then `u_digits(a)`); WIPE-AND-LOAD per N+10.
+- **Note on the local emitter frame:** a power-block step's lemma already fixes the LOCAL layout
+  `[master]0[temp]0[output]` (master in `u`, output in `v`, head at the home pivot `a=0`). The global
+  layout above is the embedding of that local frame into the full tape; the per-block window lemmas are
+  layout-agnostic (they speak only of the local `u`/`v`), so the scaffold + window proofs do not depend on
+  the global coordinates — those only matter when wiring R-P/R-cmp/R-S.
+
+**✅ assemble5 STRIDE = 48 (LOCKED).** The n=5 (alphabet `0..5`, marker `5`) bump of `tm_assemble4`. A
+triple power-block window needs 34 distinct states; STRIDE=48 gives 14 states headroom (room for
+`load_master`/`q_clean` glue + R-cmp transitions, no future re-bump). Parameters:
+`entry5(pc) = 6 + 48·pc`, `tm_mod5(len) = 54 + 48·len`, `288 = 48·6` quintuples per window
+(6 symbols `0..5`). Slot index `pc·288 + off·6 + sym`.
+
+**NEXT:** build `tm_assemble5.rs` (pure index arithmetic, mechanical bump — `lemma_idx5_decomp`,
+`lemma_slot_index5`, `lemma_idx5_recover`, `lemma_tm_wf_n5`, peek demo) → lay ONE concrete power-block
+window as validation (instantiate `lemma_power_block_step_block1` via `lemma_slot_index5`, mirror
+`lemma_psc_rp_copy_park`) → 16-block sequencing (state-id splice) + master-mgmt → `psc_act` window
++ R-cmp/R-S/R-C/R-MC/B-W → discharge `ceer_realizes`.
