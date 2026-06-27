@@ -525,6 +525,30 @@ emit bricks BUILT; crate 771/0.*
    `i_b` one (walk left to the `i_b/iₐ` sep 0, erase-turnaround, walk back) so `i_b` stays adjacent to the
    pivot — NO gap growth (the gap-at-pivot approach is wrong; outer-erase is the lemma_dec discipline).
    Pivot MUST stay `0` (dwalk stops at 0; a sep=2 pivot would be walked over since digit 2 ∈ fam_digits).
+   **The subtlety (worked out, not yet coded):** lemma_dec starts head-on-sep (`a=2`); dec_master starts
+   head-on-pivot (`a=0`). So step 1 "peel pivot" is `(q_home, 0, 0, q_walk, L)` — moving L pushes the pivot
+   0 onto `v` (`v1 = dpack(output)·m`, low digit 0) and exposes `i_b`'s inner one. Then walk-left over
+   `i_b`'s ones piles them onto `v1` ON TOP of the output (temporarily!), landing on the `i_b/iₐ` sep 0 —
+   here `u` is NOT 0 (it's `repunit(iₐ)`), unlike lemma_dec where `u==0` at the blank; the erase-turnaround
+   `(q_walk, 0, 0, q_disc, R)` fires on `a=0` regardless of `u`. The walk-BACK-right is the inverse: it
+   pops the pile off `v`, RESTORING the output exactly, and lands head on `v1`'s low cell = the pivot `0`.
+   Net: output unchanged, `i_b → i_b−1`, head home. ⚠ The three `a=0` roles (home pivot, `i_b/iₐ` sep,
+   far blank) are disambiguated by STATE (`q_home`/`q_walk`/`q_disc`), never by the scanned symbol.
+   ⚠ Decrementing `iₐ` (the OTHER, farther master) needs walking PAST `i_b` first — so likely keep `i_b`
+   as the inner/active master for `u_digits`'s exponent and `iₐ`... reconsider order: maybe lay
+   `[i_active]0[i_other]0[output]` and rebuild `i_active` per fresh block from a preserved `i_other` copy,
+   OR process all of `u_digits` (exponent `a+1`) with `iₐ` inner, then all of `uinv_digits` (exponent
+   `b+1`) — revisit which master is inner when sequencing the 16 blocks (step 5).
+   ⚠⚠ **NEW SUB-GADGET NEEDED (found this session):** `dec_master` CANNOT reuse
+   `tm_walk::lemma_walk_left_inner` directly — that lemma requires `c.u == repunit_m(j0)` and concludes
+   `u == 0` (it assumes the rest of the left tape is blank). In the home layout `u` has `iₐ`'s content
+   (`repunit(iₐ)`) beyond the `i_b/iₐ` separator, so walking `i_b`'s ones must STOP at that separator 0 and
+   LEAVE `iₐ` intact (`u == W` where `W = m·repunit(iₐ)`, `W%m==0`). So FIRST build a **generalized
+   walk-left** `lemma_walk_left_prefix`: from `u == repunit(j0) + m^(j0)·W` with `W%m==0`, the `(q,1,1,q,L)`
+   loop fires `j0+1`(?) times piling `j0` ones onto `v` and landing on the separator-0 (`a==0`, `u==W/m`...
+   recheck the exact count/landing). lemma_walk_back_inner is already generic in the under-pile `w` so the
+   walk-BACK reuses verbatim (`w = dpack(output)·m`). This generalized walk-left is the first concrete
+   thing to build next session (small, mirrors lemma_walk_left_inner with a high-content tail).
 3. **per-block-iteration lemma** — from `home_config`, ONE iter: move R off pivot → `dwalk_right` over
    output to frontier → `emit_block{1,3}` → move L onto block → `dwalk_left` back to pivot → `dec_master`.
    Net: output ← `output ++ blk` (or the dpile-reversed form — TRACK the order vs `fam_digits` low-first),
