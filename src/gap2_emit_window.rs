@@ -26,7 +26,7 @@ use crate::tm::{Tm, TmConfig, Quintuple, tm_wf, tm_run};
 use crate::tm_gadget::mk_quint;
 use crate::tm_assemble5::{entry5, tm_mod5, lemma_tm_wf_n5, lemma_slot_index5, lemma_idx5_decomp};
 use crate::tm_dstring::dpack;
-use crate::tm_block_iter::lemma_surge_emit_return_block1;
+use crate::tm_block_iter::{lemma_surge_emit_return_block1, lemma_surge_emit_return_block3};
 
 verus! {
 
@@ -394,6 +394,155 @@ pub proof fn lemma_seret1x_phase(tm: Tm, len: nat, pc: nat, big_u: nat, od: Seq<
         q_iter, q_surge, q_eret, qexit,
         i_pivot_r, ir1, ir2, ir3, ir4,
         i_emit, i_off_l, jl1, jl2, jl3, jl4);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EXIT-PARAMETRIC TRIPLE-singleton window — the `[4,1,2]` / `[4,3,2]` separators (§N+11).
+//
+// Same splice as the single singleton ([`lemma_seret1x_phase`]) but emitting a 3-symbol run at the
+// frontier ([`crate::tm_block_iter::lemma_surge_emit_return_block3`]) via the two extra states q_e1, q_e2.
+// The return walk lands on the external `qexit`; the 4 walk-back self-loops are supplied as `jl1..jl4`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The triple-singleton-emit action table over a STRIDE=48 window: 6 states q_iter(0)/q_surge(1)/q_e1(2)/
+/// q_e2(3)/q_eret(4)/q_home(5), emitting `(s0,s1,s2)` at the frontier. Every unused slot is an inert
+/// self-loop.
+pub open spec fn seret3_act(off: nat, sym: nat, s0: nat, s1: nat, s2: nat) -> (nat, nat, Dir) {
+    if off == 0 {            // q_iter: move R off the home pivot.
+        if sym == 0 { (0, 1, Dir::R) } else { (sym, 0, Dir::L) }
+    } else if off == 1 {     // q_surge: skip output 1..4 (R); on frontier 0 emit s0 → q_e1.
+        if 1 <= sym && sym <= 4 { (sym, 1, Dir::R) }
+        else if sym == 0 { (s0, 2, Dir::R) }
+        else { (sym, 1, Dir::L) }
+    } else if off == 2 {     // q_e1: emit s1 → q_e2.
+        if sym == 0 { (s1, 3, Dir::R) } else { (sym, 2, Dir::L) }
+    } else if off == 3 {     // q_e2: emit s2 → q_eret.
+        if sym == 0 { (s2, 4, Dir::R) } else { (sym, 3, Dir::L) }
+    } else if off == 4 {     // q_eret: move L back onto the last emitted digit → q_home.
+        if sym == 0 { (0, 5, Dir::L) } else { (sym, 4, Dir::L) }
+    } else if off == 5 {     // q_home: walk L over output 1..4 to the home pivot (terminal on 0).
+        (sym, 5, Dir::L)
+    } else {
+        (sym, off, Dir::L)
+    }
+}
+
+/// The exit-parametric triple-singleton generator: identical to a [`seret3_act`]-keyed window EXCEPT the
+/// q_eret landing slot `(off 4, sym 0)` targets the EXTERNAL `qexit` (the next block's off-0 state). The
+/// walk-back self-loops live at `qexit` (supplied to the phase lemma as `jl1..jl4`).
+pub open spec fn seret3x_gen(s0: nat, s1: nat, s2: nat, qexit: nat, idx: nat) -> Quintuple {
+    let pc = idx / 288;
+    let off = (idx % 288) / 6;
+    let sym = (idx % 288) % 6;
+    if off == 4 && sym == 0 {
+        mk_quint(entry5(pc) + 4, 0, 0, qexit, Dir::L)      // q_eret → q_home := qexit (cross-window)
+    } else {
+        let a = seret3_act(off, sym, s0, s1, s2);
+        mk_quint(entry5(pc) + off, sym, a.0, entry5(pc) + a.1, a.2)
+    }
+}
+
+/// **Exit-parametric triple-singleton-emit phase (one window).** As [`lemma_seret1x_phase`] but emitting
+/// `[s0,s1,s2]`. From `{u: big_u, v: dpack(od), a: 0, q: entry5(pc)}` after `2·|od| + 8` steps:
+/// `{u: big_u, v: dpack(od ++ [s0,s1,s2]), a: 0, q: qexit}`. The 4 walk-back self-loops `(qexit, 1..4,
+/// qexit, L)` are `jl1..jl4` (the next window's inert off-0 self-loops).
+pub proof fn lemma_seret3x_phase(tm: Tm, len: nat, pc: nat, big_u: nat, od: Seq<nat>,
+    s0: nat, s1: nat, s2: nat, qexit: nat, jl1: int, jl2: int, jl3: int, jl4: int)
+    requires
+        tm_wf(tm),
+        tm.n == 5,
+        tm.m == tm_mod5(len),
+        pc <= len,
+        tm.quints.len() == 288 * (len + 1),
+        forall|i: int| pc * 288 <= i < pc * 288 + 288 ==> #[trigger] tm.quints[i] == seret3x_gen(s0, s1, s2, qexit, i as nat),
+        1 <= s0 <= 4,
+        1 <= s1 <= 4,
+        1 <= s2 <= 4,
+        forall|k: int| 0 <= k < od.len() ==> 1 <= #[trigger] od[k] <= 4,
+        0 <= jl1 < tm.quints.len(),
+        0 <= jl2 < tm.quints.len(),
+        0 <= jl3 < tm.quints.len(),
+        0 <= jl4 < tm.quints.len(),
+        tm.quints[jl1] == mk_quint(qexit, 1, 1, qexit, Dir::L),
+        tm.quints[jl2] == mk_quint(qexit, 2, 2, qexit, Dir::L),
+        tm.quints[jl3] == mk_quint(qexit, 3, 3, qexit, Dir::L),
+        tm.quints[jl4] == mk_quint(qexit, 4, 4, qexit, Dir::L),
+    ensures
+        tm_run(tm, TmConfig { u: big_u, v: dpack(od, tm.m), a: 0, q: entry5(pc) },
+            (2 * od.len() + 8) as nat)
+            == (TmConfig { u: big_u, v: dpack(od + seq![s0, s1, s2], tm.m), a: 0, q: qexit }),
+{
+    assert(pc * 288 + 288 <= 288 * (len + 1)) by(nonlinear_arith) requires pc <= len;
+    let base = (pc * 288) as int;
+
+    let q_iter = entry5(pc);
+    let q_surge = (entry5(pc) + 1) as nat;
+    let q_e1 = (entry5(pc) + 2) as nat;
+    let q_e2 = (entry5(pc) + 3) as nat;
+    let q_eret = (entry5(pc) + 4) as nat;
+
+    let i_pivot_r = (pc * 288 + 0 * 6 + 0) as int;
+    let ir1 = (pc * 288 + 1 * 6 + 1) as int;
+    let ir2 = (pc * 288 + 1 * 6 + 2) as int;
+    let ir3 = (pc * 288 + 1 * 6 + 3) as int;
+    let ir4 = (pc * 288 + 1 * 6 + 4) as int;
+    let i_e0 = (pc * 288 + 1 * 6 + 0) as int;
+    let i_e1 = (pc * 288 + 2 * 6 + 0) as int;
+    let i_e2 = (pc * 288 + 3 * 6 + 0) as int;
+    let i_off_l = (pc * 288 + 4 * 6 + 0) as int;
+
+    assert(base <= i_pivot_r < base + 288);
+    assert(base <= ir1 < base + 288);
+    assert(base <= ir2 < base + 288);
+    assert(base <= ir3 < base + 288);
+    assert(base <= ir4 < base + 288);
+    assert(base <= i_e0 < base + 288);
+    assert(base <= i_e1 < base + 288);
+    assert(base <= i_e2 < base + 288);
+    assert(base <= i_off_l < base + 288);
+
+    assert(tm.quints[i_pivot_r] == mk_quint(q_iter, 0, 0, q_surge, Dir::R)) by {
+        lemma_slot_index5(pc, 0, 0);
+        assert(tm.quints[i_pivot_r] == seret3x_gen(s0, s1, s2, qexit, i_pivot_r as nat));
+    }
+    assert(tm.quints[ir1] == mk_quint(q_surge, 1, 1, q_surge, Dir::R)) by {
+        lemma_slot_index5(pc, 1, 1);
+        assert(tm.quints[ir1] == seret3x_gen(s0, s1, s2, qexit, ir1 as nat));
+    }
+    assert(tm.quints[ir2] == mk_quint(q_surge, 2, 2, q_surge, Dir::R)) by {
+        lemma_slot_index5(pc, 1, 2);
+        assert(tm.quints[ir2] == seret3x_gen(s0, s1, s2, qexit, ir2 as nat));
+    }
+    assert(tm.quints[ir3] == mk_quint(q_surge, 3, 3, q_surge, Dir::R)) by {
+        lemma_slot_index5(pc, 1, 3);
+        assert(tm.quints[ir3] == seret3x_gen(s0, s1, s2, qexit, ir3 as nat));
+    }
+    assert(tm.quints[ir4] == mk_quint(q_surge, 4, 4, q_surge, Dir::R)) by {
+        lemma_slot_index5(pc, 1, 4);
+        assert(tm.quints[ir4] == seret3x_gen(s0, s1, s2, qexit, ir4 as nat));
+    }
+    assert(tm.quints[i_e0] == mk_quint(q_surge, 0, s0, q_e1, Dir::R)) by {
+        lemma_slot_index5(pc, 1, 0);
+        assert(tm.quints[i_e0] == seret3x_gen(s0, s1, s2, qexit, i_e0 as nat));
+    }
+    assert(tm.quints[i_e1] == mk_quint(q_e1, 0, s1, q_e2, Dir::R)) by {
+        lemma_slot_index5(pc, 2, 0);
+        assert(tm.quints[i_e1] == seret3x_gen(s0, s1, s2, qexit, i_e1 as nat));
+    }
+    assert(tm.quints[i_e2] == mk_quint(q_e2, 0, s2, q_eret, Dir::R)) by {
+        lemma_slot_index5(pc, 3, 0);
+        assert(tm.quints[i_e2] == seret3x_gen(s0, s1, s2, qexit, i_e2 as nat));
+    }
+    assert(tm.quints[i_off_l] == mk_quint(q_eret, 0, 0, qexit, Dir::L)) by {
+        lemma_slot_index5(pc, 4, 0);
+        assert(tm.quints[i_off_l] == seret3x_gen(s0, s1, s2, qexit, i_off_l as nat));
+    }
+
+    // ── invoke the verified triple-singleton step with q_home = qexit, walk-back quints jl1..jl4. ──
+    lemma_surge_emit_return_block3(tm, big_u, od, s0, s1, s2,
+        q_iter, q_surge, q_e1, q_e2, q_eret, qexit,
+        i_pivot_r, ir1, ir2, ir3, ir4,
+        i_e0, i_e1, i_e2, i_off_l, jl1, jl2, jl3, jl4);
 }
 
 } // verus!
