@@ -293,3 +293,9 @@
 // fam_digits one iteration at a time. lemma_pile_sym_is_dpile bridges the accumulator to the digit-seq
 // algebra. See tm_emit.rs / docs/gap2-input-loader-plan.md §5 (R-relnum-gen STEP 2).
 #[cfg(verus_keep_ghost)] pub mod tm_emit;
+
+// GAP-2 G2-F Route (i) brick R-relnum-gen (STEP 2, model B home/shuttle): the frontier block-emit. The
+// "sequential write" step -- a state cycle (e_k,0,blk[k],e_{k+1},R) writes blk's digits onto u over the
+// frontier blanks (v==0), appending dpile(c.u,blk). lemma_emit_one_frontier + block1/block3 compositions
+// (the only fam_digits block sizes). See tm_shuttle.rs / docs/gap2-input-loader-plan.md §5 (STEP 2 model B).
+#[cfg(verus_keep_ghost)] pub mod tm_shuttle;
