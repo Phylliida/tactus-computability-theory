@@ -252,3 +252,9 @@
 // splices lemma_rp_copy_park onto any psc_tm whose first five windows carry them. Pins the ignition
 // handoff state start(d0) = entry4(d0). See gap2_psc_rp.rs / docs/gap2-input-loader-plan.md §5 (R-P).
 #[cfg(verus_keep_ghost)] pub mod gap2_psc_rp;
+
+// GAP-2 G2-F Route (i) brick R-relnum-gen (spec foundation): relnum as a dpack digit block. The
+// decode_word <-> dpack bridge (lemma_decode_word_is_dpack) pins the digit ORDER (decode_word's last
+// symbol = dpack's lowest digit), and lemma_relnum_is_dpack gives relnum = dpack(decode_digit_seq(...)) --
+// the emitter's spec target and the compare's invariant. See gap2_relnum_digits.rs.
+#[cfg(verus_keep_ghost)] pub mod gap2_relnum_digits;
