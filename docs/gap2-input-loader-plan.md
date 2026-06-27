@@ -943,3 +943,52 @@ options:**
 So the minimal self-terminating rework = thread `q_b` through the forward/edges/loop (so `j=M` detection
 works) + a `lemma_mark_terminate` (the `j=M` forward → fall-through → walk-back-to-pivot) + the assembly
 `loop ∘ terminate ∘ lemma_unmark`. The g=M no-gap unmark and small-M remain as before.
+
+## SESSION UPDATE 2026-06-27 (N+8) — SELF-TERMINATING GUARD + BOUNCE + FULL copy_refresh ASSEMBLY DONE (module tm_copy_refresh 137→165, crate 998/0)
+
+**REMAINING items 1 and 4 are now CLOSED** (the N+7 "next blocker"). The general-case `copy_refresh`
+(`M ≥ 3`, `g ≥ M+2`) is one verified deterministic machine. Route taken: **Option A (correctness-first,
+REUSES `lemma_unmark`)**, co-design-confirmed with the local model.
+
+### What got BUILT and VERIFIED (all additive, no assume/admit/external_body)
+
+- **(item 1) the q_b self-terminating guard — DONE.** Threaded a fresh fives-state `q_b` + transition
+  index `i_a2b` through the WHOLE mark/loop stack **in place** (strict generalization: `q_b == q_a`
+  recovers the old single-state forward). The forward now does **gap-walk in `q_a`** (reads `0` → keep
+  seeking) then a one-step transition `(q_a,5,5,q_b,L)` (`i_a2b`) into **fives-walk in `q_b`**
+  (`(q_b,5,5,q_b,L)`); the mark fires from `q_b` (`(q_b,1,5,q_rf,R)`). At `j=M` (all fives, no unmarked
+  one) `q_b` instead reads the blank above the master → the dedicated `(q_b,0,0,q_turn,R)` turn. So `q_b`
+  reacts to `5`/`1`/`0` distinctly — **self-termination with NO state conflict** (the design's whole
+  point). Reworked: `lemma_mark_fwd`/`_gj1` (forward bodies: transition + q_b walk, with a `j==1` vs `j≥2`
+  split where the single five lands directly on the unmarked one), `lemma_mark`/`_j1`/`_gj1`,
+  `lemma_copy_iter`/`_j1`/`_gj1`, `lemma_copy_loop_general`/`_prefix`/`_loop`. **`j=0` untouched** (no
+  fives at `j=0`). Commit `38913c2`.
+- **`lemma_terminate_fwd` — DONE.** The `j=M` forward: mirrors `lemma_unmark_fwd` but PRESERVES the fives
+  (`5→5`) and ends above the master in `q_b` (`{0, pile_sym(P_g,5,M), 0, q_b}`). Reuses the loop's forward
+  quints — NO new quints. Commit `…terminate_fwd`.
+- **(Option A) `lemma_mark_terminate` — DONE.** `copy_u(M)@q_home → copy_u(M)@q_ret`: detect (terminate_fwd)
+  → TURN down `(q_b,0,0,q_turn,R)` → walk back NON-destructively reconstructing `copy_u(M)` (master fives
+  crossed as `5`s, gap, temp) → land on the pivot in `q_ret`. Mirror of `lemma_unmark`'s S7–S12 over `5`s.
+  Config UNCHANGED; only the state advances `q_home → q_ret` (= `lemma_unmark`'s home `q_uh`). 6 fresh
+  walk-back quints (`q_turn`/`q_turng`/`q_ret`). Commit `…mark_terminate`.
+- **(item 4) `lemma_copy_refresh` — DONE.** The capstone: `copy_u(0) → dec_u(M, m^(g−M)·R(M))` as ONE
+  deterministic `tm_run`, composing `lemma_copy_loop ∘ lemma_mark_terminate ∘ lemma_unmark`. The three
+  phases SHARE the forward quints (loop ↔ terminate) and chain `q_home → q_ret → q_urt`. `copy_refresh_fuel
+  = full_copy_fuel + 2·(2g+2M+2)`. ~73 params (24 states + 46 quint indices) — the parametric machine the
+  16-block sequencing will instantiate. Commit `…copy_refresh`.
+
+**Trigger-instability note:** the base-hash changes from each new/edited function destabilized a few
+PRE-EXISTING asserts elsewhere in the module (`lemma_unmark` S7 turn `0*m==0`; `lemma_seek_right_blanks`
+`pow_nat(m,1)==m`/`m*1==m`). Each fixed by spelling out the multiplication-by-0/1 step. These are the
+"~2% false-miss" SST churn; sound, but worth knowing the next edit may re-poke a different assert.
+
+### REMAINING (the edge cases + the higher-level wiring)
+
+2. **`g=M` no-gap UNMARK** (`k=1` refresh) — still TODO. Mirror `lemma_unmark`/`lemma_mark_terminate`
+   dropping the gap legs (cf. `lemma_mark_gj1` dropping S4/S8). Then a `g==M` dispatch in a `copy_refresh`
+   variant.
+3. **small-M whole-copy** (`M∈{1,2}`) — still TODO (`lemma_copy_loop` requires `M≥3`).
+5. **16-block sequencing** + `psc_act` window + R-cmp/R-S/R-C/R-MC/B-W → discharge `ceer_realizes`. This is
+   where a CONCRETE `tm` is built (distinct quints at distinct indices, `tm_wf` proven) and fed to
+   `lemma_copy_refresh`; the parametric `q_b`/turn determinism (5/1/0 distinct) is already discharged by
+   construction there.
