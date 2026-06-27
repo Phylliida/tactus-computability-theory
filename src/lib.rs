@@ -325,3 +325,8 @@
 // lemma_block_loop_block1: (s)^temp emitted onto the output, counter consumed, master shifted m^temp.
 // See tm_block_loop.rs / docs/gap2-input-loader-plan.md §5 (STEP 2 model B).
 #[cfg(verus_keep_ghost)] pub mod tm_block_loop;
+
+// GAP-2 G2-F Route (i) brick R-relnum-gen (STEP 2, model B): copy-refresh foundation. The blank-gap "seek"
+// walks (left to the master, right back to the pivot) that bracket the marked unary copy rebuilding a fresh
+// temp counter from the preserved master. See tm_copy_refresh.rs / docs/gap2-input-loader-plan.md §5.
+#[cfg(verus_keep_ghost)] pub mod tm_copy_refresh;
