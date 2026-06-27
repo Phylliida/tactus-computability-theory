@@ -36,7 +36,9 @@ use crate::tm_copy_refresh::{copy_u, master_at, lemma_copy_u_master, lemma_pow_n
     lemma_run_walk_left, lemma_seek_left_blanks, lemma_run_walk_right, lemma_seek_right_blanks,
     lemma_master_at_step, lemma_mark_fwd, lemma_pile_sym_div_mod, lemma_mark,
     copy_loop_fuel, lemma_copy_loop_general, lemma_mark_j1, lemma_mark_j0, lemma_deposit,
-    lemma_copy_u_start, lemma_copy_iter_j0, lemma_copy_prefix, full_copy_fuel};
+    lemma_copy_u_start, lemma_copy_iter_j0, lemma_copy_prefix, full_copy_fuel,
+    lemma_copy_loop, lemma_mark_terminate, lemma_unmark, copy_refresh_fuel};
+use crate::gap2_tail_phases::{lemma_mark_terminate_tail_safe, lemma_unmark_tail_safe};
 use crate::gap2_tail_lift::{tail_safe, tail_end_h, lemma_step_tail_safe, lemma_tail_chain};
 use crate::gap2_tail_walks::{lemma_run_walk_left_tail_safe, lemma_run_walk_right_tail_safe,
     lemma_seek_left_tail_safe, lemma_seek_right_tail_safe};
@@ -1574,6 +1576,203 @@ pub proof fn lemma_copy_loop_tail_safe(
     // ── chain: prefix ∘ middle. ──
     assert(full_copy_fuel(big_m, g) == (4 * g + 12) as nat + copy_loop_fuel(2, big_m, g));
     lemma_tail_chain(tm, c0, (4 * g + 12) as nat, copy_loop_fuel(2, big_m, g), h0, h0, h0);
+}
+
+/// **`copy_refresh` is tail-safe** for its `copy_refresh_fuel(M, g)` steps (the full marked-copy +
+/// terminate + unmark) when the tail enters at `H_0 = g+M+1`, returning to `H_0` (every phase is
+/// net-disp-0). The capstone of GAP-2 phase 1: chain [`lemma_copy_loop_tail_safe`] (or
+/// [`lemma_copy_prefix_tail_safe`] for `M == 2`) ∘ [`lemma_mark_terminate_tail_safe`] ∘
+/// [`lemma_unmark_tail_safe`], all at `H_0`. Mirror of [`crate::tm_copy_refresh::lemma_copy_refresh`].
+pub proof fn lemma_copy_refresh_tail_safe(
+    tm: Tm, big_m: nat, g: nat, out: nat,
+    q_dh0: nat, q_dw0: nat, q_bk0: nat, q_t0: nat, q_a0: nat, q_rf0: nat, q_rg0: nat,
+    q_home: nat, q_t: nat, q_a: nat, q_b: nat, q_rf: nat, q_rg: nat, q_rt: nat, q_dw: nat,
+    q_turn: nat, q_turng: nat, q_ret: nat,
+    q_ut: nat, q_ua: nat, q_uf: nat, q_ur: nat, q_urg: nat, q_urt: nat,
+    i_dpeel0: int, i_dtemp0: int, i_dins0: int, i_dwb0: int,
+    i_peel0: int, i_temp0: int, i_t2g0: int, i_gap0: int, i_mark0: int, i_rf2g0: int, i_rgap0: int,
+    i_rg2t0: int,
+    i_peel: int, i_temp: int, i_t2g: int, i_gap: int, i_a2b: int, i_fives: int, i_mark: int,
+    i_rfives: int, i_rf2g: int, i_rgap: int, i_rg2t: int, i_rtemp: int,
+    i_dpeel: int, i_dtemp: int, i_dins: int, i_dwb: int,
+    i_turn: int, i_master: int, i_tm2g: int, i_trgap: int, i_tg2t: int, i_trtemp: int,
+    i_upeel: int, i_utemp: int, i_ut2g: int, i_ugap: int, i_uu1: int, i_uurest: int,
+    i_uturn: int, i_umaster: int, i_um2g: int, i_urgap: int, i_ug2t: int, i_urtemp: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        2 <= big_m,
+        g >= big_m + 2,
+        0 <= i_dpeel0 < tm.quints.len(),
+        0 <= i_dtemp0 < tm.quints.len(),
+        0 <= i_dins0 < tm.quints.len(),
+        0 <= i_dwb0 < tm.quints.len(),
+        0 <= i_peel0 < tm.quints.len(),
+        0 <= i_temp0 < tm.quints.len(),
+        0 <= i_t2g0 < tm.quints.len(),
+        0 <= i_gap0 < tm.quints.len(),
+        0 <= i_mark0 < tm.quints.len(),
+        0 <= i_rf2g0 < tm.quints.len(),
+        0 <= i_rgap0 < tm.quints.len(),
+        0 <= i_rg2t0 < tm.quints.len(),
+        0 <= i_peel < tm.quints.len(),
+        0 <= i_temp < tm.quints.len(),
+        0 <= i_t2g < tm.quints.len(),
+        0 <= i_gap < tm.quints.len(),
+        0 <= i_a2b < tm.quints.len(),
+        0 <= i_fives < tm.quints.len(),
+        0 <= i_mark < tm.quints.len(),
+        0 <= i_rfives < tm.quints.len(),
+        0 <= i_rf2g < tm.quints.len(),
+        0 <= i_rgap < tm.quints.len(),
+        0 <= i_rg2t < tm.quints.len(),
+        0 <= i_rtemp < tm.quints.len(),
+        0 <= i_dpeel < tm.quints.len(),
+        0 <= i_dtemp < tm.quints.len(),
+        0 <= i_dins < tm.quints.len(),
+        0 <= i_dwb < tm.quints.len(),
+        0 <= i_turn < tm.quints.len(),
+        0 <= i_master < tm.quints.len(),
+        0 <= i_tm2g < tm.quints.len(),
+        0 <= i_trgap < tm.quints.len(),
+        0 <= i_tg2t < tm.quints.len(),
+        0 <= i_trtemp < tm.quints.len(),
+        0 <= i_upeel < tm.quints.len(),
+        0 <= i_utemp < tm.quints.len(),
+        0 <= i_ut2g < tm.quints.len(),
+        0 <= i_ugap < tm.quints.len(),
+        0 <= i_uu1 < tm.quints.len(),
+        0 <= i_uurest < tm.quints.len(),
+        0 <= i_uturn < tm.quints.len(),
+        0 <= i_umaster < tm.quints.len(),
+        0 <= i_um2g < tm.quints.len(),
+        0 <= i_urgap < tm.quints.len(),
+        0 <= i_ug2t < tm.quints.len(),
+        0 <= i_urtemp < tm.quints.len(),
+        tm.quints[i_dpeel0] == mk_quint(q_dh0, 0, 0, q_dw0, Dir::L),
+        tm.quints[i_dtemp0] == mk_quint(q_dw0, 1, 1, q_dw0, Dir::L),
+        tm.quints[i_dins0] == mk_quint(q_dw0, 0, 1, q_bk0, Dir::R),
+        tm.quints[i_dwb0] == mk_quint(q_bk0, 1, 1, q_bk0, Dir::R),
+        tm.quints[i_peel0] == mk_quint(q_bk0, 0, 0, q_t0, Dir::L),
+        tm.quints[i_temp0] == mk_quint(q_t0, 1, 1, q_t0, Dir::L),
+        tm.quints[i_t2g0] == mk_quint(q_t0, 0, 0, q_a0, Dir::L),
+        tm.quints[i_gap0] == mk_quint(q_a0, 0, 0, q_a0, Dir::L),
+        tm.quints[i_mark0] == mk_quint(q_a0, 1, 5, q_rf0, Dir::R),
+        tm.quints[i_rf2g0] == mk_quint(q_rf0, 0, 0, q_rg0, Dir::R),
+        tm.quints[i_rgap0] == mk_quint(q_rg0, 0, 0, q_rg0, Dir::R),
+        tm.quints[i_rg2t0] == mk_quint(q_rg0, 1, 1, q_home, Dir::R),
+        tm.quints[i_peel] == mk_quint(q_home, 0, 0, q_t, Dir::L),
+        tm.quints[i_temp] == mk_quint(q_t, 1, 1, q_t, Dir::L),
+        tm.quints[i_t2g] == mk_quint(q_t, 0, 0, q_a, Dir::L),
+        tm.quints[i_gap] == mk_quint(q_a, 0, 0, q_a, Dir::L),
+        tm.quints[i_a2b] == mk_quint(q_a, 5, 5, q_b, Dir::L),
+        tm.quints[i_fives] == mk_quint(q_b, 5, 5, q_b, Dir::L),
+        tm.quints[i_mark] == mk_quint(q_b, 1, 5, q_rf, Dir::R),
+        tm.quints[i_rfives] == mk_quint(q_rf, 5, 5, q_rf, Dir::R),
+        tm.quints[i_rf2g] == mk_quint(q_rf, 0, 0, q_rg, Dir::R),
+        tm.quints[i_rgap] == mk_quint(q_rg, 0, 0, q_rg, Dir::R),
+        tm.quints[i_rg2t] == mk_quint(q_rg, 1, 1, q_rt, Dir::R),
+        tm.quints[i_rtemp] == mk_quint(q_rt, 1, 1, q_rt, Dir::R),
+        tm.quints[i_dpeel] == mk_quint(q_rt, 0, 0, q_dw, Dir::L),
+        tm.quints[i_dtemp] == mk_quint(q_dw, 1, 1, q_dw, Dir::L),
+        tm.quints[i_dins] == mk_quint(q_dw, 0, 1, q_home, Dir::R),
+        tm.quints[i_dwb] == mk_quint(q_home, 1, 1, q_home, Dir::R),
+        tm.quints[i_turn] == mk_quint(q_b, 0, 0, q_turn, Dir::R),
+        tm.quints[i_master] == mk_quint(q_turn, 5, 5, q_turn, Dir::R),
+        tm.quints[i_tm2g] == mk_quint(q_turn, 0, 0, q_turng, Dir::R),
+        tm.quints[i_trgap] == mk_quint(q_turng, 0, 0, q_turng, Dir::R),
+        tm.quints[i_tg2t] == mk_quint(q_turng, 1, 1, q_ret, Dir::R),
+        tm.quints[i_trtemp] == mk_quint(q_ret, 1, 1, q_ret, Dir::R),
+        tm.quints[i_upeel] == mk_quint(q_ret, 0, 0, q_ut, Dir::L),
+        tm.quints[i_utemp] == mk_quint(q_ut, 1, 1, q_ut, Dir::L),
+        tm.quints[i_ut2g] == mk_quint(q_ut, 0, 0, q_ua, Dir::L),
+        tm.quints[i_ugap] == mk_quint(q_ua, 0, 0, q_ua, Dir::L),
+        tm.quints[i_uu1] == mk_quint(q_ua, 5, 1, q_uf, Dir::L),
+        tm.quints[i_uurest] == mk_quint(q_uf, 5, 1, q_uf, Dir::L),
+        tm.quints[i_uturn] == mk_quint(q_uf, 0, 0, q_ur, Dir::R),
+        tm.quints[i_umaster] == mk_quint(q_ur, 1, 1, q_ur, Dir::R),
+        tm.quints[i_um2g] == mk_quint(q_ur, 0, 0, q_urg, Dir::R),
+        tm.quints[i_urgap] == mk_quint(q_urg, 0, 0, q_urg, Dir::R),
+        tm.quints[i_ug2t] == mk_quint(q_urg, 1, 1, q_urt, Dir::R),
+        tm.quints[i_urtemp] == mk_quint(q_urt, 1, 1, q_urt, Dir::R),
+    ensures
+        tail_safe(tm, TmConfig { u: copy_u(0, big_m, g, tm.m), v: out, a: 0, q: q_dh0 },
+            copy_refresh_fuel(big_m, g), (g + big_m + 1) as nat),
+        tail_end_h(tm, TmConfig { u: copy_u(0, big_m, g, tm.m), v: out, a: 0, q: q_dh0 },
+            copy_refresh_fuel(big_m, g), (g + big_m + 1) as nat) == (g + big_m + 1) as nat,
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    let h0 = (g + big_m + 1) as nat;
+    let bounce = (2 * g + 2 * big_m + 2) as nat;
+    let c0 = TmConfig { u: copy_u(0, big_m, g, m), v: out, a: 0, q: q_dh0 };
+    let c_loop = TmConfig { u: copy_u(big_m, big_m, g, m), v: out, a: 0, q: q_home };
+
+    // ── PHASE 1 — LOOP: copy_u(0) → copy_u(M), full_copy_fuel steps. offset H_0 → H_0. ──
+    if big_m == 2 {
+        lemma_copy_prefix(tm, big_m, g, out,
+            q_dh0, q_dw0, q_bk0, q_t0, q_a0, q_rf0, q_rg0,
+            q_home, q_t, q_a, q_b, q_rf, q_rg, q_rt, q_dw,
+            i_dpeel0, i_dtemp0, i_dins0, i_dwb0,
+            i_peel0, i_temp0, i_t2g0, i_gap0, i_mark0, i_rf2g0, i_rgap0, i_rg2t0,
+            i_peel, i_temp, i_t2g, i_gap, i_a2b, i_fives, i_mark, i_rfives, i_rf2g, i_rgap, i_rg2t,
+            i_rtemp, i_dpeel, i_dtemp, i_dins, i_dwb);
+        assert(copy_u(2, big_m, g, m) == copy_u(big_m, big_m, g, m));
+        assert(copy_loop_fuel(2, big_m, g) == 0);
+        assert(full_copy_fuel(big_m, g) == (4 * g + 12) as nat);
+        assert(tm_run(tm, c0, full_copy_fuel(big_m, g)) == c_loop);
+        lemma_copy_prefix_tail_safe(tm, big_m, g, out,
+            q_dh0, q_dw0, q_bk0, q_t0, q_a0, q_rf0, q_rg0,
+            q_home, q_t, q_a, q_b, q_rf, q_rg, q_rt, q_dw,
+            i_dpeel0, i_dtemp0, i_dins0, i_dwb0,
+            i_peel0, i_temp0, i_t2g0, i_gap0, i_mark0, i_rf2g0, i_rgap0, i_rg2t0,
+            i_peel, i_temp, i_t2g, i_gap, i_a2b, i_fives, i_mark, i_rfives, i_rf2g, i_rgap, i_rg2t,
+            i_rtemp, i_dpeel, i_dtemp, i_dins, i_dwb);
+        // copy_prefix_tail_safe gives tail_safe(c0, 4g+12, h0); full_copy_fuel == 4g+12.
+    } else {
+        lemma_copy_loop(tm, big_m, g, out,
+            q_dh0, q_dw0, q_bk0, q_t0, q_a0, q_rf0, q_rg0,
+            q_home, q_t, q_a, q_b, q_rf, q_rg, q_rt, q_dw,
+            i_dpeel0, i_dtemp0, i_dins0, i_dwb0,
+            i_peel0, i_temp0, i_t2g0, i_gap0, i_mark0, i_rf2g0, i_rgap0, i_rg2t0,
+            i_peel, i_temp, i_t2g, i_gap, i_a2b, i_fives, i_mark, i_rfives, i_rf2g, i_rgap, i_rg2t,
+            i_rtemp, i_dpeel, i_dtemp, i_dins, i_dwb);
+        assert(tm_run(tm, c0, full_copy_fuel(big_m, g)) == c_loop);
+        lemma_copy_loop_tail_safe(tm, big_m, g, out,
+            q_dh0, q_dw0, q_bk0, q_t0, q_a0, q_rf0, q_rg0,
+            q_home, q_t, q_a, q_b, q_rf, q_rg, q_rt, q_dw,
+            i_dpeel0, i_dtemp0, i_dins0, i_dwb0,
+            i_peel0, i_temp0, i_t2g0, i_gap0, i_mark0, i_rf2g0, i_rgap0, i_rg2t0,
+            i_peel, i_temp, i_t2g, i_gap, i_a2b, i_fives, i_mark, i_rfives, i_rf2g, i_rgap, i_rg2t,
+            i_rtemp, i_dpeel, i_dtemp, i_dins, i_dwb);
+    }
+
+    // ── PHASE 2 — TERMINATE: copy_u(M)@q_home → copy_u(M)@q_ret, bounce steps. offset H_0 → H_0. ──
+    lemma_mark_terminate(tm, big_m, g, out,
+        q_home, q_t, q_a, q_b, q_turn, q_turng, q_ret,
+        i_peel, i_temp, i_t2g, i_gap, i_a2b, i_fives,
+        i_turn, i_master, i_tm2g, i_trgap, i_tg2t, i_trtemp);
+    let c_term = TmConfig { u: copy_u(big_m, big_m, g, m), v: out, a: 0, q: q_ret };
+    assert(tm_run(tm, c_loop, bounce) == c_term);
+    lemma_mark_terminate_tail_safe(tm, big_m, g, out,
+        q_home, q_t, q_a, q_b, q_turn, q_turng, q_ret,
+        i_peel, i_temp, i_t2g, i_gap, i_a2b, i_fives,
+        i_turn, i_master, i_tm2g, i_trgap, i_tg2t, i_trtemp);
+
+    // ── PHASE 3 — UNMARK: copy_u(M)@q_ret → result, bounce steps. offset H_0 → H_0. ──
+    lemma_unmark_tail_safe(tm, big_m, g, out,
+        q_ret, q_ut, q_ua, q_uf, q_ur, q_urg, q_urt,
+        i_upeel, i_utemp, i_ut2g, i_ugap, i_uu1, i_uurest,
+        i_uturn, i_umaster, i_um2g, i_urgap, i_ug2t, i_urtemp);
+
+    // ── chain: LOOP ∘ TERMINATE ∘ UNMARK at H_0. ──
+    lemma_tm_run_split(tm, c0, full_copy_fuel(big_m, g), bounce);
+    let mid = (full_copy_fuel(big_m, g) + bounce) as nat;
+    assert(tm_run(tm, c0, mid) == c_term);
+    lemma_tail_chain(tm, c0, full_copy_fuel(big_m, g), bounce, h0, h0, h0);   // LOOP ∘ TERMINATE
+    lemma_tail_chain(tm, c0, mid, bounce, h0, h0, h0);                        // (·) ∘ UNMARK
+    assert(copy_refresh_fuel(big_m, g) == (mid + bounce) as nat);
 }
 
 } // verus!
