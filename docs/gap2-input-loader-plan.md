@@ -1241,3 +1241,61 @@ encoding subtlety to settle before sequencing:
 power-block + `block1_m1`/`block3_m1` + triple singletons — all mechanical via the recipe + opaque rule) →
 16-block sequencing chaining `uinv_digits(b) ++ u_digits(a)` → master-mgmt (`load_master`, `q_clean`
 wipe-and-load per the locked global layout) → `psc_act` window + R-cmp/R-S/R-C/R-MC/B-W → `ceer_realizes`.
+
+## SESSION UPDATE 2026-06-27 (N+12) — ALL FOUR EXIT-PARAMETRIC WINDOW VARIANTS DONE (crate 1211 → 1233/0)
+
+**✅ The N+11 splice gate is CLOSED and all window variants are built & verified.** Every block type in
+`fam_digits` now has a verified exit-parametric phase lemma over the assemble5 scaffold. Full crate green
+**1233/0**, all additive, no `assume`/`admit`/`external_body`.
+
+**What got BUILT this session (4 commits):**
+1. **`pbb1x` (gap2_emit_power.rs 16/0)** — exit-parametric single power-block. `pbb1x_gen` (opaque)
+   special-cases the loop-exit slot `(off 24, sym 0)` to target an external `qexit`; `lemma_pbb1x_phase`
+   (M≥2) ends in `q: qexit`. PLUS `lemma_pbb1x_m1_phase` (M=1) over the **SAME** window.
+2. **`seret1x` (gap2_emit_window.rs)** — exit-parametric single singleton. `seret1x_gen` special-cases the
+   q_eret landing `(off 2, sym 0)` to target `qexit`; the 4 walk-back self-loops live AT `qexit` (the next
+   window's inert off-0 self-loops, which coincide byte-for-byte) and are supplied as `jl1..jl4`.
+3. **`pbb3x` + `pbb3x_m1` (NEW gap2_emit_power3.rs 11/0)** — exit-parametric TRIPLE power-block (34 states,
+   `pbb3_act` off 0–23 == `pbb1_act` copy_refresh, off 24–33 the triple-emit block_loop via q_e1=27/q_e2=28).
+4. **`seret3x` (gap2_emit_window.rs 11/0)** — exit-parametric triple singleton (6 states, emit `[s0,s1,s2]`).
+
+**✅ KEY ARCHITECTURE FINDING #1 — ONE WINDOW SERVES BOTH M=1 AND M≥2.** The N+10 plan listed
+`block1_m1`/`block3_m1` as separate "window variants"; in fact **every M=1 quint
+(`lemma_power_block_step_block*_m1`) maps to a `pbb*_act` slot with byte-identical content** — the m1 copy
+lands directly on the pivot, reusing off 0–10/15–23 and skipping off 11–14's home-cycle; the shared
+`(q_urt,1,1,q_urt,R)` self-loop (i_one_r) is off 23 sym 1. So the m1 dispatch is a **second phase lemma over
+the same `pbb*x_gen` window** (`lemma_pbb*x_m1_phase` locates the 51-quint subset), NOT a separate window.
+The sequencer dispatches the symbolic master `M`: `M == 1 → m1 lemma`, `else → general (M≥2) lemma`.
+
+**✅ KEY ARCHITECTURE FINDING #2 — NO OFF-BY-ONE, NO M=0 CASE.** `u_digits(j)` / `uinv_digits(b)` use
+exponent `i = j+1` (see `gap2_fam_digits.rs:82,96`); the stored counter (and hence the loaded master) is
+`a+1` / `b+1` = `i` (N+10's "store a+1" choice). So a power-block emits `(blk)^M = (blk)^(a+1) = (blk)^i`,
+**exactly matching `fam_digits`** — the `a+1` store is precisely what makes `M = i`. Since `i ≥ 1` always,
+**the master is never 0**, so the per-power-block dispatch is only `M=1` vs `M≥2` — no M=0 emit-nothing case.
+
+**✅ KEY ARCHITECTURE FINDING #3 — SINGLETON SPLICE = TWO-WINDOW (Danielle co-designed, port 8051).** The
+power-block `q_exit` is a pure label → set `qexit = entry5(pc+1)`, clean. The singleton's end-state
+`q_home` is a WALK-BACK state (loops `(q_home, 1..4, q_home, L)`, terminates ON the pivot without firing
+`(q_home, 0)`). The walk-back self-loop is byte-identical to ANY next block's inert off-0 self-loop, so set
+`q_home := qexit = entry5(pc+1)`: the 4 walk-back quints COINCIDE with the next window's off-0 self-loops
+(supplied as `jl1..jl4`, located from window pc+1). **The FINAL singleton** (last block of the whole chain,
+`u_digits(a)`'s `[2]`, targets `q_cmp`) needs `q_cmp` made WALK-BACK-COMPATIBLE — carry the same 4
+`(q_cmp, 1..4, q_cmp, L)` self-loops. (Note for the sequencer/R-cmp build.)
+
+**THE 16 BLOCKS (per `fam_digits = uinv_digits(b) ++ u_digits(a)`, low-first):**
+```
+  uinv_digits(b), i=b+1:  [4]seret1 · (4,1,2)ⁱpbb3 · [3]seret1 · (4,3,2)ⁱpbb3 · [2]seret1 · (1)ⁱpbb1 · [4,1,2]seret3 · (3)ⁱpbb1
+  u_digits(a),    i=a+1:  (1)ⁱpbb1 · [4,3,2]seret3 · (3)ⁱpbb1 · [4]seret1 · (4,1,2)ⁱpbb3 · [1]seret1 · (4,3,2)ⁱpbb3 · [2]seret1
+```
+Counts: pbb1×4, pbb3×4, seret1×6, seret3×2. Two phases (master = b+1 then a+1) with WIPE-AND-LOAD between.
+
+**NEXT (the sequencer — the hard crux, multi-session):**
+1. **Within-phase 8-block chain** — chain 8 phase lemmas via `lemma_tm_run_split`, `Config_term(k) ≡
+   Config_init(k+1)` by `qexit_k = entry5(pc_{k+1})`. Per-power-block `if M==1 {m1} else {general}` dispatch.
+   Singleton→next splice needs the next window's off-0 self-loops located for `jl1..jl4`.
+2. **Dispatch generator** — concrete `seq_gen(a,b,idx)` mapping each window pc to its block's gen + exponent
+   symbols + `qexit = entry5(pc+1)`; satisfies the per-window hypotheses the chain consumes.
+3. **Master-mgmt** — `load_master` (`copy_u(stored counter → master)`), `q_clean` wipe; WIPE-AND-LOAD splice.
+4. **fam_digits assembly** — produced output `== fam_digits(a,b)` (compose `lemma_dds_fam_relator` /
+   `lemma_relnum_is_fam_digits`); `dpack` value is `relnum(a,b)`.
+5. **Concrete `psc_act` tm/tm_wf** + R-cmp/R-S/R-C/R-MC/B-W → discharge `ceer_realizes`.
