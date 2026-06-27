@@ -20,6 +20,9 @@ use crate::tm_dwalk_prefix::{drev, lemma_drev_len, lemma_drev_digit_bound, lemma
 use crate::tm_block_iter::{lemma_surge, lemma_return_walk, lemma_surge_emit_return_block1,
     lemma_block_iter_block1};
 use crate::tm_dec_master::lemma_dec_temp;
+use crate::tm_block_loop::{loop_fuel_b1, lemma_guard_continue, lemma_guard_exit,
+    lemma_block_loop_block1};
+use crate::tm_block_loop::{lemma_dec_u_step, lemma_dec_u_zero};
 use crate::tm_shuttle::lemma_emit_block1_frontier;
 use crate::tm_run_lemmas::lemma_tm_run_split;
 use crate::tm_two_counter::{repunit_m, lemma_repunit_zero};
@@ -611,6 +614,201 @@ pub proof fn lemma_block_iter_block1_tail_safe(
     // ── chain. ──
     lemma_tail_chain(tm, c0, (2 * od.len() + 4) as nat, (2 * temp + 2) as nat, h, h, h);
     assert((2 * od.len() + 4 + (2 * temp + 2)) as nat == (2 * od.len() + 2 * temp + 6) as nat);
+}
+
+/// **The continue-guard is tail-safe** (2 steps, peek-L · cont-R), net-disp-0 for `h ≥ 1`. Mirror of
+/// [`crate::tm_block_loop::lemma_guard_continue`].
+pub proof fn lemma_guard_continue_tail_safe(
+    tm: Tm, temp: nat, w: nat, out: nat, q_loop: nat, q_guard: nat, q_iter: nat,
+    i_peek: int, i_cont: int, h: nat,
+)
+    requires
+        tm_wf(tm),
+        temp >= 1,
+        0 <= i_peek < tm.quints.len(),
+        0 <= i_cont < tm.quints.len(),
+        tm.quints[i_peek] == mk_quint(q_loop, 0, 0, q_guard, Dir::L),
+        tm.quints[i_cont] == mk_quint(q_guard, 1, 1, q_iter, Dir::R),
+        h >= 1,
+    ensures
+        tail_safe(tm, TmConfig { u: dec_u(temp, w, tm.m), v: out, a: 0, q: q_loop }, 2, h),
+        tail_end_h(tm, TmConfig { u: dec_u(temp, w, tm.m), v: out, a: 0, q: q_loop }, 2, h) == h,
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    lemma_dec_u_step(temp, w, m);
+    let c0 = TmConfig { u: dec_u(temp, w, m), v: out, a: 0, q: q_loop };
+    assert(quint_matches(tm.quints[i_peek], c0));
+    lemma_tm_step_picks(tm, c0, i_peek);
+    let c1 = apply_quint(tm.quints[i_peek], c0, m);
+    assert(tm_step(tm, c0) == Some(c1));
+    assert(c1.a == 1 && c1.q == q_guard);
+    assert(tm_run(tm, c1, 0) == c1);
+    assert(tm_run(tm, c0, 1) == c1);
+    lemma_step_tail_safe(tm, c0, i_peek, h);   // L, end h-1
+    assert(quint_matches(tm.quints[i_cont], c1));
+    lemma_step_tail_safe(tm, c1, i_cont, (h - 1) as nat);   // R, end h
+    assert(((h - 1) + 1) as nat == h);
+    lemma_tail_chain(tm, c0, 1, 1, h, (h - 1) as nat, h);
+}
+
+/// **The exit-guard is tail-safe** (2 steps, peek-L · exit-R), net-disp-0 for `h ≥ 1`. Mirror of
+/// [`crate::tm_block_loop::lemma_guard_exit`].
+pub proof fn lemma_guard_exit_tail_safe(
+    tm: Tm, w: nat, out: nat, q_loop: nat, q_guard: nat, q_exit: nat,
+    i_peek: int, i_exit: int, h: nat,
+)
+    requires
+        tm_wf(tm),
+        w % tm.m == 0,
+        0 <= i_peek < tm.quints.len(),
+        0 <= i_exit < tm.quints.len(),
+        tm.quints[i_peek] == mk_quint(q_loop, 0, 0, q_guard, Dir::L),
+        tm.quints[i_exit] == mk_quint(q_guard, 0, 0, q_exit, Dir::R),
+        h >= 1,
+    ensures
+        tail_safe(tm, TmConfig { u: dec_u(0, w, tm.m), v: out, a: 0, q: q_loop }, 2, h),
+        tail_end_h(tm, TmConfig { u: dec_u(0, w, tm.m), v: out, a: 0, q: q_loop }, 2, h) == h,
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    lemma_dec_u_zero(w, m);
+    let c0 = TmConfig { u: w, v: out, a: 0, q: q_loop };
+    assert(quint_matches(tm.quints[i_peek], c0));
+    lemma_tm_step_picks(tm, c0, i_peek);
+    let c1 = apply_quint(tm.quints[i_peek], c0, m);
+    assert(tm_step(tm, c0) == Some(c1));
+    assert(c1.a == 0 && c1.q == q_guard);   // w % m == 0
+    assert(tm_run(tm, c1, 0) == c1);
+    assert(tm_run(tm, c0, 1) == c1);
+    lemma_step_tail_safe(tm, c0, i_peek, h);   // L, end h-1
+    assert(quint_matches(tm.quints[i_exit], c1));
+    lemma_step_tail_safe(tm, c1, i_exit, (h - 1) as nat);   // R, end h
+    assert(((h - 1) + 1) as nat == h);
+    lemma_tail_chain(tm, c0, 1, 1, h, (h - 1) as nat, h);
+}
+
+/// **`block_loop_block1` is tail-safe** for its `loop_fuel_b1(od.len(), temp)` steps when the tail enters
+/// at `h ≥ temp + 1`, returning to `h` (net-disp-0 every iteration). Mirror of
+/// [`crate::tm_block_loop::lemma_block_loop_block1`]: induct on `temp`, chaining the continue-guard, one
+/// [`lemma_block_iter_block1_tail_safe`], and the recursion (or the exit-guard at `temp == 0`). Never tight
+/// — the deepest reach is over the temp counter, far below the master+tail.
+pub proof fn lemma_block_loop_block1_tail_safe(
+    tm: Tm, temp: nat, w: nat, od: Seq<nat>, s: nat,
+    q_loop: nat, q_guard: nat, q_iter: nat, q_surge: nat, q_eret: nat, q_home: nat,
+    q_dwalk: nat, q_disc: nat, q_exit: nat,
+    i_peek: int, i_cont: int, i_exit: int,
+    i_pivot_r: int, ir1: int, ir2: int, ir3: int, ir4: int,
+    i_emit: int, i_off_l: int, il1: int, il2: int, il3: int, il4: int,
+    i_pivot: int, i_one_l: int, i_erase: int, i_disc: int, i_one_r: int, h: nat,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 4,
+        w % tm.m == 0,
+        1 <= s <= 4,
+        forall|k: int| 0 <= k < od.len() ==> 1 <= #[trigger] od[k] <= 4,
+        0 <= i_peek < tm.quints.len(),
+        0 <= i_cont < tm.quints.len(),
+        0 <= i_exit < tm.quints.len(),
+        0 <= i_pivot_r < tm.quints.len(),
+        0 <= ir1 < tm.quints.len(),
+        0 <= ir2 < tm.quints.len(),
+        0 <= ir3 < tm.quints.len(),
+        0 <= ir4 < tm.quints.len(),
+        0 <= i_emit < tm.quints.len(),
+        0 <= i_off_l < tm.quints.len(),
+        0 <= il1 < tm.quints.len(),
+        0 <= il2 < tm.quints.len(),
+        0 <= il3 < tm.quints.len(),
+        0 <= il4 < tm.quints.len(),
+        0 <= i_pivot < tm.quints.len(),
+        0 <= i_one_l < tm.quints.len(),
+        0 <= i_erase < tm.quints.len(),
+        0 <= i_disc < tm.quints.len(),
+        0 <= i_one_r < tm.quints.len(),
+        tm.quints[i_peek] == mk_quint(q_loop, 0, 0, q_guard, Dir::L),
+        tm.quints[i_cont] == mk_quint(q_guard, 1, 1, q_iter, Dir::R),
+        tm.quints[i_exit] == mk_quint(q_guard, 0, 0, q_exit, Dir::R),
+        tm.quints[i_pivot_r] == mk_quint(q_iter, 0, 0, q_surge, Dir::R),
+        tm.quints[ir1] == mk_quint(q_surge, 1, 1, q_surge, Dir::R),
+        tm.quints[ir2] == mk_quint(q_surge, 2, 2, q_surge, Dir::R),
+        tm.quints[ir3] == mk_quint(q_surge, 3, 3, q_surge, Dir::R),
+        tm.quints[ir4] == mk_quint(q_surge, 4, 4, q_surge, Dir::R),
+        tm.quints[i_emit] == mk_quint(q_surge, 0, s, q_eret, Dir::R),
+        tm.quints[i_off_l] == mk_quint(q_eret, 0, 0, q_home, Dir::L),
+        tm.quints[il1] == mk_quint(q_home, 1, 1, q_home, Dir::L),
+        tm.quints[il2] == mk_quint(q_home, 2, 2, q_home, Dir::L),
+        tm.quints[il3] == mk_quint(q_home, 3, 3, q_home, Dir::L),
+        tm.quints[il4] == mk_quint(q_home, 4, 4, q_home, Dir::L),
+        tm.quints[i_pivot] == mk_quint(q_home, 0, 0, q_dwalk, Dir::L),
+        tm.quints[i_one_l] == mk_quint(q_dwalk, 1, 1, q_dwalk, Dir::L),
+        tm.quints[i_erase] == mk_quint(q_dwalk, 0, 0, q_disc, Dir::R),
+        tm.quints[i_disc] == mk_quint(q_disc, 1, 0, q_loop, Dir::R),
+        tm.quints[i_one_r] == mk_quint(q_loop, 1, 1, q_loop, Dir::R),
+        h >= temp + 1,
+    ensures
+        tail_safe(tm, TmConfig { u: dec_u(temp, w, tm.m), v: dpack(od, tm.m), a: 0, q: q_loop },
+            loop_fuel_b1(od.len(), temp), h),
+        tail_end_h(tm, TmConfig { u: dec_u(temp, w, tm.m), v: dpack(od, tm.m), a: 0, q: q_loop },
+            loop_fuel_b1(od.len(), temp), h) == h,
+    decreases temp,
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    let c0 = TmConfig { u: dec_u(temp, w, m), v: dpack(od, m), a: 0, q: q_loop };
+    if temp == 0 {
+        lemma_guard_exit_tail_safe(tm, w, dpack(od, m), q_loop, q_guard, q_exit, i_peek, i_exit, h);
+        assert(loop_fuel_b1(od.len(), 0) == 2);
+        assert(dec_u(0, w, m) == w) by { lemma_dec_u_zero(w, m); }
+    } else {
+        // ── continue guard (2 steps) → q_iter. ──
+        lemma_guard_continue(tm, temp, w, dpack(od, m), q_loop, q_guard, q_iter, i_peek, i_cont);
+        let c1 = TmConfig { u: dec_u(temp, w, m), v: dpack(od, m), a: 0, q: q_iter };
+        assert(tm_run(tm, c0, 2) == c1);
+        lemma_guard_continue_tail_safe(tm, temp, w, dpack(od, m), q_loop, q_guard, q_iter, i_peek,
+            i_cont, h);
+
+        // ── body: one block_iter (output od ↦ od++[s], temp ↦ temp-1). ──
+        lemma_block_iter_block1(tm, temp, w, od, s,
+            q_iter, q_surge, q_eret, q_home, q_dwalk, q_disc, q_loop,
+            i_pivot_r, ir1, ir2, ir3, ir4, i_emit, i_off_l, il1, il2, il3, il4,
+            i_pivot, i_one_l, i_erase, i_disc, i_one_r);
+        let od2 = od + seq![s];
+        let body = (2 * od.len() + 2 * temp + 6) as nat;
+        let c2 = TmConfig { u: dec_u((temp - 1) as nat, (m * w) as nat, m), v: dpack(od2, m), a: 0,
+            q: q_loop };
+        assert(tm_run(tm, c1, body) == c2);
+        lemma_block_iter_block1_tail_safe(tm, temp, w, od, s,
+            q_iter, q_surge, q_eret, q_home, q_dwalk, q_disc, q_loop,
+            i_pivot_r, ir1, ir2, ir3, ir4, i_emit, i_off_l, il1, il2, il3, il4,
+            i_pivot, i_one_l, i_erase, i_disc, i_one_r, h);
+        // chain guard · body.
+        lemma_tm_run_split(tm, c0, 2, body);
+        assert(tm_run(tm, c0, (2 + body) as nat) == c2);
+        lemma_tail_chain(tm, c0, 2, body, h, h, h);
+
+        // ── recurse on (od2, temp-1, m·w). od2 digits 1..4; (m·w)%m==0. ──
+        assert forall|k: int| 0 <= k < od2.len() implies 1 <= #[trigger] od2[k] <= 4 by {
+            if k < od.len() { assert(od2[k] == od[k]); } else { assert(od2[k] == s); }
+        }
+        assert((m * w) % m == 0) by {
+            assert(m * w == w * m) by(nonlinear_arith);
+            lemma_div_mod_step(w, m, 0);
+        }
+        lemma_block_loop_block1(tm, (temp - 1) as nat, (m * w) as nat, od2, s,
+            q_loop, q_guard, q_iter, q_surge, q_eret, q_home, q_dwalk, q_disc, q_exit,
+            i_peek, i_cont, i_exit, i_pivot_r, ir1, ir2, ir3, ir4,
+            i_emit, i_off_l, il1, il2, il3, il4, i_pivot, i_one_l, i_erase, i_disc, i_one_r);
+        let rec = loop_fuel_b1(od2.len(), (temp - 1) as nat);
+        lemma_block_loop_block1_tail_safe(tm, (temp - 1) as nat, (m * w) as nat, od2, s,
+            q_loop, q_guard, q_iter, q_surge, q_eret, q_home, q_dwalk, q_disc, q_exit,
+            i_peek, i_cont, i_exit, i_pivot_r, ir1, ir2, ir3, ir4,
+            i_emit, i_off_l, il1, il2, il3, il4, i_pivot, i_one_l, i_erase, i_disc, i_one_r, h);
+        // chain (guard·body) · recurse.
+        lemma_tail_chain(tm, c0, (2 + body) as nat, rec, h, h, h);
+        assert(loop_fuel_b1(od.len(), temp) == (2 + body + rec) as nat);
+    }
 }
 
 } // verus!
