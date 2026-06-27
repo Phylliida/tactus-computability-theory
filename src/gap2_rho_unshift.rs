@@ -27,6 +27,8 @@ use crate::ceer_group::ceer_relator;
 use crate::ceer_layer05::{ceer_to_word, ceer_decls_fam};
 use crate::ceer_relator_match::{cb_of, rho, p1_of, p2_of};
 use crate::gap2_relnum::{relnum, fam_relator, rel_slice, lemma_ceer_relator_word_valid};
+use crate::gap2_relnum_digits::{decode_digit_seq, lemma_decode_word_is_dpack};
+use crate::tm_dstring::dpack;
 use verus_group_theory::machine_group::ModMachine;
 
 verus! {
@@ -210,6 +212,20 @@ pub proof fn lemma_relnum_no_rho(e: CEER, mm: ModMachine, m: nat, a: nat, b: nat
     assert(rho(e, mm, m, fam_relator(a, b))
         == apply_hom_pred(relabel_hom(p1, p2, cb), fam_relator(a, b)));
     lemma_decode_rho_unshift(p1, p2, cb, 2, m, fam_relator(a, b));
+}
+
+/// **Consolidated emitter spec target (capstone).** `relnum(e,mm,m,a,b) ==
+/// dpack(decode_digit_seq(0, 2, fam_relator(a,b)), m)` — relnum is exactly the base-`m` number whose
+/// low-first digit block is the reversed letter-digits of the *un-relabeled* collapse relator
+/// `u_a · u_b⁻¹` (digits over `{a→1, t→2, a⁻¹→3, t⁻¹→4}`). Composes [`lemma_relnum_no_rho`] (ρ removed)
+/// with [`lemma_decode_word_is_dpack`] (`decode_word == dpack ∘ decode_digit_seq`). This is the single
+/// fact the R-relnum-gen emitter and the R-cmp compare are proved against.
+pub proof fn lemma_relnum_is_decode_digit_seq(e: CEER, mm: ModMachine, m: nat, a: nat, b: nat)
+    ensures
+        relnum(e, mm, m, a, b) == dpack(decode_digit_seq(0, 2, fam_relator(a, b)), m),
+{
+    lemma_relnum_no_rho(e, mm, m, a, b);                 // relnum == decode_word(0,2,m,fam_relator)
+    lemma_decode_word_is_dpack(0, 2, m, fam_relator(a, b));   // decode_word == dpack(decode_digit_seq)
 }
 
 } // verus!

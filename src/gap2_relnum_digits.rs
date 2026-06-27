@@ -28,7 +28,7 @@ use verus_group_theory::machine_group::ModMachine;
 use crate::ceer::CEER;
 use crate::gap2_relnum::{relnum, fam_relator};
 use crate::ceer_relator_match::{cb_of, rho};
-use crate::tm_dstring::{dpack, lemma_dpack_push, lemma_dpack_empty};
+use crate::tm_dstring::{dpack, pow_nat, lemma_dpack_push, lemma_dpack_empty, lemma_pow_nat_unfold};
 
 verus! {
 
@@ -82,6 +82,41 @@ pub proof fn lemma_decode_word_is_dpack(c_base: nat, n: nat, m: nat, w: Word)
         assert(decode_word(c_base, n, m, w) == decode_word(c_base, n, m, w.drop_last()) * m + d0);
         assert(decode_word(c_base, n, m, w.drop_last()) * m == m * dpack(rest, m)) by(nonlinear_arith)
             requires decode_word(c_base, n, m, w.drop_last()) == dpack(rest, m);
+    }
+}
+
+/// **`decode_word` over concatenation (Horner split).** `decode_word(w1 + w2)` places `w1`'s digits
+/// above `w2`'s: `decode_word(w1+w2) == decode_word(w1)·m^{|w2|} + decode_word(w2)`. The tool for
+/// breaking `fam_relator = u_a · u_b⁻¹` (and each `u_j` into its eight pieces) for the explicit
+/// digit-pattern characterization. Induction on `w2` (peeling its last symbol = the whole word's last).
+pub proof fn lemma_decode_word_concat(c_base: nat, n: nat, m: nat, w1: Word, w2: Word)
+    ensures
+        decode_word(c_base, n, m, w1 + w2)
+            == decode_word(c_base, n, m, w1) * pow_nat(m, w2.len()) + decode_word(c_base, n, m, w2),
+    decreases w2.len()
+{
+    if w2.len() == 0 {
+        assert(w1 + w2 =~= w1);
+        assert(pow_nat(m, 0) == 1);
+        // decode_word(w2) == 0; decode_word(w1)·1 + 0 == decode_word(w1).
+    } else {
+        let pre2 = w2.drop_last();
+        let last2 = w2.last();
+        assert((w1 + w2).drop_last() =~= w1 + pre2);
+        assert((w1 + w2).last() == last2);
+        lemma_decode_word_concat(c_base, n, m, w1, pre2);   // IH
+        let aa = decode_word(c_base, n, m, w1);
+        let pp = pow_nat(m, (w2.len() - 1) as nat);
+        let rr = decode_word(c_base, n, m, pre2);
+        let ll = letter_digit(c_base, n, last2);
+        assert(pre2.len() == w2.len() - 1);
+        lemma_pow_nat_unfold(m, w2.len());                  // pow_nat(m,k) == m·pow_nat(m,k-1)
+        assert(pow_nat(m, w2.len()) == pp * m) by(nonlinear_arith)
+            requires pow_nat(m, w2.len()) == m * pp;
+        // decode_word(w1+w2) == (aa·pp + rr)·m + ll == aa·(pp·m) + (rr·m + ll).
+        assert(decode_word(c_base, n, m, w1 + w2) == (aa * pp + rr) * m + ll);
+        assert((aa * pp + rr) * m + ll == aa * (pp * m) + (rr * m + ll)) by(nonlinear_arith);
+        assert(decode_word(c_base, n, m, w2) == rr * m + ll);
     }
 }
 
