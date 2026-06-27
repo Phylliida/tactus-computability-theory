@@ -382,6 +382,8 @@
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_phase1_v;
 // The M=1 path of copy_refresh tail-safety (mark_terminate_m1 / unmark_m1 / copy_refresh_m1).
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_phase1_m1;
+// v-side (α-block) mirror of the M=1 copy_refresh path.
+#[cfg(verus_keep_ghost)] pub mod gap2_tail_phase1_m1_v;
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_emit;
 // v-side (α-block) mirror of gap2_tail_emit: surge is the tight margin (h>=|od|+...), dec_temp/guards uncond.
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_emit_v;
