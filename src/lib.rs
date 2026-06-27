@@ -362,6 +362,10 @@
 // into the full fam_digits emission. See gap2_emit_seq.rs / §N+12.
 #[cfg(verus_keep_ghost)] pub mod gap2_emit_seq;
 #[cfg(verus_keep_ghost)] pub mod gap2_master_mgmt;
+// GAP-2 G2-F item 4 (input loader / init setup): lay the initial double-repunit u = m^g·D from the dovetail
+// two-counter block D = R(b+1)·0·R(a+1). The SHIFT-UP primitive (no-emit float-up), rightward mirror of
+// gap2_master_mgmt::lemma_wipe_ones_left. See gap2_init.rs / docs/gap2-input-loader-plan.md item 4.
+#[cfg(verus_keep_ghost)] pub mod gap2_init;
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_lift;
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_walks;
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_phases;
