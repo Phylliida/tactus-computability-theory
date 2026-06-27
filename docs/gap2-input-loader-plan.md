@@ -1541,3 +1541,13 @@ length-lemma was the only fix). New modules / additions:
 
 **NEXT = items 4–6 above** (init setup laying `u`, wiring `uinv_phase_tail → q_clean → u_phase`, concrete
 `psc_act` + `fam_digits ⟹ relnum`) → discharge `ceer_realizes`, the last GAP-2 piece.
+
+**Wiring (item 5) is config-match-de-risked (verified by inspection):** `lemma_uinv_phase_tail`'s output
+`add_hi(result, H_0, t) = {u: m^g·R(b+1) + m^(g+b+2)·R(a+1), v: dpack(od++uinv_digits(b)), q: qend}` is
+**EXACTLY** `lemma_q_clean`'s start form `{u: m^g·(R(big_k) + m^(big_k+1)·t), v: v0, q: q_s}` with
+`big_k := big_m = b+1`, `t := R(a+1)`, `v0 := dpack(od++uinv_digits(b))`, `q_s := qend`. And `q_clean`'s
+output `{u: t·m^(g+big_k+1), ...} = R(a+1)·m^(g+b+2) = copy_u(0, a+1, g+b+2)` is **EXACTLY** `lemma_u_phase`'s
+start at `g' = g+b+2`, master `a+1`. So the wiring is a clean 3-lemma `lemma_tm_run_split` composition over
+the 3 window-layouts (8 uinv blocks + q_clean's 9 quints + u_phase's blocks), set `qend := q_s` /
+`q_home := entry5(pc_u)`. q_clean needs `1 ≤ v0 % m ≤ 4` (the output's low digit is a real digit). The only
+genuinely-new construction is **item 4** (lay the initial double-repunit `u` from input `e`, couples to R-P).
