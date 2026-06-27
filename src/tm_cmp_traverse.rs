@@ -21,7 +21,8 @@ use crate::tm::{Tm, TmConfig, tm_wf, tm_step, tm_run, quint_matches, apply_quint
 use crate::tm_gadget::{mk_quint, lemma_tm_step_picks};
 use crate::tm_dstring::{dpack, dpile, pow_nat, lemma_pow_nat_unfold};
 use crate::tm_dwalk_prefix::{drev, lemma_drev_len, lemma_drev_digit_bound, lemma_drev_involution,
-    lemma_dpile_is_dpack_drev};
+    lemma_dpile_is_dpack_drev, lemma_drev_concat, lemma_drev_singleton, lemma_dpack_singleton};
+use crate::tm_dstring::lemma_dpack_append;
 use crate::tm_run_lemmas::lemma_tm_run_split;
 
 verus! {
@@ -339,6 +340,176 @@ pub proof fn lemma_cmp_balanced_roundtrip(
     assert(tm_run(tm, c_right, 1) == c_turn);         // single step
     assert((2 * k + 1) as nat == (k + (k + 1)) as nat);
     assert(tm_run(tm, c, (2 * k + 1) as nat) == c_final);
+}
+
+/// **The marker-advance round-trip (B-cmp.2, normal-advance case).** The probe of [`lemma_cmp_balanced_roundtrip`]
+/// reads the α frontier *without moving the marker*; this one **advances** it one cell deeper (the M1
+/// compare's "matched a digit, step to the next α position" — see §N+20/§N+21). The recorded frontier value
+/// `vk` (∈1..4) is carried in the entry state `q_back` (the "value-in-state" mechanism forced by n=5); the
+/// next α digit `s` (∈1..4 — this is the *normal* case, α not yet exhausted) is read into the exit state
+/// `q_walk`.
+///
+/// Setup is the same invariant shape as the probe: head scanning the already-restored α prefix's low digit
+/// `blk[0]` (prefix `blk`, `k` digits each `1..4`), tail `w == m·whi + 5` with `whi == m·suf + s` — so the
+/// stack above the prefix is `[5-marker, s, suf…]`, `5` at position `k`, `s = α[k+1]` next, `suf` beyond.
+/// The machine:
+///   1. **walks right** over `blk` to the `5`-mark ([`lemma_dwalk_right_gen`], state `q_back` preserving `vk`);
+///   2. **marker step** `(q_back, 5, vk, q_read, R)` — restore `vk` into the marked cell (α value-preserved),
+///      move R onto `α[k+1] = s`;
+///   3. **read+remark** `(q_read, s, 5, q_walk, L)` — write the new `5`-mark at position `k+1`, record
+///      `s = V_{k+1}` in `q_walk`, move L back onto the just-restored `vk`;
+///   4. **walks left** over `[vk] ++ drev(blk)` (the prefix grown by `vk`) back to the boundary
+///      ([`lemma_dwalk_left_gen`]).
+/// Net effect: `v` becomes `dpack(blk ++ [vk]) + m^{k+1}·(5 + m·suf)` — the **same invariant shape** with
+/// prefix `blk ++ [vk]` (now `k+1` digits), marker advanced to position `k+1`, suffix `suf`; the head has
+/// stepped one cell left into `u` scanning the output frontier `u % m`, now in state `q_walk` holding the
+/// next frontier value `s`. Fuel `2·|blk| + 3`. Requires `n ≥ 5`. No tape content is destroyed (α grows
+/// back into `v` intact, output `u` untouched). This is the inductive step the B-cmp.5 compare loop iterates.
+pub proof fn lemma_cmp_marker_advance(
+    tm: Tm, c: TmConfig, q_back: nat, q_read: nat, q_walk: nat,
+    blk: Seq<nat>, w: nat, whi: nat, suf: nat, vk: nat, s: nat,
+    i1: int, i2: int, i3: int, i4: int, j: int, jr: int,
+    l1: int, l2: int, l3: int, l4: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        blk.len() >= 1,
+        forall|k: int| 0 <= k < blk.len() ==> 1 <= #[trigger] blk[k] <= 4,
+        1 <= vk <= 4,
+        1 <= s <= 4,
+        c.a == blk[0],
+        w == tm.m * whi + 5,
+        whi == tm.m * suf + s,
+        c.v == dpack(blk.drop_first(), tm.m) + pow_nat(tm.m, (blk.len() - 1) as nat) * w,
+        c.q == q_back,
+        0 <= i1 < tm.quints.len(),
+        0 <= i2 < tm.quints.len(),
+        0 <= i3 < tm.quints.len(),
+        0 <= i4 < tm.quints.len(),
+        0 <= j < tm.quints.len(),
+        0 <= jr < tm.quints.len(),
+        0 <= l1 < tm.quints.len(),
+        0 <= l2 < tm.quints.len(),
+        0 <= l3 < tm.quints.len(),
+        0 <= l4 < tm.quints.len(),
+        tm.quints[i1] == mk_quint(q_back, 1, 1, q_back, Dir::R),
+        tm.quints[i2] == mk_quint(q_back, 2, 2, q_back, Dir::R),
+        tm.quints[i3] == mk_quint(q_back, 3, 3, q_back, Dir::R),
+        tm.quints[i4] == mk_quint(q_back, 4, 4, q_back, Dir::R),
+        tm.quints[j]  == mk_quint(q_back, 5, vk, q_read, Dir::R),
+        tm.quints[jr] == mk_quint(q_read, s, 5, q_walk, Dir::L),
+        tm.quints[l1] == mk_quint(q_walk, 1, 1, q_walk, Dir::L),
+        tm.quints[l2] == mk_quint(q_walk, 2, 2, q_walk, Dir::L),
+        tm.quints[l3] == mk_quint(q_walk, 3, 3, q_walk, Dir::L),
+        tm.quints[l4] == mk_quint(q_walk, 4, 4, q_walk, Dir::L),
+    ensures
+        tm_run(tm, c, (2 * blk.len() + 3) as nat)
+            == (TmConfig {
+                    u: c.u / tm.m,
+                    v: dpack(blk + seq![vk], tm.m)
+                        + pow_nat(tm.m, (blk.len() + 1) as nat) * (tm.m * suf + 5),
+                    a: c.u % tm.m,
+                    q: q_walk,
+               }),
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 5);
+    let k = blk.len();
+    // w/whi decompositions.
+    assert(m * whi == whi * m) by(nonlinear_arith);
+    assert(w == whi * m + 5);
+    lemma_div_mod_step(whi, m, 5);                 // w/m == whi, w%m == 5
+    assert(w / m == whi);
+    assert(w % m == 5);
+    assert(m * suf == suf * m) by(nonlinear_arith);
+    assert(whi == suf * m + s);
+    lemma_div_mod_step(suf, m, s);                 // whi/m == suf, whi%m == s
+    assert(whi / m == suf);
+    assert(whi % m == s);
+
+    // ── Phase 1: walk right over blk to the 5-mark.
+    lemma_dwalk_right_gen(tm, c, q_back, blk, w, i1, i2, i3, i4);
+    let c_right = TmConfig { u: dpile(c.u, blk, m), v: w / m, a: w % m, q: q_back };
+    assert(tm_run(tm, c, k) == c_right);
+    assert(c_right.a == 5);
+    assert(c_right.v == whi);
+
+    // ── Phase 2: marker step (q_back, 5, vk, q_read, R) — restore vk, move R onto α[k+1].
+    assert(quint_matches(tm.quints[j], c_right));
+    lemma_tm_step_picks(tm, c_right, j);
+    let c_marker = apply_quint(tm.quints[j], c_right, m);
+    assert(tm_step(tm, c_right) == Some(c_marker));
+    // R-move a2 == vk: u' = u·m + vk, v' = v/m == suf, a' = v%m == s.
+    assert(c_marker.u == dpile(c.u, blk, m) * m + vk);
+    assert(c_marker.v == suf);     // (w/m)/m == whi/m == suf
+    assert(c_marker.a == s);       // (w/m)%m == whi%m == s
+    assert(c_marker.q == q_read);
+
+    // ── Phase 3: read+remark (q_read, s, 5, q_walk, L) — write 5 at k+1, record s, move L onto vk.
+    assert(quint_matches(tm.quints[jr], c_marker));   // q == q_read, a == s
+    lemma_tm_step_picks(tm, c_marker, jr);
+    let c_read = apply_quint(tm.quints[jr], c_marker, m);
+    assert(tm_step(tm, c_marker) == Some(c_read));
+    // L-move a2 == 5: u' = u/m, v' = v·m + 5, a' = u%m.
+    assert(vk < m);
+    lemma_div_mod_step(dpile(c.u, blk, m), m, vk);   // (dpile·m+vk)/m == dpile, %m == vk
+    assert(c_read.u == dpile(c.u, blk, m));
+    assert(c_read.v == suf * m + 5);
+    assert(c_read.a == vk);
+    assert(c_read.q == q_walk);
+
+    // ── Phase 4: walk left over blk2 = [vk] ++ drev(blk) (prefix grown by vk) back to the boundary.
+    let dr = drev(blk);
+    lemma_drev_len(blk);              // |dr| == k
+    lemma_drev_digit_bound(blk, 4);   // dr digits in 1..4
+    let blk2 = seq![vk] + dr;
+    assert(blk2.len() == k + 1);
+    assert(blk2[0] == vk);
+    assert(blk2.drop_first() =~= dr);
+    assert forall|i: int| 0 <= i < blk2.len() implies 1 <= #[trigger] blk2[i] <= 4 by {
+        if i == 0 {
+            assert(blk2[0] == vk);
+        } else {
+            assert(blk2[i] == dr[i - 1]);
+        }
+    }
+    // precondition: c_read.u == dpack(dr) + m^k·c.u == dpack(blk2.df) + m^{|blk2|-1}·c.u.
+    lemma_dpile_is_dpack_drev(c.u, blk, m);          // dpile(c.u, blk) == c.u·m^k + dpack(dr)
+    assert(c.u * pow_nat(m, k) == pow_nat(m, k) * c.u) by(nonlinear_arith);
+    assert(c_read.u == dpack(dr, m) + pow_nat(m, k) * c.u);
+    assert((blk2.len() - 1) as nat == k);
+    lemma_dwalk_left_gen(tm, c_read, q_walk, blk2, c.u, l1, l2, l3, l4);
+    let c_final = TmConfig { u: c.u / m, v: dpile(c_read.v, blk2, m), a: c.u % m, q: q_walk };
+    assert(tm_run(tm, c_read, (k + 1) as nat) == c_final);
+
+    // final v == dpile(suf·m+5, blk2) == (suf·m+5)·m^{k+1} + dpack(blk ++ [vk]).
+    lemma_dpile_is_dpack_drev(suf * m + 5, blk2, m);   // == (suf·m+5)·m^{|blk2|} + dpack(drev(blk2))
+    // drev(blk2) == drev([vk] ++ dr) == drev(dr) ++ drev([vk]) == blk ++ [vk].
+    lemma_drev_concat(seq![vk], dr);
+    lemma_drev_involution(blk);          // drev(dr) =~= blk
+    lemma_drev_singleton(vk);            // drev([vk]) =~= [vk]
+    assert(drev(blk2) =~= blk + seq![vk]);
+    assert(dpack(drev(blk2), m) == dpack(blk + seq![vk], m));
+    assert(blk2.len() == k + 1);
+    // assemble final v: dpile(c_read.v, blk2) with c_read.v == suf·m+5.
+    assert(dpile(c_read.v, blk2, m) == (suf * m + 5) * pow_nat(m, (k + 1) as nat)
+        + dpack(blk + seq![vk], m));
+    assert((suf * m + 5) * pow_nat(m, (k + 1) as nat)
+        == pow_nat(m, (k + 1) as nat) * (m * suf + 5)) by(nonlinear_arith);
+    assert(c_final.v == dpack(blk + seq![vk], m) + pow_nat(m, (k + 1) as nat) * (m * suf + 5));
+
+    // ── Compose the four runs: 2k+3 = k + (1 + (1 + (k+1))).
+    lemma_tm_run_split(tm, c, k, (k + 3) as nat);          // tm_run(c, 2k+3) == tm_run(c_right, k+3)
+    lemma_tm_run_split(tm, c_right, 1, (k + 2) as nat);    // tm_run(c_right, k+3) == tm_run(c_marker, k+2)
+    lemma_tm_run_split(tm, c_marker, 1, (k + 1) as nat);   // tm_run(c_marker, k+2) == tm_run(c_read, k+1)
+    assert(tm_run(tm, c_marker, 0) == c_marker);
+    assert(tm_run(tm, c_read, 0) == c_read);
+    assert(tm_run(tm, c_right, 1) == c_marker);
+    assert(tm_run(tm, c_marker, 1) == c_read);
+    assert((2 * k + 3) as nat == (k + (k + 3)) as nat);
+    assert(tm_run(tm, c, (2 * k + 3) as nat) == c_final);
 }
 
 } // verus!
