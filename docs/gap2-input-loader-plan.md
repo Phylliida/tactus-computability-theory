@@ -1965,3 +1965,54 @@ fire `lemma_cmp_marker_advance`) vs mismatch (→ reject dispatch). Pin that sta
 sentinel/exhaustion paths, B-cmp.6) — likely a port-8051 consult — before building B-cmp.4. B-cmp.3 (cross
 the gap with `skip0_left`, land on `output[k]`, read its value into the compare state) is buildable now and
 is the clean bridge into B-cmp.4. After R-cmp: R-S dovetail → R-C/R-MC/B-W → discharge `ceer_realizes`.
+
+### N+23 — R-cmp B-cmp.3 + B-cmp.4 COMPLETE. Compare state-space PINNED (port-8051 co-design): value-in-state families + boundary-transition-on-gap-0 (caught a determinism collision).
+
+**Built this session (2026-06-27, crate 1740 → 1753/0, additive, no escape hatches):** `lemma_cmp_gap_cross`
+(B-cmp.3) and `lemma_cmp_match_round` (B-cmp.4) in `src/tm_cmp_traverse.rs`.
+
+**The compare state-space — PINNED (two port-8051 consults). Value-in-state FAMILIES indexed by `V ∈ 1..4`**
+(`q_walk(V)`, `q_cmp(V)`, `q_back(V)` are 4 parallel state-tracks). The steady-state round (gap `g ≥ 1`
+always, since each prior match consumed an output digit to `0`):
+  1. `(q_read, s, 5, q_walk(s), L)` — read+remark (marker-advance step 3): save the next α digit `s` in state.
+  2. `(q_walk(s), 1..4, same, q_walk(s), L)` — left-walk the α prefix back to the boundary.
+  3. `(q_walk(s), 0, 0, q_cmp(s), L)` — **BOUNDARY TRANSITION** (the gap-`0` is the *virtual boundary marker*).
+  4. `(q_cmp(s), 0, 0, q_cmp(s), L)` — skip the consumed-output gap.
+  5. `(q_cmp(s), d_o, 0, q_back(s), R)` if `d_o == s` — MATCH: consume output→`0`, go STRAIGHT to the
+     marker-advance entry state `q_back(s)`; else `(q_cmp(s), d_o, d_o, q_reject, ·)` — MISMATCH.
+
+**⚠ THE DETERMINISM COLLISION (caught at design time, before B-cmp.4).** Output and α share the `1..4`
+alphabet. The naive compare `(q_walk(V), V, 0, q_match, R)` would COLLIDE with marker-advance's left-walk
+`(q_walk(V), V, V, q_walk, L)` — same `(q,a)=(q_walk,V)` ⟹ breaks `tm_wf` determinism in the assembled
+machine. **Fix = switch state on the first gap-`0`** (which always separates the α-region from the
+output-region post-match): `q_walk(V)` handles `{1..4 → walk L, 0 → q_cmp(V) L}`; `q_cmp(V)` handles
+`{0 → skip L, 1..4 → compare}`. Both deterministic, no collision. n=5 has no spare symbol for a real boundary
+marker (would need n=6), so gap-`0` detection is forced. The RIGHTWARD return has NO collision — `q_back(V)`
+uniformly handles `{0 → skip-R, 1..4 → walk-R, 5 → marker-step}` (all distinct scanned symbols), so the
+match-action's return walk feeds marker-advance's right-walk seamlessly in one state.
+
+**B-cmp.3 `lemma_cmp_gap_cross`** — entry = marker-advance's exit (head one cell into `u` scanning the output
+stack's low cell `U%m`, `u==U/m`, `U==pile_zeros(d_o + m·out_rest, g, m)`, gap `g ≥ 1`, state `q_walk`). First
+step does the boundary transition `(q_walk, 0, 0, q_cmp, L)`, then `lemma_skip0_left` in `q_cmp` skips the
+rest, landing scanning `d_o` in `q_cmp`. Output `{u: out_rest, v: pile_zeros(c.v, g, m), a: d_o, q: q_cmp}`.
+Fuel `g`. (Revised mid-session from a first cut that landed in `q_walk` — that cut verified in isolation but
+would have collided at assembly; the determinism check is what forced the boundary-transition redesign.)
+
+**B-cmp.4 `lemma_cmp_match_round`** — the MATCH round, end-to-end. Entry = B-cmp.3 output with `d_o == vk`.
+Composes: (1) compare-match `(q_cmp, vk, 0, q_back, R)` consume + step; (2) `lemma_skip0_right` return walk
+over the gap to α-low (= marker-advance entry — NO glue state, since match → `q_back(vk)` directly);
+(3) `lemma_cmp_marker_advance`. Net: α prefix grows by `vk`, marker slides `k → k+1`, gap grows `g → g+1`,
+head ends one cell into `u` scanning `0` in `q_walk` holding next value `s` — the **same INV shape** B-cmp.5
+iterates (feeds the next B-cmp.3 with gap `g+1`). Fuel `2·|blk| + g + 4`. In the loop `g == |blk| == k`
+(each round consumes one output digit AND advances the marker), so per-round fuel is `4k+4` (O(|α|²) total).
+
+**Exhaustion/ACCEPT design (PINNED, consult 1 Q3 — not yet built, = B-cmp.6):** marker-advance reading `5`
+(α exhausted, far sentinel) → `q_verify_end`; then output `0` → ACCEPT, output `1..4` → REJECT (output too
+long). Output exhausted (skip0_left hits the output far sentinel while expecting a digit) → REJECT (too
+short). B-cmp.1 (balanced probe) = base case only (gap 0); steady state self-sustains via marker-advance.
+
+**Brick queue:** B-cmp.0 ✅, B-cmp.1 ✅ (probe), B-cmp.2 ✅ (marker advance), B-cmp.3 ✅ (gap-cross +
+boundary), B-cmp.4 ✅ (match round). NEXT = **B-cmp.5 compare loop** (induction over B-cmp.4∘B-cmp.3 with
+`g==k`, accumulating the matched prefix) then **B-cmp.6 accept/reject dispatch** (the `q_verify_end`
+exhaustion variant of marker-advance + drive-to-origin / clear+rewind+INC) + **B-cmp.7 park-time sentinels**.
+After R-cmp: R-S dovetail → R-C/R-MC/B-W → discharge `ceer_realizes` → drop `axiom_ceer_fp_embedding`.
