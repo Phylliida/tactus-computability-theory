@@ -371,6 +371,8 @@
 // parked alpha-block (input word-number, right of the emitter output) through the emit phases as an inert
 // high tail in v. See gap2_tail_lift_v.rs / docs/gap2-input-loader-plan.md §N+11.
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_lift_v;
+// v-side (α-block) mirror of gap2_tail_walks: leftward walks rise unconditionally, rightward walks fall.
+#[cfg(verus_keep_ghost)] pub mod gap2_tail_walks_v;
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_walks;
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_phases;
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_phase1;
