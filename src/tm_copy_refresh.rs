@@ -2987,4 +2987,194 @@ pub proof fn lemma_unmark(
             rm + pow_nat(m, g) * rm == dec_u(big_m, (pow_nat(m, (g - big_m) as nat) * rm) as nat, m);
 }
 
+// ============================================================================
+// the SELF-TERMINATING j == M detection forward + the walk-back-to-pivot bounce
+// ============================================================================
+//
+// After the marked-copy loop the master is all `M` fives (`copy_u(M)`) and the head sits on the pivot in
+// the loop's home state `q_home`. The home peel fires the SAME forward seek as every mark iteration —
+// peel, temp-walk, t2g, gap-seek, then the q_b fives-walk. At `j = M` there is NO unmarked one, so after
+// crossing the master's `M` fives in `q_b` the head reads the BLANK above the master (`q_b` reads `0`),
+// which the deterministic machine resolves NOT as "another gap blank" (that would be `q_a`) but via the
+// dedicated `(q_b, 0, 0, q_turn, R)` quint — the self-termination. [`lemma_terminate_fwd`] proves this
+// forward (it MIRRORS [`lemma_unmark_fwd`] but PRESERVES the fives `5 → 5` and lands in `q_b`). Then
+// [`lemma_mark_terminate`] turns around and walks NON-destructively back DOWN to the pivot, reconstructing
+// `copy_u(M)` and landing in `q_ret` (= [`lemma_unmark`]'s home state `q_uh`), ready for the verified
+// un-mark sweep. Crucially the forward+bounce is non-destructive, so the config is unchanged (still
+// `copy_u(M)`) — only the STATE advances `q_home → q_ret`, switching the machine from mark to unmark.
+
+/// **The `j == M` detection forward (`M ≥ 2`, `g ≥ M + 2`).** From `{u: copy_u(M), v: out, a: 0, q: q_home}`
+/// walk left over temp (`M` ones), the gap (`g − M` blanks), then cross the master's `M` fives in `q_b`
+/// PRESERVING them (`5 → 5`, [`lemma_run_walk_left`]), landing on the blank above the master (`u == 0,
+/// a == 0`) in `q_b` — the self-termination point. Same `g + M + 1` steps as [`lemma_unmark_fwd`], with the
+/// master `M` fives piled UNCONVERTED in `v` (`pile_sym(P_g, 5, M)`). Reuses the loop's forward quints
+/// (peel/temp/t2g/gap/a2b/fives) — NO new quints.
+pub proof fn lemma_terminate_fwd(
+    tm: Tm, big_m: nat, g: nat, out: nat,
+    q_home: nat, q_t: nat, q_a: nat, q_b: nat,
+    i_peel: int, i_temp: int, i_t2g: int, i_gap: int, i_a2b: int, i_fives: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        2 <= big_m,
+        g >= big_m + 2,
+        0 <= i_peel < tm.quints.len(),
+        0 <= i_temp < tm.quints.len(),
+        0 <= i_t2g < tm.quints.len(),
+        0 <= i_gap < tm.quints.len(),
+        0 <= i_a2b < tm.quints.len(),
+        0 <= i_fives < tm.quints.len(),
+        tm.quints[i_peel] == mk_quint(q_home, 0, 0, q_t, Dir::L),
+        tm.quints[i_temp] == mk_quint(q_t, 1, 1, q_t, Dir::L),
+        tm.quints[i_t2g] == mk_quint(q_t, 0, 0, q_a, Dir::L),
+        tm.quints[i_gap] == mk_quint(q_a, 0, 0, q_a, Dir::L),
+        tm.quints[i_a2b] == mk_quint(q_a, 5, 5, q_b, Dir::L),
+        tm.quints[i_fives] == mk_quint(q_b, 5, 5, q_b, Dir::L),
+    ensures
+        tm_run(tm,
+            TmConfig { u: copy_u(big_m, big_m, g, tm.m), v: out, a: 0, q: q_home },
+            (g + big_m + 1) as nat)
+            == (TmConfig {
+                u: 0,
+                v: pile_sym(pile_sym(out * tm.m, 1, big_m, tm.m) * pow_nat(tm.m, (g - big_m) as nat),
+                    5, big_m, tm.m),
+                a: 0, q: q_b }),
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 5);
+    let rm = repunit_m(big_m, m);     // R(M)
+    let fives = (5 * rm) as nat;      // 5·R(M), the master block
+    lemma_copy_u_end(big_m, g, m);    // copy_u(M,M,g) == R(M) + m^g·5·R(M)
+    assert(copy_u(big_m, big_m, g, m) == rm + pow_nat(m, g) * fives) by(nonlinear_arith)
+        requires copy_u(big_m, big_m, g, m) == rm + pow_nat(m, g) * (5 * rm), fives == 5 * rm;
+    let c0 = TmConfig { u: copy_u(big_m, big_m, g, m), v: out, a: 0, q: q_home };
+    assert(c0.u == rm + pow_nat(m, g) * fives);
+
+    // ── S1: pivot-peel. copy_u(M)%m == 1, /m == R(M-1) + m^(g-1)·5R(M). ──
+    lemma_repunit_step((big_m - 1) as nat, m);   // R(M) == m·R(M-1)+1
+    assert(((big_m - 1) + 1) as nat == big_m);
+    lemma_pow_nat_unfold(m, g);                  // m^g == m·m^(g-1)
+    let u1 = repunit_m((big_m - 1) as nat, m) + pow_nat(m, (g - 1) as nat) * fives;
+    assert(c0.u == u1 * m + 1) by(nonlinear_arith)
+        requires
+            c0.u == rm + pow_nat(m, g) * fives,
+            rm == m * repunit_m((big_m - 1) as nat, m) + 1,
+            pow_nat(m, g) == m * pow_nat(m, (g - 1) as nat),
+            u1 == repunit_m((big_m - 1) as nat, m) + pow_nat(m, (g - 1) as nat) * fives;
+    lemma_div_mod_step(u1, m, 1);
+    lemma_tm_step_picks(tm, c0, i_peel);
+    let c1 = apply_quint(tm.quints[i_peel], c0, m);
+    assert(tm_step(tm, c0) == Some(c1));
+    assert(c1.u == u1 && c1.v == out * m && c1.a == 1 && c1.q == q_t);
+    assert(tm_run(tm, c1, 0) == c1);
+    assert(tm_run(tm, c0, 1) == c1);
+
+    // ── S2: walk-left over temp (M steps). ──
+    let w_a = (pow_nat(m, (g - big_m) as nat) * fives) as nat;
+    lemma_pow_nat_add(m, (big_m - 1) as nat, (g - big_m) as nat);
+    assert(((big_m - 1) + (g - big_m)) as nat == (g - 1) as nat);
+    assert(c1.u == repunit_m((big_m - 1) as nat, m) + pow_nat(m, (big_m - 1) as nat) * w_a)
+        by(nonlinear_arith)
+        requires
+            c1.u == repunit_m((big_m - 1) as nat, m) + pow_nat(m, (g - 1) as nat) * fives,
+            pow_nat(m, (g - 1) as nat) == pow_nat(m, (big_m - 1) as nat) * pow_nat(m, (g - big_m) as nat),
+            w_a == pow_nat(m, (g - big_m) as nat) * fives;
+    lemma_run_walk_left(tm, c1, q_t, 1, (big_m - 1) as nat, w_a, i_temp);
+    lemma_pow_nat_unfold(m, (g - big_m) as nat);   // m^(g-M) == m·m^(g-M-1)
+    assert(w_a == (pow_nat(m, (g - big_m - 1) as nat) * fives) * m) by(nonlinear_arith)
+        requires w_a == pow_nat(m, (g - big_m) as nat) * fives,
+            pow_nat(m, (g - big_m) as nat) == m * pow_nat(m, (g - big_m - 1) as nat);
+    lemma_div_mod_step(pow_nat(m, (g - big_m - 1) as nat) * fives, m, 0);
+    let p_t = pile_sym(out * m, 1, big_m, m);
+    let c2 = TmConfig { u: pow_nat(m, (g - big_m - 1) as nat) * fives, v: p_t, a: 0, q: q_t };
+    assert(((big_m - 1) + 1) as nat == big_m);
+    assert(tm_run(tm, c1, big_m) == c2);
+    lemma_tm_run_split(tm, c0, 1, big_m);
+    assert(tm_run(tm, c0, (1 + big_m) as nat) == c2);
+
+    // ── S3: temp→gap transition. ──
+    lemma_pow_nat_unfold(m, (g - big_m - 1) as nat);   // m^(g-M-1) == m·m^(g-M-2)
+    assert(c2.u == (pow_nat(m, (g - big_m - 2) as nat) * fives) * m) by(nonlinear_arith)
+        requires c2.u == pow_nat(m, (g - big_m - 1) as nat) * fives,
+            pow_nat(m, (g - big_m - 1) as nat) == m * pow_nat(m, (g - big_m - 2) as nat);
+    lemma_div_mod_step(pow_nat(m, (g - big_m - 2) as nat) * fives, m, 0);
+    lemma_tm_step_picks(tm, c2, i_t2g);
+    let c3 = apply_quint(tm.quints[i_t2g], c2, m);
+    assert(tm_step(tm, c2) == Some(c3));
+    assert(c3.u == pow_nat(m, (g - big_m - 2) as nat) * fives && c3.v == p_t * m && c3.a == 0
+        && c3.q == q_a);
+    assert(tm_run(tm, c3, 0) == c3);
+    assert(tm_run(tm, c2, 1) == c3);
+    lemma_tm_run_split(tm, c0, (1 + big_m) as nat, 1);
+    assert(tm_run(tm, c0, (1 + big_m + 1) as nat) == c3);
+
+    // ── S4: seek-left over the remaining gap (g-M-1 steps). fives%m==5, lands on lowest five. ──
+    lemma_div_mod_step((5 * repunit_m((big_m - 1) as nat, m)) as nat, m, 5);   // 5R(M)%m==5, /m==5R(M-1)
+    assert(fives == (5 * repunit_m((big_m - 1) as nat, m)) * m + 5) by(nonlinear_arith)
+        requires fives == 5 * rm, rm == m * repunit_m((big_m - 1) as nat, m) + 1;
+    assert(fives % m == 5) by {
+        lemma_div_mod_step((5 * repunit_m((big_m - 1) as nat, m)) as nat, m, 5);
+        assert(fives == (5 * repunit_m((big_m - 1) as nat, m)) * m + 5);
+    }
+    assert(fives % m != 0);
+    lemma_seek_left_blanks(tm, c3, q_a, (g - big_m - 2) as nat, fives, i_gap);
+    let p_g = (p_t * pow_nat(m, (g - big_m) as nat)) as nat;
+    let c4 = TmConfig { u: fives / m, v: (p_t * m) * pow_nat(m, (g - big_m - 1) as nat), a: 5, q: q_a };
+    assert(((g - big_m - 2) + 1) as nat == (g - big_m - 1) as nat);
+    assert(tm_run(tm, c3, (g - big_m - 1) as nat) == c4);
+    lemma_tm_run_split(tm, c0, (1 + big_m + 1) as nat, (g - big_m - 1) as nat);
+    assert((1 + big_m + 1 + (g - big_m - 1)) as nat == (g + 1) as nat);
+    assert(tm_run(tm, c0, (g + 1) as nat) == c4);
+    assert((p_t * m) * pow_nat(m, (g - big_m - 1) as nat) == p_g) by(nonlinear_arith)
+        requires p_g == p_t * pow_nat(m, (g - big_m) as nat),
+            pow_nat(m, (g - big_m) as nat) == m * pow_nat(m, (g - big_m - 1) as nat);
+    assert(fives / m == 5 * repunit_m((big_m - 1) as nat, m)) by {
+        lemma_div_mod_step((5 * repunit_m((big_m - 1) as nat, m)) as nat, m, 5);
+        assert(fives == (5 * repunit_m((big_m - 1) as nat, m)) * m + 5);
+    }
+
+    // ── S5: enter q_b on the lowest master five via the transition (q_a,5,5,q_b,L) — PRESERVING (5→5);
+    //        the terminator only DETECTS the all-fives master, it does not convert. ──
+    lemma_repunit_step((big_m - 2) as nat, m);   // R(M-1) == m·R(M-2)+1
+    assert(((big_m - 2) + 1) as nat == (big_m - 1) as nat);
+    let c4u_div = (5 * repunit_m((big_m - 2) as nat, m)) as nat;
+    assert(c4.u == c4u_div * m + 5) by(nonlinear_arith)
+        requires c4.u == 5 * repunit_m((big_m - 1) as nat, m),
+            repunit_m((big_m - 1) as nat, m) == m * repunit_m((big_m - 2) as nat, m) + 1,
+            c4u_div == 5 * repunit_m((big_m - 2) as nat, m);
+    lemma_div_mod_step(c4u_div, m, 5);
+    lemma_tm_step_picks(tm, c4, i_a2b);
+    let c5 = apply_quint(tm.quints[i_a2b], c4, m);
+    assert(tm_step(tm, c4) == Some(c5));
+    assert(c5.u == c4u_div && c5.v == p_g * m + 5 && c5.a == 5 && c5.q == q_b);
+    assert(tm_run(tm, c5, 0) == c5);
+    assert(tm_run(tm, c4, 1) == c5);
+    lemma_tm_run_split(tm, c0, (g + 1) as nat, 1);
+    assert(tm_run(tm, c0, (g + 2) as nat) == c5);
+
+    // ── S6: walk-left over the remaining M-1 fives in q_b (q_b,5,5,q_b,L), PRESERVING. Lands on the
+    //        blank above the all-fives master (a==0) — the self-termination. ──
+    lemma_repunit_zero(m);
+    assert(pow_nat(m, 0) == 1);
+    assert(c5.u == 5 * repunit_m((big_m - 2) as nat, m) + pow_nat(m, (big_m - 2) as nat) * 0)
+        by(nonlinear_arith)
+        requires c5.u == 5 * repunit_m((big_m - 2) as nat, m);
+    lemma_run_walk_left(tm, c5, q_b, 5, (big_m - 2) as nat, 0, i_fives);
+    lemma_pile_sym_shift(p_g, 5, (big_m - 1) as nat, m);   // pile_sym(p_g·m+5,5,M-1)==pile_sym(p_g,5,M)
+    assert(((big_m - 2) + 1) as nat == (big_m - 1) as nat);
+    assert(((big_m - 1) + 1) as nat == big_m);
+    assert((0nat) / m == 0);
+    assert((0nat) % m == 0);
+    let c6 = TmConfig { u: 0, v: pile_sym(p_g, 5, big_m, m), a: 0, q: q_b };
+    // run_walk gives v == pile_sym(c5.v, 5, (M-2)+1) == pile_sym(p_g·m+5, 5, M-1) == pile_sym(p_g, 5, M).
+    assert(pile_sym(c5.v, 5, ((big_m - 2) + 1) as nat, m) == pile_sym(p_g, 5, big_m, m));
+    assert(tm_run(tm, c5, ((big_m - 2) + 1) as nat) == c6);
+    assert(tm_run(tm, c5, (big_m - 1) as nat) == c6);
+    lemma_tm_run_split(tm, c0, (g + 2) as nat, (big_m - 1) as nat);
+    assert((g + 2 + (big_m - 1)) as nat == (g + big_m + 1) as nat);
+    assert(tm_run(tm, c0, (g + big_m + 1) as nat) == c6);
+}
+
 } // verus!
