@@ -3582,6 +3582,586 @@ pub proof fn lemma_copy_refresh(
 }
 
 // ============================================================================
+// the small-M (M ∈ {1,2}) edges — the fixed TM driving copy for tiny exponents
+// ============================================================================
+//
+// The emitter processes the exponent `M = i` as RUNTIME data, so the SAME quints must copy for every
+// `M ≥ 1`; per-M correctness is proven by these dedicated lemmas (the 16-block sequencer case-splits on
+// `M`). `lemma_copy_loop` needs `M ≥ 3` (prefix `j=0,1` + general middle `j ≥ 2`); `lemma_copy_refresh`
+// was lowered to `M ≥ 2` (for `M = 2` the loop IS the prefix). The remaining gaps the fixed TM must do:
+//   - **M = 2, g = 2** (no-gap, the `k = 1` refresh of an exponent-2 phase): a 2-iteration loop whose
+//     `j = 0` and `j = 1` iterations BOTH have the gap legs collapsed. Built below.
+//   - **M = 1** (single master one) across `g ∈ {1, 2, ≥3}`: TODO (most degenerate).
+
+/// **The MARK gadget for the `j = 0` deposit-first iteration at `g = 2` (no-gap, `M ≥ 1`).** Mirror of
+/// [`lemma_mark_j0`] specialized to `g = 2`: the lone gap blank is consumed by the `t2g` transition
+/// (forward) and the return crosses straight from the marked five to the temp one, so the seek-left /
+/// seek-right legs (`S4`/`S8`, `g − 3 < 0`) vanish. From the post-deposit `{u: 1 + m²·R(M), v: out, a: 0,
+/// q: q_mh0}` (temp = one `1`), `6` steps (`= 2g + 2`) mark the master's lowest one `1 → 5` and return to
+/// the pivot, reaching `copy_u(1, M, 2)` in `q_rt0`. Six quintuples (`i_gap`/`i_rgap` absent vs `lemma_mark_j0`).
+pub proof fn lemma_mark_j0_g2(
+    tm: Tm, big_m: nat, out: nat,
+    q_mh0: nat, q_t0: nat, q_a0: nat, q_rf0: nat, q_rg0: nat, q_rt0: nat,
+    i_peel: int, i_temp: int, i_t2g: int, i_mark: int, i_rf2g: int, i_rg2t: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        1 <= big_m,
+        0 <= i_peel < tm.quints.len(),
+        0 <= i_temp < tm.quints.len(),
+        0 <= i_t2g < tm.quints.len(),
+        0 <= i_mark < tm.quints.len(),
+        0 <= i_rf2g < tm.quints.len(),
+        0 <= i_rg2t < tm.quints.len(),
+        tm.quints[i_peel] == mk_quint(q_mh0, 0, 0, q_t0, Dir::L),
+        tm.quints[i_temp] == mk_quint(q_t0, 1, 1, q_t0, Dir::L),
+        tm.quints[i_t2g] == mk_quint(q_t0, 0, 0, q_a0, Dir::L),
+        tm.quints[i_mark] == mk_quint(q_a0, 1, 5, q_rf0, Dir::R),
+        tm.quints[i_rf2g] == mk_quint(q_rf0, 0, 0, q_rg0, Dir::R),
+        tm.quints[i_rg2t] == mk_quint(q_rg0, 1, 1, q_rt0, Dir::R),
+    ensures
+        tm_run(tm,
+            TmConfig { u: (1 + pow_nat(tm.m, 2nat) * repunit_m(big_m, tm.m)) as nat, v: out, a: 0,
+                q: q_mh0 },
+            6nat)
+            == (TmConfig { u: copy_u(1, big_m, 2nat, tm.m), v: out, a: 0, q: q_rt0 }),
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 5);
+    assert(repunit_m(1, m) == 1) by { lemma_repunit_step(0, m); lemma_repunit_zero(m); }
+    assert(pow_nat(m, 0) == 1);
+    lemma_pow_nat_unfold(m, 1);   // pow_nat(m,1) == m·pow_nat(m,0)
+    assert(pow_nat(m, 1) == m) by(nonlinear_arith)
+        requires pow_nat(m, 1) == m * pow_nat(m, 0), pow_nat(m, 0) == 1;
+    lemma_pow_nat_unfold(m, 2nat);   // pow_nat(m,2) == m·pow_nat(m,1)
+    assert(pow_nat(m, 2nat) == m * m) by(nonlinear_arith)
+        requires pow_nat(m, 2nat) == m * pow_nat(m, 1), pow_nat(m, 1) == m;
+    let rm = repunit_m(big_m, m);                   // R(M), the all-ones master
+    let dep0 = (1 + pow_nat(m, 2nat) * rm) as nat;
+    let pile_temp = pile_sym(out * m, 1, 1, m);      // the single temp one piled over out·m
+    let ms_next = master_at(1, big_m, m);            // 5 + m·R(M−1), the master after marking
+    assert(ms_next == 5 + m * repunit_m((big_m - 1) as nat, m)) by(nonlinear_arith)
+        requires
+            ms_next == 5 * repunit_m(1, m) + pow_nat(m, 1) * repunit_m((big_m - 1) as nat, m),
+            repunit_m(1, m) == 1, pow_nat(m, 1) == m;
+    let c0 = TmConfig { u: dep0, v: out, a: 0, q: q_mh0 };
+
+    // ── S1: pivot-peel. dep0 == (m·R(M))·m + 1; %m == 1, /m == m·R(M). ──
+    assert(dep0 == (m * rm) * m + 1) by(nonlinear_arith)
+        requires dep0 == 1 + pow_nat(m, 2nat) * rm, pow_nat(m, 2nat) == m * m;
+    lemma_div_mod_step(m * rm, m, 1);
+    lemma_tm_step_picks(tm, c0, i_peel);
+    let c1 = apply_quint(tm.quints[i_peel], c0, m);
+    assert(tm_step(tm, c0) == Some(c1));
+    assert(c1.u == m * rm && c1.v == out * m && c1.a == 1 && c1.q == q_t0);
+    assert(tm_run(tm, c1, 0) == c1);
+    assert(tm_run(tm, c0, 1) == c1);
+
+    // ── S2: walk-left over the single temp one (1 step). c1.u == 1·R(0) + m^0·(m·R(M)). ──
+    lemma_repunit_zero(m);
+    assert(c1.u == 1 * repunit_m(0, m) + pow_nat(m, 0) * (m * rm)) by(nonlinear_arith)
+        requires c1.u == m * rm, repunit_m(0, m) == 0, pow_nat(m, 0) == 1;
+    lemma_run_walk_left(tm, c1, q_t0, 1, 0, (m * rm) as nat, i_temp);
+    assert(m * rm == rm * m) by(nonlinear_arith);
+    lemma_div_mod_step(rm, m, 0);   // (m·R(M))/m == R(M), %m == 0
+    let c2 = TmConfig { u: rm, v: pile_temp, a: 0, q: q_t0 };
+    assert(pile_sym(out * m, 1, 1, m) == pile_temp);
+    assert(tm_run(tm, c1, 1) == c2);
+    lemma_tm_run_split(tm, c0, 1, 1);
+    assert(tm_run(tm, c0, 2nat) == c2);
+
+    // ── S3: temp→master DIRECT (q_t0, 0, 0, q_a0, L) consumes the lone gap; R(M)%m==1, lands on master. ──
+    lemma_repunit_step((big_m - 1) as nat, m);   // R(M) == m·R(M-1)+1
+    assert(((big_m - 1) + 1) as nat == big_m);
+    assert(rm == repunit_m((big_m - 1) as nat, m) * m + 1) by(nonlinear_arith)
+        requires rm == m * repunit_m((big_m - 1) as nat, m) + 1;
+    lemma_div_mod_step(repunit_m((big_m - 1) as nat, m), m, 1);   // R(M)/m==R(M-1), %m==1
+    lemma_tm_step_picks(tm, c2, i_t2g);
+    let c3 = apply_quint(tm.quints[i_t2g], c2, m);
+    assert(tm_step(tm, c2) == Some(c3));
+    assert(c3.u == repunit_m((big_m - 1) as nat, m) && c3.v == pile_temp * m && c3.a == 1 && c3.q == q_a0);
+    assert(tm_run(tm, c3, 0) == c3);
+    assert(tm_run(tm, c2, 1) == c3);
+    lemma_tm_run_split(tm, c0, 2nat, 1);
+    assert(tm_run(tm, c0, 3nat) == c3);
+
+    // ── S5: MARK (q_a0, 1, 5, q_rf0, R). c3.u == R(M-1); marked == 5 + m·R(M-1) == ms_next. ──
+    lemma_div_mod_step(pile_temp, m, 0);   // (pile_temp·m)/m==pile_temp, %m==0
+    lemma_tm_step_picks(tm, c3, i_mark);
+    let c4 = apply_quint(tm.quints[i_mark], c3, m);
+    assert(tm_step(tm, c3) == Some(c4));
+    assert(c4.u == repunit_m((big_m - 1) as nat, m) * m + 5 && c4.v == pile_temp && c4.a == 0
+        && c4.q == q_rf0);
+    assert(c4.u == ms_next) by(nonlinear_arith)
+        requires c4.u == repunit_m((big_m - 1) as nat, m) * m + 5,
+            ms_next == 5 + m * repunit_m((big_m - 1) as nat, m);
+    assert(tm_run(tm, c4, 0) == c4);
+    assert(tm_run(tm, c3, 1) == c4);
+    lemma_tm_run_split(tm, c0, 3nat, 1);
+    assert(tm_run(tm, c0, 4nat) == c4);
+
+    // ── S7: rf→temp transition (q_rf0, 0, 0, q_rg0, R) — directly onto the temp one (no gap-seek). ──
+    lemma_pile_sym_div_mod(out * m, 1, 1, m);   // pile_temp%m==1, /m==out·m
+    lemma_tm_step_picks(tm, c4, i_rf2g);
+    let c5 = apply_quint(tm.quints[i_rf2g], c4, m);
+    assert(tm_step(tm, c4) == Some(c5));
+    assert(c5.u == ms_next * m && c5.v == out * m && c5.a == 1 && c5.q == q_rg0);
+    assert(tm_run(tm, c5, 0) == c5);
+    assert(tm_run(tm, c4, 1) == c5);
+    lemma_tm_run_split(tm, c0, 4nat, 1);
+    assert(tm_run(tm, c0, 5nat) == c5);
+
+    // ── S9: rg→pivot transition (q_rg0, 1, 1, q_rt0, R) lands DIRECTLY on the pivot. ──
+    lemma_div_mod_step(out, m, 0);   // (out·m)/m==out, %m==0
+    lemma_tm_step_picks(tm, c5, i_rg2t);
+    let c6 = apply_quint(tm.quints[i_rg2t], c5, m);
+    assert(tm_step(tm, c5) == Some(c6));
+    assert(c6.u == (ms_next * m) * m + 1 && c6.v == out && c6.a == 0 && c6.q == q_rt0);
+    assert(tm_run(tm, c6, 0) == c6);
+    assert(tm_run(tm, c5, 1) == c6);
+    lemma_tm_run_split(tm, c0, 5nat, 1);
+    assert(tm_run(tm, c0, 6nat) == c6);
+
+    // ── c6.u == copy_u(1, M, 2) == R(1) + m²·ms_next. ──
+    lemma_copy_u_master(1, big_m, 2nat, m);   // copy_u(1,M,2) == R(1) + m²·master_at(1,M)
+    assert(c6.u == copy_u(1, big_m, 2nat, m)) by(nonlinear_arith)
+        requires
+            c6.u == (ms_next * m) * m + 1,
+            pow_nat(m, 2nat) == m * m,
+            copy_u(1, big_m, 2nat, m) == repunit_m(1, m) + pow_nat(m, 2nat) * master_at(1, big_m, m),
+            ms_next == master_at(1, big_m, m),
+            repunit_m(1, m) == 1;
+}
+
+/// **One marked-copy iteration `j = 0` at `g = 2` (no-gap, deposit-first, `M ≥ 1`).** Mirror of
+/// [`lemma_copy_iter_j0`] specialized to `g = 2`: deposit ([`lemma_deposit`], grow temp to one) then mark
+/// ([`lemma_mark_j0_g2`], no gap-seeks). `copy_u(0, M, 2) → copy_u(1, M, 2)`, head on the pivot in `q_rt0`.
+/// `2 + 6 = 8` steps (`= 2g + 4`). Ten quintuples (4 deposit + 6 mark).
+pub proof fn lemma_copy_iter_j0_g2(
+    tm: Tm, big_m: nat, out: nat,
+    q_dh0: nat, q_dw0: nat, q_bk0: nat, q_t0: nat, q_a0: nat, q_rf0: nat, q_rg0: nat, q_rt0: nat,
+    i_dpeel: int, i_dtemp: int, i_dins: int, i_dwb: int,
+    i_peel: int, i_temp: int, i_t2g: int, i_mark: int, i_rf2g: int, i_rg2t: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        1 <= big_m,
+        0 <= i_dpeel < tm.quints.len(),
+        0 <= i_dtemp < tm.quints.len(),
+        0 <= i_dins < tm.quints.len(),
+        0 <= i_dwb < tm.quints.len(),
+        0 <= i_peel < tm.quints.len(),
+        0 <= i_temp < tm.quints.len(),
+        0 <= i_t2g < tm.quints.len(),
+        0 <= i_mark < tm.quints.len(),
+        0 <= i_rf2g < tm.quints.len(),
+        0 <= i_rg2t < tm.quints.len(),
+        tm.quints[i_dpeel] == mk_quint(q_dh0, 0, 0, q_dw0, Dir::L),
+        tm.quints[i_dtemp] == mk_quint(q_dw0, 1, 1, q_dw0, Dir::L),
+        tm.quints[i_dins] == mk_quint(q_dw0, 0, 1, q_bk0, Dir::R),
+        tm.quints[i_dwb] == mk_quint(q_bk0, 1, 1, q_bk0, Dir::R),
+        tm.quints[i_peel] == mk_quint(q_bk0, 0, 0, q_t0, Dir::L),
+        tm.quints[i_temp] == mk_quint(q_t0, 1, 1, q_t0, Dir::L),
+        tm.quints[i_t2g] == mk_quint(q_t0, 0, 0, q_a0, Dir::L),
+        tm.quints[i_mark] == mk_quint(q_a0, 1, 5, q_rf0, Dir::R),
+        tm.quints[i_rf2g] == mk_quint(q_rf0, 0, 0, q_rg0, Dir::R),
+        tm.quints[i_rg2t] == mk_quint(q_rg0, 1, 1, q_rt0, Dir::R),
+    ensures
+        tm_run(tm,
+            TmConfig { u: copy_u(0, big_m, 2nat, tm.m), v: out, a: 0, q: q_dh0 },
+            8nat)
+            == (TmConfig { u: copy_u(1, big_m, 2nat, tm.m), v: out, a: 0, q: q_rt0 }),
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 5);
+    let w = (pow_nat(m, 2nat) * repunit_m(big_m, m)) as nat;   // == copy_u(0,M,2)
+    lemma_copy_u_start(big_m, 2nat, m);   // copy_u(0,M,2) == m²·R(M) == w
+    // w % m == 0 (m² divisible by m).
+    lemma_pow_nat_unfold(m, 2nat);   // m² == m·m^1
+    assert(pow_nat(m, 0) == 1);
+    lemma_pow_nat_unfold(m, 1);
+    assert(pow_nat(m, 1) == m) by(nonlinear_arith)
+        requires pow_nat(m, 1) == m * pow_nat(m, 0), pow_nat(m, 0) == 1;
+    assert(w == (pow_nat(m, 1) * repunit_m(big_m, m)) * m) by(nonlinear_arith)
+        requires w == pow_nat(m, 2nat) * repunit_m(big_m, m), pow_nat(m, 2nat) == m * pow_nat(m, 1);
+    lemma_div_mod_step(pow_nat(m, 1) * repunit_m(big_m, m), m, 0);
+    assert(w % m == 0);
+    assert(dec_u(0, w, m) == w) by { lemma_repunit_zero(m); assert(pow_nat(m, 0) == 1); }
+    let c0 = TmConfig { u: copy_u(0, big_m, 2nat, m), v: out, a: 0, q: q_dh0 };
+    assert(c0.u == dec_u(0, w, m));
+
+    // ── DEPOSIT (j=0): copy_u(0) → dep0 = w + 1, 2 steps. ──
+    lemma_deposit(tm, 0, w, out, q_dh0, q_dw0, q_bk0, i_dpeel, i_dtemp, i_dins, i_dwb);
+    assert(pow_nat(m, 0) == 1);
+    let dep0 = (1 + pow_nat(m, 2nat) * repunit_m(big_m, m)) as nat;
+    assert((dec_u(0, w, m) + pow_nat(m, 0)) as nat == dep0) by {
+        assert(dec_u(0, w, m) == w);
+        assert(pow_nat(m, 0) == 1);
+    }
+    let c_dep = TmConfig { u: dep0, v: out, a: 0, q: q_bk0 };
+    assert(tm_run(tm, c0, 2nat) == c_dep);
+
+    // ── MARK (temp=1, fives=0, g=2): dep0 → copy_u(1), 6 steps. ──
+    lemma_mark_j0_g2(tm, big_m, out, q_bk0, q_t0, q_a0, q_rf0, q_rg0, q_rt0,
+        i_peel, i_temp, i_t2g, i_mark, i_rf2g, i_rg2t);
+    let c_end = TmConfig { u: copy_u(1, big_m, 2nat, m), v: out, a: 0, q: q_rt0 };
+    assert(tm_run(tm, c_dep, 6nat) == c_end);
+
+    // ── chain DEPOSIT ∘ MARK. ──
+    lemma_tm_run_split(tm, c0, 2nat, 6nat);
+    assert(tm_run(tm, c0, 8nat) == c_end);
+}
+
+/// **Forward seek of the MARK, `j = 1` gap-exactly-one case (`g = 2`, `M ≥ 2`).** Mirror of
+/// [`lemma_mark_fwd_gj1`] specialized to `j = 1`: after the `t2g` consumes the lone gap blank, the `a2b`
+/// transition `(q_a, 5, 5, q_b, L)` crosses the SINGLE marked five and lands DIRECTLY on the lowest
+/// unmarked one (`a == 1`) — no fives-walk (`j − 2 < 0`). From `{u: copy_u(1, M, 2), v: out, a: 0, q: q_mh}`,
+/// `4` steps (`= 2j + 2`) reach `{u: R(M−2), v: pile_sym(pile_sym(out·m, 1, 1)·m, 5, 1), a: 1, q: q_b}`.
+/// Four quintuples (peel/temp/t2g/a2b — `i_fives` absent vs `lemma_mark_fwd_gj1`).
+pub proof fn lemma_mark_fwd_j1gj1(
+    tm: Tm, big_m: nat, out: nat,
+    q_mh: nat, q_t: nat, q_a: nat, q_b: nat,
+    i_peel: int, i_temp: int, i_t2g: int, i_a2b: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        2 <= big_m,
+        0 <= i_peel < tm.quints.len(),
+        0 <= i_temp < tm.quints.len(),
+        0 <= i_t2g < tm.quints.len(),
+        0 <= i_a2b < tm.quints.len(),
+        tm.quints[i_peel] == mk_quint(q_mh, 0, 0, q_t, Dir::L),
+        tm.quints[i_temp] == mk_quint(q_t, 1, 1, q_t, Dir::L),
+        tm.quints[i_t2g] == mk_quint(q_t, 0, 0, q_a, Dir::L),
+        tm.quints[i_a2b] == mk_quint(q_a, 5, 5, q_b, Dir::L),
+    ensures
+        tm_run(tm,
+            TmConfig { u: copy_u(1, big_m, 2nat, tm.m), v: out, a: 0, q: q_mh },
+            4nat)
+            == (TmConfig {
+                u: repunit_m((big_m - 2) as nat, tm.m),
+                v: pile_sym(pile_sym(out * tm.m, 1, 1, tm.m) * tm.m, 5, 1, tm.m),
+                a: 1, q: q_b }),
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 5);
+    assert(repunit_m(1, m) == 1) by { lemma_repunit_step(0, m); lemma_repunit_zero(m); }
+    assert(pow_nat(m, 0) == 1);
+    lemma_pow_nat_unfold(m, 1);
+    assert(pow_nat(m, 1) == m) by(nonlinear_arith)
+        requires pow_nat(m, 1) == m * pow_nat(m, 0), pow_nat(m, 0) == 1;
+    lemma_pow_nat_unfold(m, 2nat);
+    assert(pow_nat(m, 2nat) == m * m) by(nonlinear_arith)
+        requires pow_nat(m, 2nat) == m * pow_nat(m, 1), pow_nat(m, 1) == m;
+    let ms = master_at(1, big_m, m);   // 5 + m·R(M−1)
+    assert(ms == 5 + m * repunit_m((big_m - 1) as nat, m)) by(nonlinear_arith)
+        requires
+            ms == 5 * repunit_m(1, m) + pow_nat(m, 1) * repunit_m((big_m - 1) as nat, m),
+            repunit_m(1, m) == 1, pow_nat(m, 1) == m;
+    lemma_copy_u_master(1, big_m, 2nat, m);   // copy_u(1,M,2) == R(1) + m²·ms
+    let c0 = TmConfig { u: copy_u(1, big_m, 2nat, m), v: out, a: 0, q: q_mh };
+
+    // ── S1: pivot-peel. copy_u(1,M,2) == (m·ms)·m + 1; %m == 1, /m == m·ms. ──
+    assert(c0.u == (m * ms) * m + 1) by(nonlinear_arith)
+        requires
+            c0.u == repunit_m(1, m) + pow_nat(m, 2nat) * ms,
+            repunit_m(1, m) == 1, pow_nat(m, 2nat) == m * m;
+    lemma_div_mod_step(m * ms, m, 1);
+    lemma_tm_step_picks(tm, c0, i_peel);
+    let c1 = apply_quint(tm.quints[i_peel], c0, m);
+    assert(tm_step(tm, c0) == Some(c1));
+    assert(c1.u == m * ms && c1.v == out * m && c1.a == 1 && c1.q == q_t);
+    assert(tm_run(tm, c1, 0) == c1);
+    assert(tm_run(tm, c0, 1) == c1);
+
+    // ── S2: walk-left over the single temp one (1 step). c1.u == 1·R(0) + m^0·(m·ms). ──
+    lemma_repunit_zero(m);
+    assert(c1.u == 1 * repunit_m(0, m) + pow_nat(m, 0) * (m * ms)) by(nonlinear_arith)
+        requires c1.u == m * ms, repunit_m(0, m) == 0, pow_nat(m, 0) == 1;
+    lemma_run_walk_left(tm, c1, q_t, 1, 0, (m * ms) as nat, i_temp);
+    assert(m * ms == ms * m) by(nonlinear_arith);
+    lemma_div_mod_step(ms, m, 0);   // (m·ms)/m == ms, %m == 0
+    let pile_temp = pile_sym(out * m, 1, 1, m);
+    let c2 = TmConfig { u: ms, v: pile_temp, a: 0, q: q_t };
+    assert(tm_run(tm, c1, 1) == c2);
+    lemma_tm_run_split(tm, c0, 1, 1);
+    assert(tm_run(tm, c0, 2nat) == c2);
+
+    // ── S3: temp→gap transition consumes the lone gap; ms%m==5, lands on the master's low five. ──
+    lemma_repunit_step((big_m - 1) as nat, m);   // R(M-1) == m·R(M-2)+1
+    assert(((big_m - 2) + 1) as nat == (big_m - 1) as nat);
+    assert(ms == repunit_m((big_m - 1) as nat, m) * m + 5) by(nonlinear_arith)
+        requires ms == 5 + m * repunit_m((big_m - 1) as nat, m);
+    lemma_div_mod_step(repunit_m((big_m - 1) as nat, m), m, 5);   // ms%m==5, /m==R(M-1)
+    lemma_tm_step_picks(tm, c2, i_t2g);
+    let c3 = apply_quint(tm.quints[i_t2g], c2, m);
+    assert(tm_step(tm, c2) == Some(c3));
+    assert(c3.u == repunit_m((big_m - 1) as nat, m) && c3.v == pile_temp * m && c3.a == 5 && c3.q == q_a);
+    assert(tm_run(tm, c3, 0) == c3);
+    assert(tm_run(tm, c2, 1) == c3);
+    lemma_tm_run_split(tm, c0, 2nat, 1);
+    assert(tm_run(tm, c0, 3nat) == c3);
+
+    // ── S5: a2b (q_a,5,5,q_b,L) crosses the single five, lands DIRECTLY on the unmarked one (a==1). ──
+    // c3.u == R(M-1) == R(M-2)·m + 1; /m == R(M-2), %m == 1.
+    assert(repunit_m((big_m - 1) as nat, m) == repunit_m((big_m - 2) as nat, m) * m + 1)
+        by(nonlinear_arith)
+        requires repunit_m((big_m - 1) as nat, m) == m * repunit_m((big_m - 2) as nat, m) + 1;
+    lemma_div_mod_step(repunit_m((big_m - 2) as nat, m), m, 1);
+    lemma_tm_step_picks(tm, c3, i_a2b);
+    let c4 = apply_quint(tm.quints[i_a2b], c3, m);
+    assert(tm_step(tm, c3) == Some(c4));
+    assert(c4.u == repunit_m((big_m - 2) as nat, m) && c4.v == (pile_temp * m) * m + 5 && c4.a == 1
+        && c4.q == q_b);
+    // v == pile_sym(pile_temp·m, 5, 1).
+    assert(pile_sym(pile_temp * m, 5, 1, m) == (pile_temp * m) * m + 5) by {
+        assert(pile_sym(pile_temp * m, 5, 0, m) == pile_temp * m);
+        assert(pile_sym(pile_temp * m, 5, 1, m) == pile_sym(pile_temp * m, 5, 0, m) * m + 5);
+    }
+    assert(tm_run(tm, c4, 0) == c4);
+    assert(tm_run(tm, c3, 1) == c4);
+    lemma_tm_run_split(tm, c0, 3nat, 1);
+    assert(tm_run(tm, c0, 4nat) == c4);
+}
+
+/// **The MARK gadget, `j = 1` gap-exactly-one case (`g = 2`, `M ≥ 2`).** Mirror of [`lemma_mark_gj1`]
+/// specialized to `j = 1`: forward via [`lemma_mark_fwd_j1gj1`] (a2b lands directly on the unmarked one),
+/// flip it `1 → 5`, then the return — fives-walk-right (1 step), `rf→gap` transition landing on the temp
+/// high one, `rg→temp` transition landing DIRECTLY on the pivot (no fives-walk after a2b, no temp-walk-back
+/// `S10` since `j − 1 = 0`). `u` gains `4·m^(2j+1) = 4·m³`, output `v` restored, head on the pivot in
+/// `q_rt`. `2·(2j + 2) = 8` steps. Eight quintuples.
+pub proof fn lemma_mark_j1gj1(
+    tm: Tm, big_m: nat, out: nat,
+    q_mh: nat, q_t: nat, q_a: nat, q_b: nat, q_rf: nat, q_rg: nat, q_rt: nat,
+    i_peel: int, i_temp: int, i_t2g: int, i_a2b: int, i_mark: int, i_rfives: int, i_rf2g: int, i_rg2t: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        2 <= big_m,
+        0 <= i_peel < tm.quints.len(),
+        0 <= i_temp < tm.quints.len(),
+        0 <= i_t2g < tm.quints.len(),
+        0 <= i_a2b < tm.quints.len(),
+        0 <= i_mark < tm.quints.len(),
+        0 <= i_rfives < tm.quints.len(),
+        0 <= i_rf2g < tm.quints.len(),
+        0 <= i_rg2t < tm.quints.len(),
+        tm.quints[i_peel] == mk_quint(q_mh, 0, 0, q_t, Dir::L),
+        tm.quints[i_temp] == mk_quint(q_t, 1, 1, q_t, Dir::L),
+        tm.quints[i_t2g] == mk_quint(q_t, 0, 0, q_a, Dir::L),
+        tm.quints[i_a2b] == mk_quint(q_a, 5, 5, q_b, Dir::L),
+        tm.quints[i_mark] == mk_quint(q_b, 1, 5, q_rf, Dir::R),
+        tm.quints[i_rfives] == mk_quint(q_rf, 5, 5, q_rf, Dir::R),
+        tm.quints[i_rf2g] == mk_quint(q_rf, 0, 0, q_rg, Dir::R),
+        tm.quints[i_rg2t] == mk_quint(q_rg, 1, 1, q_rt, Dir::R),
+    ensures
+        tm_run(tm,
+            TmConfig { u: copy_u(1, big_m, 2nat, tm.m), v: out, a: 0, q: q_mh },
+            8nat)
+            == (TmConfig {
+                u: (copy_u(1, big_m, 2nat, tm.m) + 4 * pow_nat(tm.m, 3nat)) as nat,
+                v: out, a: 0, q: q_rt }),
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 5);
+    assert(repunit_m(1, m) == 1) by { lemma_repunit_step(0, m); lemma_repunit_zero(m); }
+    assert(pow_nat(m, 0) == 1);
+    lemma_pow_nat_unfold(m, 1);
+    assert(pow_nat(m, 1) == m) by(nonlinear_arith)
+        requires pow_nat(m, 1) == m * pow_nat(m, 0), pow_nat(m, 0) == 1;
+    let pile_temp = pile_sym(out * m, 1, 1, m);
+    let big_v = (pile_temp * m) as nat;
+    let mm1 = repunit_m((big_m - 2) as nat, m);    // R(M−2) == R(M−j−1)
+    let ms_next = master_at(2nat, big_m, m);        // == 5·R(2) + m²·R(M−2)
+    let c0 = TmConfig { u: copy_u(1, big_m, 2nat, m), v: out, a: 0, q: q_mh };
+
+    // ── FORWARD: c0 → c5 (the lowest unmarked one), 4 steps. ──
+    lemma_mark_fwd_j1gj1(tm, big_m, out, q_mh, q_t, q_a, q_b, i_peel, i_temp, i_t2g, i_a2b);
+    let c5 = TmConfig { u: mm1, v: pile_sym(big_v, 5, 1, m), a: 1, q: q_b };
+    assert(tm_run(tm, c0, 4nat) == c5);
+
+    // ── MARK step (q_b, 1, 5, q_rf, R). ──
+    lemma_pile_sym_div_mod(big_v, 5, 1, m);   // %m==5, /m==pile_sym(big_v,5,0)==big_v
+    lemma_tm_step_picks(tm, c5, i_mark);
+    let c6 = apply_quint(tm.quints[i_mark], c5, m);
+    assert(tm_step(tm, c5) == Some(c6));
+    assert(c6.u == mm1 * m + 5 && c6.v == big_v && c6.a == 5 && c6.q == q_rf);
+    assert(tm_run(tm, c6, 0) == c6);
+    assert(tm_run(tm, c5, 1) == c6);
+    lemma_tm_run_split(tm, c0, 4nat, 1);
+    assert(tm_run(tm, c0, 5nat) == c6);
+
+    // ── S6: run_walk_right over the single five (1 step). c6.u == 5·R(1) + m·R(M−2). ──
+    assert(c6.u == 5 * repunit_m(1, m) + pow_nat(m, 1) * mm1) by(nonlinear_arith)
+        requires c6.u == mm1 * m + 5, repunit_m(1, m) == 1, pow_nat(m, 1) == m;
+    lemma_run_walk_right(tm, c6, q_rf, 5, 1, 0, big_v, mm1, i_rfives);
+    assert(ms_next == 5 * repunit_m(2nat, m) + pow_nat(m, 2nat) * mm1);
+    lemma_div_mod_step(pile_temp, m, 0);   // big_v == pile_temp·m; /m==pile_temp, %m==0
+    let c7 = TmConfig { u: ms_next, v: pile_temp, a: 0, q: q_rf };
+    // run_walk_right u == 5·R(2) + m²·R(M−2) == ms_next.
+    assert((1 + 0 + 1) as nat == 2nat);
+    assert(c7.u == 5 * repunit_m(2nat, m) + pow_nat(m, 2nat) * mm1);
+    assert(tm_run(tm, c6, 1) == c7);
+    lemma_tm_run_split(tm, c0, 5nat, 1);
+    assert(tm_run(tm, c0, 6nat) == c7);
+
+    // ── S7: rf→gap transition (q_rf, 0, 0, q_rg, R) — onto the temp high one (no gap-seek). ──
+    lemma_pile_sym_div_mod(out * m, 1, 1, m);   // pile_temp%m==1, /m==out·m
+    lemma_tm_step_picks(tm, c7, i_rf2g);
+    let c8 = apply_quint(tm.quints[i_rf2g], c7, m);
+    assert(tm_step(tm, c7) == Some(c8));
+    assert(c8.u == ms_next * m && c8.v == out * m && c8.a == 1 && c8.q == q_rg);
+    assert(tm_run(tm, c8, 0) == c8);
+    assert(tm_run(tm, c7, 1) == c8);
+    lemma_tm_run_split(tm, c0, 6nat, 1);
+    assert(tm_run(tm, c0, 7nat) == c8);
+
+    // ── S9: rg→pivot transition (q_rg, 1, 1, q_rt, R) lands DIRECTLY on the pivot (no S10, j−1==0). ──
+    lemma_div_mod_step(out, m, 0);   // (out·m)/m==out, %m==0
+    lemma_tm_step_picks(tm, c8, i_rg2t);
+    let c10 = apply_quint(tm.quints[i_rg2t], c8, m);
+    assert(tm_step(tm, c8) == Some(c10));
+    assert(c10.u == (ms_next * m) * m + 1 && c10.v == out && c10.a == 0 && c10.q == q_rt);
+    assert(tm_run(tm, c10, 0) == c10);
+    assert(tm_run(tm, c8, 1) == c10);
+    lemma_tm_run_split(tm, c0, 7nat, 1);
+    assert(tm_run(tm, c0, 8nat) == c10);
+
+    // ── c10.u == copy_u(1,M,2) + 4·m³. ──
+    // c10.u = ms_next·m² + 1; ms_next = master_at(1,M) + 4·m; copy_u(1,M,2) = 1 + m²·master_at(1,M).
+    lemma_master_at_step(1, big_m, m);   // master_at(2,M) == master_at(1,M) + 4·m^1
+    lemma_copy_u_master(1, big_m, 2nat, m);   // copy_u(1,M,2) == R(1) + m²·master_at(1,M)
+    lemma_pow_nat_unfold(m, 2nat);
+    assert(pow_nat(m, 2nat) == m * m) by(nonlinear_arith)
+        requires pow_nat(m, 2nat) == m * pow_nat(m, 1), pow_nat(m, 1) == m;
+    lemma_pow_nat_unfold(m, 3nat);
+    assert(pow_nat(m, 3nat) == (m * m) * m) by(nonlinear_arith)
+        requires pow_nat(m, 3nat) == m * pow_nat(m, 2nat), pow_nat(m, 2nat) == m * m;
+    assert(c10.u == (copy_u(1, big_m, 2nat, m) + 4 * pow_nat(m, 3nat)) as nat) by(nonlinear_arith)
+        requires
+            c10.u == (ms_next * m) * m + 1,
+            ms_next == master_at(1, big_m, m) + 4 * pow_nat(m, 1),
+            pow_nat(m, 1) == m,
+            copy_u(1, big_m, 2nat, m) == repunit_m(1, m) + pow_nat(m, 2nat) * master_at(1, big_m, m),
+            repunit_m(1, m) == 1,
+            pow_nat(m, 2nat) == m * m,
+            pow_nat(m, 3nat) == (m * m) * m;
+}
+
+/// **One marked-copy iteration `j = 1` gap-exactly-one (`g = 2`, `M ≥ 2`).** Mirror of
+/// [`lemma_copy_iter_gj1`] at `j = 1`, composing [`lemma_mark_j1gj1`] (`+4·m³`) and [`lemma_deposit`]
+/// (`+m¹`, refilling the lone gap cell ⟹ temp flush against the master). `copy_u(1, M, 2) →
+/// copy_u(2, M, 2)`, head on the pivot in `q_bk`. `8 + 4 = 12` steps (`= 6j + 6`).
+pub proof fn lemma_copy_iter_j1gj1(
+    tm: Tm, big_m: nat, out: nat,
+    q_mh: nat, q_t: nat, q_a: nat, q_b: nat, q_rf: nat, q_rg: nat, q_rt: nat, q_dw: nat, q_bk: nat,
+    i_peel: int, i_temp: int, i_t2g: int, i_a2b: int, i_mark: int, i_rfives: int, i_rf2g: int, i_rg2t: int,
+    i_dpeel: int, i_dtemp: int, i_dins: int, i_dwb: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        2 <= big_m,
+        0 <= i_peel < tm.quints.len(),
+        0 <= i_temp < tm.quints.len(),
+        0 <= i_t2g < tm.quints.len(),
+        0 <= i_a2b < tm.quints.len(),
+        0 <= i_mark < tm.quints.len(),
+        0 <= i_rfives < tm.quints.len(),
+        0 <= i_rf2g < tm.quints.len(),
+        0 <= i_rg2t < tm.quints.len(),
+        0 <= i_dpeel < tm.quints.len(),
+        0 <= i_dtemp < tm.quints.len(),
+        0 <= i_dins < tm.quints.len(),
+        0 <= i_dwb < tm.quints.len(),
+        tm.quints[i_peel] == mk_quint(q_mh, 0, 0, q_t, Dir::L),
+        tm.quints[i_temp] == mk_quint(q_t, 1, 1, q_t, Dir::L),
+        tm.quints[i_t2g] == mk_quint(q_t, 0, 0, q_a, Dir::L),
+        tm.quints[i_a2b] == mk_quint(q_a, 5, 5, q_b, Dir::L),
+        tm.quints[i_mark] == mk_quint(q_b, 1, 5, q_rf, Dir::R),
+        tm.quints[i_rfives] == mk_quint(q_rf, 5, 5, q_rf, Dir::R),
+        tm.quints[i_rf2g] == mk_quint(q_rf, 0, 0, q_rg, Dir::R),
+        tm.quints[i_rg2t] == mk_quint(q_rg, 1, 1, q_rt, Dir::R),
+        tm.quints[i_dpeel] == mk_quint(q_rt, 0, 0, q_dw, Dir::L),
+        tm.quints[i_dtemp] == mk_quint(q_dw, 1, 1, q_dw, Dir::L),
+        tm.quints[i_dins] == mk_quint(q_dw, 0, 1, q_bk, Dir::R),
+        tm.quints[i_dwb] == mk_quint(q_bk, 1, 1, q_bk, Dir::R),
+    ensures
+        tm_run(tm,
+            TmConfig { u: copy_u(1, big_m, 2nat, tm.m), v: out, a: 0, q: q_mh },
+            12nat)
+            == (TmConfig { u: copy_u(2, big_m, 2nat, tm.m), v: out, a: 0, q: q_bk }),
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 5);
+    assert(repunit_m(1, m) == 1) by { lemma_repunit_step(0, m); lemma_repunit_zero(m); }
+    assert(pow_nat(m, 0) == 1);
+    lemma_pow_nat_unfold(m, 1);
+    assert(pow_nat(m, 1) == m) by(nonlinear_arith)
+        requires pow_nat(m, 1) == m * pow_nat(m, 0), pow_nat(m, 0) == 1;
+    let c0 = TmConfig { u: copy_u(1, big_m, 2nat, m), v: out, a: 0, q: q_mh };
+    let ms_next = master_at(2nat, big_m, m);
+    let w_dep = (m * ms_next) as nat;
+
+    // ── MARK: c0 → c_mid, c_mid.u == copy_u(1) + 4·m³ == dec_u(1, w_dep). ──
+    lemma_mark_j1gj1(tm, big_m, out, q_mh, q_t, q_a, q_b, q_rf, q_rg, q_rt,
+        i_peel, i_temp, i_t2g, i_a2b, i_mark, i_rfives, i_rf2g, i_rg2t);
+    lemma_copy_u_master(1, big_m, 2nat, m);   // copy_u(1) == R(1) + m²·master_at(1,M)
+    lemma_master_at_step(1, big_m, m);        // ms_next == master_at(1,M) + 4·m^1
+    lemma_pow_nat_unfold(m, 2nat);            // m² == m·m^1
+    assert(pow_nat(m, 2nat) == m * m) by(nonlinear_arith)
+        requires pow_nat(m, 2nat) == m * pow_nat(m, 1), pow_nat(m, 1) == m;
+    lemma_pow_nat_unfold(m, 3nat);            // m³ == m·m²
+    assert(pow_nat(m, 3nat) == (m * m) * m) by(nonlinear_arith)
+        requires pow_nat(m, 3nat) == m * pow_nat(m, 2nat), pow_nat(m, 2nat) == m * m;
+    // copy_u(1) + 4·m³ == 1 + m²·ms_next == R(1) + m^1·w_dep == dec_u(1, w_dep).
+    assert(copy_u(1, big_m, 2nat, m) + 4 * pow_nat(m, 3nat) == dec_u(1, w_dep, m)) by(nonlinear_arith)
+        requires
+            copy_u(1, big_m, 2nat, m) == repunit_m(1, m) + pow_nat(m, 2nat) * master_at(1, big_m, m),
+            ms_next == master_at(1, big_m, m) + 4 * pow_nat(m, 1),
+            pow_nat(m, 1) == m,
+            pow_nat(m, 2nat) == m * m,
+            pow_nat(m, 3nat) == (m * m) * m,
+            repunit_m(1, m) == 1,
+            w_dep == m * ms_next,
+            dec_u(1, w_dep, m) == repunit_m(1, m) + pow_nat(m, 1) * w_dep;
+    let c_mid = TmConfig { u: dec_u(1, w_dep, m), v: out, a: 0, q: q_rt };
+    assert(tm_run(tm, c0, 8nat) == c_mid);
+
+    // ── DEPOSIT (home state q_rt): c_mid → c_end, u += m^1. w_dep % m == 0. ──
+    assert(m * ms_next == ms_next * m) by(nonlinear_arith);
+    lemma_div_mod_step(ms_next, m, 0);
+    assert(w_dep % m == 0);
+    lemma_deposit(tm, 1, w_dep, out, q_rt, q_dw, q_bk, i_dpeel, i_dtemp, i_dins, i_dwb);
+    let c_end = TmConfig { u: (dec_u(1, w_dep, m) + pow_nat(m, 1)) as nat, v: out, a: 0, q: q_bk };
+    assert(tm_run(tm, c_mid, 4nat) == c_end);
+
+    // ── c_end.u == copy_u(2) via the iteration arithmetic. ──
+    lemma_copy_u_iter_arith(1, big_m, 2nat, m);   // copy_u(2) == copy_u(1) + 4·m^(2+1) + m^1
+    assert((2nat + 1nat) as nat == 3nat);
+    assert(c_end.u == copy_u(2, big_m, 2nat, m)) by(nonlinear_arith)
+        requires
+            c_end.u == dec_u(1, w_dep, m) + pow_nat(m, 1),
+            dec_u(1, w_dep, m) == copy_u(1, big_m, 2nat, m) + 4 * pow_nat(m, 3nat),
+            copy_u(2, big_m, 2nat, m)
+                == copy_u(1, big_m, 2nat, m) + 4 * pow_nat(m, 3nat) + pow_nat(m, 1);
+    assert(c_end == (TmConfig { u: copy_u(2, big_m, 2nat, m), v: out, a: 0, q: q_bk }));
+
+    // ── chain MARK ∘ DEPOSIT. ──
+    lemma_tm_run_split(tm, c0, 8nat, 4nat);
+    assert(tm_run(tm, c0, 12nat) == c_end);
+}
+
+// ============================================================================
 // the g = M (NO-GAP) refresh — k = 1 intra-phase refresh, master adjacent to temp
 // ============================================================================
 //
@@ -4044,6 +4624,103 @@ pub proof fn lemma_unmark_nogap(
             dec_u(big_m, rm, m) == repunit_m(big_m, m) + pow_nat(m, big_m) * rm;
 }
 
+/// **The full marked-copy loop for `M = 2` at `g = 2` (no-gap): `copy_u(0,2,2) → copy_u(2,2,2)`.**
+/// Two iterations, both with the gap legs collapsed: `j = 0` ([`lemma_copy_iter_j0_g2`], deposit-first,
+/// exits `q_home`) then `j = 1` ([`lemma_copy_iter_j1gj1`], gap-exactly-one, exits `q_home`). `8 + 12 = 20`
+/// steps. Ends on the pivot in `q_home`, ready for [`lemma_mark_terminate_nogap`]. (`lemma_copy_loop`
+/// cannot do this — it needs `M ≥ 3` and `lemma_copy_prefix` needs `g ≥ 3`.)
+pub proof fn lemma_copy_loop_m2_nogap(
+    tm: Tm, out: nat,
+    // j=0 deposit-first states (exits q_home)
+    q_dh0: nat, q_dw0: nat, q_bk0: nat, q_t0: nat, q_a0: nat, q_rf0: nat, q_rg0: nat,
+    // home-cycle states (j=1 gj1)
+    q_home: nat, q_t: nat, q_a: nat, q_b: nat, q_rf: nat, q_rg: nat, q_rt: nat, q_dw: nat,
+    // j=0 quint indices
+    i_dpeel0: int, i_dtemp0: int, i_dins0: int, i_dwb0: int,
+    i_peel0: int, i_temp0: int, i_t2g0: int, i_mark0: int, i_rf2g0: int, i_rg2t0: int,
+    // j=1 gj1 quint indices
+    i_peel: int, i_temp: int, i_t2g: int, i_a2b: int, i_mark: int, i_rfives: int, i_rf2g: int, i_rg2t: int,
+    i_dpeel: int, i_dtemp: int, i_dins: int, i_dwb: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        0 <= i_dpeel0 < tm.quints.len(),
+        0 <= i_dtemp0 < tm.quints.len(),
+        0 <= i_dins0 < tm.quints.len(),
+        0 <= i_dwb0 < tm.quints.len(),
+        0 <= i_peel0 < tm.quints.len(),
+        0 <= i_temp0 < tm.quints.len(),
+        0 <= i_t2g0 < tm.quints.len(),
+        0 <= i_mark0 < tm.quints.len(),
+        0 <= i_rf2g0 < tm.quints.len(),
+        0 <= i_rg2t0 < tm.quints.len(),
+        0 <= i_peel < tm.quints.len(),
+        0 <= i_temp < tm.quints.len(),
+        0 <= i_t2g < tm.quints.len(),
+        0 <= i_a2b < tm.quints.len(),
+        0 <= i_mark < tm.quints.len(),
+        0 <= i_rfives < tm.quints.len(),
+        0 <= i_rf2g < tm.quints.len(),
+        0 <= i_rg2t < tm.quints.len(),
+        0 <= i_dpeel < tm.quints.len(),
+        0 <= i_dtemp < tm.quints.len(),
+        0 <= i_dins < tm.quints.len(),
+        0 <= i_dwb < tm.quints.len(),
+        // j=0 deposit-first quints (exits q_home)
+        tm.quints[i_dpeel0] == mk_quint(q_dh0, 0, 0, q_dw0, Dir::L),
+        tm.quints[i_dtemp0] == mk_quint(q_dw0, 1, 1, q_dw0, Dir::L),
+        tm.quints[i_dins0] == mk_quint(q_dw0, 0, 1, q_bk0, Dir::R),
+        tm.quints[i_dwb0] == mk_quint(q_bk0, 1, 1, q_bk0, Dir::R),
+        tm.quints[i_peel0] == mk_quint(q_bk0, 0, 0, q_t0, Dir::L),
+        tm.quints[i_temp0] == mk_quint(q_t0, 1, 1, q_t0, Dir::L),
+        tm.quints[i_t2g0] == mk_quint(q_t0, 0, 0, q_a0, Dir::L),
+        tm.quints[i_mark0] == mk_quint(q_a0, 1, 5, q_rf0, Dir::R),
+        tm.quints[i_rf2g0] == mk_quint(q_rf0, 0, 0, q_rg0, Dir::R),
+        tm.quints[i_rg2t0] == mk_quint(q_rg0, 1, 1, q_home, Dir::R),
+        // j=1 gj1 quints (home cycle)
+        tm.quints[i_peel] == mk_quint(q_home, 0, 0, q_t, Dir::L),
+        tm.quints[i_temp] == mk_quint(q_t, 1, 1, q_t, Dir::L),
+        tm.quints[i_t2g] == mk_quint(q_t, 0, 0, q_a, Dir::L),
+        tm.quints[i_a2b] == mk_quint(q_a, 5, 5, q_b, Dir::L),
+        tm.quints[i_mark] == mk_quint(q_b, 1, 5, q_rf, Dir::R),
+        tm.quints[i_rfives] == mk_quint(q_rf, 5, 5, q_rf, Dir::R),
+        tm.quints[i_rf2g] == mk_quint(q_rf, 0, 0, q_rg, Dir::R),
+        tm.quints[i_rg2t] == mk_quint(q_rg, 1, 1, q_rt, Dir::R),
+        tm.quints[i_dpeel] == mk_quint(q_rt, 0, 0, q_dw, Dir::L),
+        tm.quints[i_dtemp] == mk_quint(q_dw, 1, 1, q_dw, Dir::L),
+        tm.quints[i_dins] == mk_quint(q_dw, 0, 1, q_home, Dir::R),
+        tm.quints[i_dwb] == mk_quint(q_home, 1, 1, q_home, Dir::R),
+    ensures
+        tm_run(tm,
+            TmConfig { u: copy_u(0, 2nat, 2nat, tm.m), v: out, a: 0, q: q_dh0 },
+            20nat)
+            == (TmConfig { u: copy_u(2nat, 2nat, 2nat, tm.m), v: out, a: 0, q: q_home }),
+{
+    let m = tm.m;
+    let c0 = TmConfig { u: copy_u(0, 2nat, 2nat, m), v: out, a: 0, q: q_dh0 };
+
+    // ── j=0: copy_u(0,2,2) → copy_u(1,2,2), ends q_home. ──
+    lemma_copy_iter_j0_g2(tm, 2nat, out,
+        q_dh0, q_dw0, q_bk0, q_t0, q_a0, q_rf0, q_rg0, q_home,
+        i_dpeel0, i_dtemp0, i_dins0, i_dwb0,
+        i_peel0, i_temp0, i_t2g0, i_mark0, i_rf2g0, i_rg2t0);
+    let c1 = TmConfig { u: copy_u(1, 2nat, 2nat, m), v: out, a: 0, q: q_home };
+    assert(tm_run(tm, c0, 8nat) == c1);
+
+    // ── j=1 gj1: copy_u(1,2,2) → copy_u(2,2,2), home cycle. ──
+    lemma_copy_iter_j1gj1(tm, 2nat, out,
+        q_home, q_t, q_a, q_b, q_rf, q_rg, q_rt, q_dw, q_home,
+        i_peel, i_temp, i_t2g, i_a2b, i_mark, i_rfives, i_rf2g, i_rg2t,
+        i_dpeel, i_dtemp, i_dins, i_dwb);
+    let c2 = TmConfig { u: copy_u(2nat, 2nat, 2nat, m), v: out, a: 0, q: q_home };
+    assert(tm_run(tm, c1, 12nat) == c2);
+
+    // ── chain. ──
+    lemma_tm_run_split(tm, c0, 8nat, 12nat);
+    assert(tm_run(tm, c0, 20nat) == c2);
+}
+
 /// **One full NO-GAP `copy_refresh` as a single deterministic machine run (`M ≥ 3`, `g = M`).**
 /// The `k = 1` intra-phase refresh: `copy_u(0, M, M) = m^M·R(M)` (master at gap `G = M`, fresh empty
 /// temp) → `dec_u(M, R(M))` (the master rebuilt directly below itself as a fresh `M`-counter, no gap).
@@ -4207,6 +4884,150 @@ pub proof fn lemma_copy_refresh_nogap(
     lemma_tm_run_split(tm, c0, mid, bounce);
     assert(copy_refresh_fuel(big_m, big_m) == (mid + bounce) as nat);
     assert(tm_run(tm, c0, copy_refresh_fuel(big_m, big_m)) == c_end);
+}
+
+/// **One full NO-GAP `copy_refresh` for `M = 2` as a single deterministic machine run (`g = 2`).**
+/// The `k = 1` intra-phase refresh of an exponent-2 phase: `copy_u(0, 2, 2) = m²·R(2)` →
+/// `dec_u(2, R(2))`. Composes the three M=2 no-gap pieces over ONE deterministic TM:
+///   1. [`lemma_copy_loop_m2_nogap`] — `copy_u(0,2,2) → copy_u(2,2,2)` (j0_g2 ∘ j1gj1), `20` steps.
+///   2. [`lemma_mark_terminate_nogap`] (`M=2`) — the no-gap bounce, `10` steps.
+///   3. [`lemma_unmark_nogap`] (`M=2`) — the no-gap un-mark sweep, `10` steps.
+/// `40` steps total. (The fuel is NOT `copy_refresh_fuel(2,2)` — that spec fn is for the `M≥3` g==M loop
+/// shape; the M=2 no-gap loop is the 2-iteration `lemma_copy_loop_m2_nogap`.)
+pub proof fn lemma_copy_refresh_m2_nogap(
+    tm: Tm, out: nat,
+    // j=0 deposit-first states
+    q_dh0: nat, q_dw0: nat, q_bk0: nat, q_t0: nat, q_a0: nat, q_rf0: nat, q_rg0: nat,
+    // home-cycle states (loop ↔ terminate forward)
+    q_home: nat, q_t: nat, q_a: nat, q_b: nat, q_rf: nat, q_rg: nat, q_rt: nat, q_dw: nat,
+    // terminate-nogap walk-back states
+    q_turn: nat, q_ret: nat,
+    // unmark-nogap states (home == q_ret)
+    q_ut: nat, q_uf: nat, q_uw: nat,
+    // loop j=0 quint indices
+    i_dpeel0: int, i_dtemp0: int, i_dins0: int, i_dwb0: int,
+    i_peel0: int, i_temp0: int, i_t2g0: int, i_mark0: int, i_rf2g0: int, i_rg2t0: int,
+    // loop j=1 gj1 quint indices (home cycle)
+    i_peel: int, i_temp: int, i_t2g: int, i_a2b: int, i_mark: int, i_rfives: int, i_rf2g: int,
+    i_rg2t: int, i_dpeel: int, i_dtemp: int, i_dins: int, i_dwb: int,
+    // terminate-nogap quint indices
+    i_t2m: int, i_fives: int, i_turn: int, i_master: int, i_m2t: int, i_term_rtemp: int,
+    // unmark-nogap quint indices
+    i_upeel: int, i_utemp: int, i_uconv1: int, i_uurest: int, i_uturn: int, i_uwalk: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        0 <= i_dpeel0 < tm.quints.len(),
+        0 <= i_dtemp0 < tm.quints.len(),
+        0 <= i_dins0 < tm.quints.len(),
+        0 <= i_dwb0 < tm.quints.len(),
+        0 <= i_peel0 < tm.quints.len(),
+        0 <= i_temp0 < tm.quints.len(),
+        0 <= i_t2g0 < tm.quints.len(),
+        0 <= i_mark0 < tm.quints.len(),
+        0 <= i_rf2g0 < tm.quints.len(),
+        0 <= i_rg2t0 < tm.quints.len(),
+        0 <= i_peel < tm.quints.len(),
+        0 <= i_temp < tm.quints.len(),
+        0 <= i_t2g < tm.quints.len(),
+        0 <= i_a2b < tm.quints.len(),
+        0 <= i_mark < tm.quints.len(),
+        0 <= i_rfives < tm.quints.len(),
+        0 <= i_rf2g < tm.quints.len(),
+        0 <= i_rg2t < tm.quints.len(),
+        0 <= i_dpeel < tm.quints.len(),
+        0 <= i_dtemp < tm.quints.len(),
+        0 <= i_dins < tm.quints.len(),
+        0 <= i_dwb < tm.quints.len(),
+        0 <= i_t2m < tm.quints.len(),
+        0 <= i_fives < tm.quints.len(),
+        0 <= i_turn < tm.quints.len(),
+        0 <= i_master < tm.quints.len(),
+        0 <= i_m2t < tm.quints.len(),
+        0 <= i_term_rtemp < tm.quints.len(),
+        0 <= i_upeel < tm.quints.len(),
+        0 <= i_utemp < tm.quints.len(),
+        0 <= i_uconv1 < tm.quints.len(),
+        0 <= i_uurest < tm.quints.len(),
+        0 <= i_uturn < tm.quints.len(),
+        0 <= i_uwalk < tm.quints.len(),
+        // ── loop j=0 deposit-first quints (exits q_home) ──
+        tm.quints[i_dpeel0] == mk_quint(q_dh0, 0, 0, q_dw0, Dir::L),
+        tm.quints[i_dtemp0] == mk_quint(q_dw0, 1, 1, q_dw0, Dir::L),
+        tm.quints[i_dins0] == mk_quint(q_dw0, 0, 1, q_bk0, Dir::R),
+        tm.quints[i_dwb0] == mk_quint(q_bk0, 1, 1, q_bk0, Dir::R),
+        tm.quints[i_peel0] == mk_quint(q_bk0, 0, 0, q_t0, Dir::L),
+        tm.quints[i_temp0] == mk_quint(q_t0, 1, 1, q_t0, Dir::L),
+        tm.quints[i_t2g0] == mk_quint(q_t0, 0, 0, q_a0, Dir::L),
+        tm.quints[i_mark0] == mk_quint(q_a0, 1, 5, q_rf0, Dir::R),
+        tm.quints[i_rf2g0] == mk_quint(q_rf0, 0, 0, q_rg0, Dir::R),
+        tm.quints[i_rg2t0] == mk_quint(q_rg0, 1, 1, q_home, Dir::R),
+        // ── loop j=1 gj1 quints + the terminate forward share i_peel/i_temp ──
+        tm.quints[i_peel] == mk_quint(q_home, 0, 0, q_t, Dir::L),
+        tm.quints[i_temp] == mk_quint(q_t, 1, 1, q_t, Dir::L),
+        tm.quints[i_t2g] == mk_quint(q_t, 0, 0, q_a, Dir::L),
+        tm.quints[i_a2b] == mk_quint(q_a, 5, 5, q_b, Dir::L),
+        tm.quints[i_mark] == mk_quint(q_b, 1, 5, q_rf, Dir::R),
+        tm.quints[i_rfives] == mk_quint(q_rf, 5, 5, q_rf, Dir::R),
+        tm.quints[i_rf2g] == mk_quint(q_rf, 0, 0, q_rg, Dir::R),
+        tm.quints[i_rg2t] == mk_quint(q_rg, 1, 1, q_rt, Dir::R),
+        tm.quints[i_dpeel] == mk_quint(q_rt, 0, 0, q_dw, Dir::L),
+        tm.quints[i_dtemp] == mk_quint(q_dw, 1, 1, q_dw, Dir::L),
+        tm.quints[i_dins] == mk_quint(q_dw, 0, 1, q_home, Dir::R),
+        tm.quints[i_dwb] == mk_quint(q_home, 1, 1, q_home, Dir::R),
+        // ── terminate-nogap quints (direct temp↔master) ──
+        tm.quints[i_t2m] == mk_quint(q_t, 5, 5, q_b, Dir::L),
+        tm.quints[i_fives] == mk_quint(q_b, 5, 5, q_b, Dir::L),
+        tm.quints[i_turn] == mk_quint(q_b, 0, 0, q_turn, Dir::R),
+        tm.quints[i_master] == mk_quint(q_turn, 5, 5, q_turn, Dir::R),
+        tm.quints[i_m2t] == mk_quint(q_turn, 1, 1, q_ret, Dir::R),
+        tm.quints[i_term_rtemp] == mk_quint(q_ret, 1, 1, q_ret, Dir::R),
+        // ── unmark-nogap quints (home == q_ret) ──
+        tm.quints[i_upeel] == mk_quint(q_ret, 0, 0, q_ut, Dir::L),
+        tm.quints[i_utemp] == mk_quint(q_ut, 1, 1, q_ut, Dir::L),
+        tm.quints[i_uconv1] == mk_quint(q_ut, 5, 1, q_uf, Dir::L),
+        tm.quints[i_uurest] == mk_quint(q_uf, 5, 1, q_uf, Dir::L),
+        tm.quints[i_uturn] == mk_quint(q_uf, 0, 0, q_uw, Dir::R),
+        tm.quints[i_uwalk] == mk_quint(q_uw, 1, 1, q_uw, Dir::R),
+    ensures
+        tm_run(tm,
+            TmConfig { u: copy_u(0, 2nat, 2nat, tm.m), v: out, a: 0, q: q_dh0 },
+            40nat)
+            == (TmConfig { u: dec_u(2nat, repunit_m(2nat, tm.m), tm.m), v: out, a: 0, q: q_uw }),
+{
+    let m = tm.m;
+    let c0 = TmConfig { u: copy_u(0, 2nat, 2nat, m), v: out, a: 0, q: q_dh0 };
+
+    // ── PHASE 1 — LOOP: copy_u(0,2,2) → copy_u(2,2,2)@q_home, 20 steps. ──
+    lemma_copy_loop_m2_nogap(tm, out,
+        q_dh0, q_dw0, q_bk0, q_t0, q_a0, q_rf0, q_rg0,
+        q_home, q_t, q_a, q_b, q_rf, q_rg, q_rt, q_dw,
+        i_dpeel0, i_dtemp0, i_dins0, i_dwb0, i_peel0, i_temp0, i_t2g0, i_mark0, i_rf2g0, i_rg2t0,
+        i_peel, i_temp, i_t2g, i_a2b, i_mark, i_rfives, i_rf2g, i_rg2t, i_dpeel, i_dtemp, i_dins, i_dwb);
+    let c_loop = TmConfig { u: copy_u(2nat, 2nat, 2nat, m), v: out, a: 0, q: q_home };
+    assert(tm_run(tm, c0, 20nat) == c_loop);
+
+    // ── PHASE 2 — TERMINATE (no-gap, M=2): copy_u(2,2,2)@q_home → @q_ret, 10 steps. ──
+    lemma_mark_terminate_nogap(tm, 2nat, out,
+        q_home, q_t, q_b, q_turn, q_ret,
+        i_peel, i_temp, i_t2m, i_fives, i_turn, i_master, i_m2t, i_term_rtemp);
+    let c_term = TmConfig { u: copy_u(2nat, 2nat, 2nat, m), v: out, a: 0, q: q_ret };
+    assert((4 * 2 + 2) as nat == 10nat);
+    assert(tm_run(tm, c_loop, 10nat) == c_term);
+
+    // ── PHASE 3 — UNMARK (no-gap, M=2): copy_u(2,2,2)@q_ret → dec_u(2,R(2))@q_uw, 10 steps. ──
+    lemma_unmark_nogap(tm, 2nat, out,
+        q_ret, q_ut, q_uf, q_uw,
+        i_upeel, i_utemp, i_uconv1, i_uurest, i_uturn, i_uwalk);
+    let c_end = TmConfig { u: dec_u(2nat, repunit_m(2nat, m), m), v: out, a: 0, q: q_uw };
+    assert(tm_run(tm, c_term, 10nat) == c_end);
+
+    // ── chain LOOP ∘ TERMINATE ∘ UNMARK. ──
+    lemma_tm_run_split(tm, c0, 20nat, 10nat);
+    assert(tm_run(tm, c0, 30nat) == c_term);
+    lemma_tm_run_split(tm, c0, 30nat, 10nat);
+    assert(tm_run(tm, c0, 40nat) == c_end);
 }
 
 } // verus!
