@@ -230,6 +230,11 @@
 // counter gadget step-lemmas (all tm.n>=2-monotone) fire verbatim on it. See tm_assemble4.rs.
 #[cfg(verus_keep_ghost)] pub mod tm_assemble4;
 
+// psc_tm(e) at n=5: the alphabet-widened (marker `5`) bump of tm_assemble4. STRIDE=48 windows
+// (entry5(pc)=6+48pc, 288 quints/window) so each emitter block / master-mgmt gadget gets its own
+// window with headroom; the n>=5-monotone power-block step fires verbatim. See tm_assemble5.rs.
+#[cfg(verus_keep_ghost)] pub mod tm_assemble5;
+
 // GAP-2 G2-F Route (i) brick R-P (foundation): the base-m digit-string algebra. alpha's digits 1..4
 // as a Seq<nat> packed low-first by dpack; pop/push/digits_le/append lemmas -- the symbol-agnostic
 // analog of repunit_m, the foundation the copy-and-park (R-P) + ping-pong compare (R-cmp) digit-walk
