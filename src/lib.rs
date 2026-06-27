@@ -379,6 +379,8 @@
 // The M=1 path of copy_refresh tail-safety (mark_terminate_m1 / unmark_m1 / copy_refresh_m1).
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_phase1_m1;
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_emit;
+// v-side (α-block) mirror of gap2_tail_emit: surge is the tight margin (h>=|od|+...), dec_temp/guards uncond.
+#[cfg(verus_keep_ghost)] pub mod gap2_tail_emit_v;
 // Upper half of the emit-loop tail-lift: the per-power-block PERIODIC step (copy_refresh ∘ block_loop)
 // is tail_safe at the home offset H_0 = g+M+1. See gap2_tail_power.rs / §N+14.
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_power;
