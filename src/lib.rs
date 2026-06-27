@@ -335,3 +335,7 @@
 // lemma_copy_refresh ∘ lemma_block_loop into one run emitting (blk)^M, master stationary (gap g=M+2 fixed).
 // See tm_power_block.rs / docs/gap2-input-loader-plan.md §5, §N+10.
 #[cfg(verus_keep_ghost)] pub mod tm_power_block;
+
+// GAP-2 G2-F Route (i) brick R-relnum-gen (STEP 2, model B): the M=1 (exp=0) dispatch of the per-power-block
+// step, using lemma_copy_refresh_m1. See tm_power_block_m1.rs / docs/gap2-input-loader-plan.md §5, §N+10.
+#[cfg(verus_keep_ghost)] pub mod tm_power_block_m1;
