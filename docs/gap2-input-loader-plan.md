@@ -1463,18 +1463,24 @@ so `tail_end_h == H_0` between gadgets — no cross-gadget offset bookkeeping). 
 gadget; the deepest excursion (terminate) is the tight one and is already done.
 
 **Revised NEXT (the mechanical grind, then setup + wiring):**
-1. **Finish copy_refresh `tail_safe`** by mirror-and-chain, bottom-up. **✅ PHASES 2 & 3 DONE (gap2_tail_phases.rs,
-   38/0, crate 1343/0):** `lemma_terminate_fwd_tail_safe` + `lemma_mark_terminate_tail_safe` (phase 2) and
-   `lemma_unmark_fwd_tail_safe` + `lemma_unmark_tail_safe` (phase 3) — the tight `h=0` margin is in both and
-   verifies. **REMAINING for copy_refresh = phase 1 + assembly:** `deposit` (uses `tm_walk`/`tm_dec_master`
-   ones-walks — needs their tail_safe companions first, but shallow: offset never near 0) → `mark_fwd`/`mark`
-   (same 6-segment shape as terminate_fwd, but the mark reaches the master's lowest-UNMARKED one at depth `g+j`,
-   so the fives-walk is shorter — entry offset `M-j ≥ 1`, NOT tight) → `copy_iter` (mark∘deposit, net-disp-0) →
-   `copy_prefix` + `copy_loop_general` + `copy_loop` (induction over `j`, each iter net-disp-0 at entry `H_0`) →
-   **`lemma_copy_refresh_tail_safe`** (3-phase split: copy_loop ∘ mark_terminate ∘ unmark, each entering at
-   `H_0`, via `lemma_tail_chain` — phases 2&3 companions already in hand). Then the **M=1 path**
-   (`copy_refresh_m1` + its sub-gadgets) — same recipe, shallower. (`g ≥ M+2` ⟹ the *nogap* `g==M` variants are
-   NOT on the phase path, skip them.)
+1. **Finish copy_refresh `tail_safe`** by mirror-and-chain, bottom-up. **✅✅ COMPLETE (phase 1 + assembly).**
+   - PHASES 2 & 3 (gap2_tail_phases.rs, 38/0): `lemma_terminate_fwd_tail_safe` + `lemma_mark_terminate_tail_safe`
+     (phase 2) and `lemma_unmark_fwd_tail_safe` + `lemma_unmark_tail_safe` (phase 3) — tight `h=0` margin verifies.
+   - PHASE 1 + ASSEMBLY (new module **gap2_tail_phase1.rs, 58/0**, crate green): the full bottom-up chain ALL
+     VERIFIED FIRST-TRY (every companion, no escape hatches): `lemma_pile_ones_eq_pile_sym` bridge →
+     `lemma_deposit_tail_safe` (reuses the s=1 general walk companions for the `walk_left_prefix`/`walk_back_prefix`
+     ones-walks) → `lemma_mark_fwd_tail_safe` (ends `M-j`, NOT tight; j==1/j≥2 branch) → `lemma_mark_tail_safe`
+     (fwd + all-R return, net-disp-0) → `lemma_copy_iter_tail_safe` → `lemma_copy_loop_general_tail_safe`
+     (induction on hi) → `lemma_mark_j1_tail_safe` + `lemma_mark_j0_tail_safe` (deposit-first) →
+     `lemma_copy_iter_j0_tail_safe` + `lemma_copy_iter_j1_tail_safe` → `lemma_copy_prefix_tail_safe` →
+     `lemma_copy_loop_tail_safe` (g≥M+1 phase-path branch only; tight g==M skipped) → **`lemma_copy_refresh_tail_safe`**
+     (the capstone: copy_loop ∘ mark_terminate ∘ unmark, all net-disp-0 at `H_0`, reusing phases 2&3 companions).
+   - The mirror-and-chain recipe was 100% reliable: copy the source gadget's body, apply the per-segment
+     primitive/step companion at the tracked offset, `lemma_tail_chain`. Every gadget net-disp-0, entry `H_0=g+M+1`.
+   - **M=1 path** (`copy_refresh_m1` + sub-gadgets) — same recipe, shallower; NOT yet done. Whether it is on the
+     uinv_phase critical path depends on whether `power_block` ever instantiates M=1 (it does via `pbb*_m1_phase`,
+     used when `big_m == 1`; but uinv_phase requires `1 ≤ big_m` generic, so M=1 IS reachable — see item 2). (`g ≥ M+2`
+     ⟹ the *nogap* `g==M` variants are NOT on the phase path, skip them.)
 2. **Power-block + phase-block tail_safe** — `power_block_b1`/`b3` (+ `_m1`) wrap `copy_refresh`; then
    `pbb1x_phase`/`pbb3x_phase`/`pbb*_phase_any` and the `seret1x`/`seret3x` singletons (shallow reach, easy).
    Each enters at `H_0`, net-disp-0.
