@@ -268,6 +268,30 @@ collapsed Miller relator `ρ(fam_relator(a,b))`'s symbols as base-m digits and p
 (read/compare/dovetail/cleanup) is standard TM gadget work over the AC tape model. **Modulus/alphabet
 (§3)**: choose `n ≥ 4` (digits `1..4`) and `m = psc_tm`'s modulus `= the word-numbering modulus`.
 
+### R-relnum-gen — the explicit digit pattern (de-risked: it is a structured emitter, not an opaque bridge)
+
+`fam_relator(a,b) = apply_embedding(miller_collapse_emb(rel_slice(a,b),0,1), [Gen(a),Inv(b)]) = u_a · u_b⁻¹`,
+where (`miller_collapse.rs`) `u_j = miller_collapse_word(j,0,1)` over `{a=Gen(0), t=Gen(1)}`, `i=j+1`:
+```
+  u_j = t · b⁻ⁱ · a · bⁱ · t⁻¹ · a⁻ⁱ · b⁻¹ · aⁱ ,   b = t a t⁻¹  (substituted mechanically)
+      = t · (t a⁻¹ t⁻¹)ⁱ · a · (t a t⁻¹)ⁱ · t⁻¹ · (a⁻¹)ⁱ · (t a⁻¹ t⁻¹) · (a)ⁱ
+```
+ρ shifts `a=Gen(0)→Gen(cb)`, `t=Gen(1)→Gen(cb+1)` (c-block). `decode_word`'s `alphabet_letter` inverse
+maps the c-block symbols to digits: **`a→1, t→2, a⁻¹→3, t⁻¹→4`** (Gen(cb+k)→k+1, Inv(cb+k)→n+k+1, n=2).
+So the digit sequence of `u_j` is the regular pattern (exponent `i=j+1`):
+```
+  digits(u_j) = [2] · (2 3 4)ⁱ · [1] · (2 1 4)ⁱ · [4] · (3)ⁱ · [2 3 4] · (1)ⁱ
+```
+and `relnum(a,b)` digits = `digits(u_a) ++ digits(u_b⁻¹)`  (with `iₐ=a+1`, `i_b=b+1`; `u_b⁻¹` =
+`inverse_word(u_b)` = reverse + Gen↔Inv, i.e. its digit string reversed with `1↔3, 2↔4`).
+
+**This makes R-relnum-gen a TWO-COUNTER structured emitter** (counters `iₐ, i_b`; nested loops emitting
+the fixed blocks `(234)`,`(214)`,`(3)`,`(1)` etc.), NOT an opaque proof bridge. The correctness proof =
+a digit-correspondence induction against the *explicit* `miller_collapse_word` + the existing
+`decode_word`/`apply_embedding`/`lemma_emb_slice_independent` lemmas. ⚠ Confirm `decode_word`'s digit
+ORDER (low-first vs high-first) and `inverse_word`'s exact digit transform before fixing the emit order
+(the comparison just needs psc_tm to emit in `decode_word`'s canonical order to match α).
+
 ## 6. Open sub-design questions (for Danielle before / during coding)
 
 1. **Ignition as raw quads — OK?** Your D1 "go" assumed a clean AC-convention TM, which `quint_wf`
