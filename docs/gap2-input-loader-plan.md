@@ -72,17 +72,29 @@ which is exactly `rep1(c1)` of the TM config
 left tape = the rest of α, right tape empty. (4 ignition quads total. Determinism: their `b=0` never
 collides with TM-sim quads, whose `b=q ≥ n+1`.)
 
-### 2.2 `psc_tm(e)` — the parser/search/cleanup TM (`tm_wf`, the bulk)
+### 2.2 `psc_tm(e)` — the read/search/cleanup TM (`tm_wf`, the bulk)
+
+**Design decision (Danielle, 2026-06-26): GENERATE-AND-COMPARE, not parse-and-extract.** Parsing the
+Miller collapse image `collapse(g_a g_b⁻¹)` off the tape (counting nested `b=tat⁻¹` blocks to recover
+`a,b`, finding the `g_a | g_b⁻¹` boundary, + a reject branch for non-relator α) is a heavy structural
+parser with a large verify burden. Instead the machine only ever uses the **forward** map
+`relnum(a,b) := word-number of ρ(collapse(g_a g_b⁻¹))` (a fixed, primitive-recursive computation) and
+*compares*. This deletes the reject branch entirely: a non-relator α simply never matches any candidate,
+so the machine diverges — which is exactly "α ∉ H₀". This mirrors a CEER's natural semantics (halt iff
+in the set; permitted to diverge otherwise) and reuses the existing `search_rm` dovetail skeleton.
 
 A fresh `tm_wf` TM with **alphabet `n ≥ 4`** (to hold the four c-block relator letters as tape symbols)
 and **modulus `m` = the word-numbering modulus** (so the machine reads α's digits in the right base;
 see §3). From `c1` it:
 
-- **(P) Parse.** Read α's base-m digits off the left tape (the ρ-relabeled c-block image of
-  `collapse(g_a g_b⁻¹) = t⁻ᵃ a tᵃ · t⁻ᵇ a⁻¹ tᵇ`), recover `(a,b)` by counting the `t`-run lengths,
-  and **reject** any α not of declared-relator shape (a non-relator α must lead to a non-origin
-  terminal / non-halting, i.e. `(α,0) ∉ H₀`). Output `(a,b)` in the format the search phase consumes.
-- **(S) Search.** Run the `search_rm(e)` dovetail on `(a,b)` — halts iff `declared_equiv(e,a,b)`.
+- **(P) Read.** A simple base-`m` *read loop* (NOT a structural parser): fold α's tape digits back into
+  a register value `R_α`. Reuses counter arithmetic (×m + digit). [Option (i), Danielle's pick — keeps
+  the heavy lifting in the RM domain; avoids per-candidate tape rescans.]
+- **(S) Search (generate-and-compare).** Dovetail over stages `s`: run `enumerator(s)` → `(a,b)` (if it
+  halts); compute `relnum(a,b)`; halt iff `relnum(a,b) == R_α`. Halts iff `α` is the word-number of a
+  declared family relator. Reuses the `search_rm(e)` dovetail structure with the predicate
+  `declared_match(s, ·)` swapped for `relnum(declared_pair(s)) == R_α`. `relnum` is a forward
+  primitive-recursive sub-machine (fixed-count collapse loops `a+1`/`b+1` + base-`m` digit-pack).
 - **(C) Cleanup.** On halt, empty both tapes and land on `tm_origin() = (0,0,0,0)`.
 
 Headline target:
@@ -140,13 +152,17 @@ chained through ignition to `mm_in_H0(mm, α, 0) ⟺ α declared word-number`.
   `lemma_ignition_quads_shape` (feeds B-FR), `lemma_ignition_yields` (`(α,0) → (α/m, start(α%m)) =
   rep1(c1)` for `1 ≤ α%m ≤ ndig`), `lemma_mm_extend_wf` (combined `mod_machine_wf` given base wf +
   `start(i)<m` + `ndig<m` + base quads carry `b≠0`). **The ignition layer is COMPLETE.** Crate 654/0.
-- **B-P** — the parser TM: base-m relator-word digits → `(a,b)`, with the reject branch. The genuinely
-  new sub-machine, and the biggest remaining brick. Sub-bricks: digit-classifier, t-run counter
-  (→ a, b), shape-validator/reject. *Couples with the ignition handoff states `start(i)` = the parser's
-  per-digit entry states (B-IG left `start` abstract for exactly this).* **← next, needs its own design
-  pass (co-design w/ Danielle).**
-- **B-S** — the search phase: re-realize `search_rm(e)` (or `rm_to_tm` of it) in the `n≥4`, `m=psc.m`
-  TM, fed the parser's `(a,b)` output. Reuse `lemma_search_rm_halts_iff` for the semantics.
+- **B-P** — the **read loop** (generate-and-compare design, §2.2): fold α's base-m tape digits into a
+  register value `R_α`. A simple read loop, NOT a structural parser (the parse-and-extract route with
+  its reject branch is RETIRED per Danielle). *Couples with the ignition handoff states `start(i)` =
+  the read loop's per-digit entry states (B-IG left `start` abstract for exactly this).* Needs the new
+  `n≥4` TM assembly scaffolding first (B-AL re-assembly). **← next.**
+- **B-relnum** — `relnum(a,b)` = word-number of `ρ(collapse(g_a g_b⁻¹))` as (1) a spec target tying to
+  the GAP-1 family relators / `decode_word`, and (2) a forward RM sub-machine (fixed-count collapse
+  loops + base-m digit-pack). The bridge between the machine's accept condition and `ceer_realizes`.
+- **B-S** — the dovetail search (generate-and-compare): reuse the `search_rm(e)` skeleton with predicate
+  `relnum(declared_pair(s)) == R_α` in place of `declared_match`. Halts iff α is a declared relator
+  word-number. No reject branch (non-relator ⟹ diverges).
 - **B-C** — cleanup to origin (mirror `tm_cleanup.rs`).
 - **B-PSC** — assemble P∘S∘C into `psc_tm(e)` + the halts-iff (mirror `tm_run_sim.rs`).
 - **B-MC** — the machine-content lemma (§4.3): `lemma_ignition_yields` (1 step) ∘ `lemma_frame_reaches`
