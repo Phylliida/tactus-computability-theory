@@ -30,6 +30,10 @@ use crate::gap2_emit_window::{lemma_seret1x_phase_tail_safe, lemma_seret3x_phase
 use crate::gap2_emit_power::lemma_pbb1x_phase_any_tail_safe;
 use crate::gap2_emit_power3::lemma_pbb3x_phase_any_tail_safe;
 use crate::gap2_tail_lift::{tail_safe, tail_end_h, lemma_tail_chain, add_hi, lemma_run_tail};
+use crate::gap2_emit_window::{lemma_seret1x_phase_tail_safe_v, lemma_seret3x_phase_tail_safe_v};
+use crate::gap2_emit_power::lemma_pbb1x_phase_any_tail_safe_v;
+use crate::gap2_emit_power3::lemma_pbb3x_phase_any_tail_safe_v;
+use crate::gap2_tail_lift_v::{tail_safe_v, tail_end_h_v, lemma_tail_v_chain, add_hi_v, lemma_run_tail_v};
 
 verus! {
 
@@ -1094,6 +1098,325 @@ pub proof fn lemma_uinv_phase_tail(tm: Tm, len: nat, pc: nat, big_m: nat, g: nat
     lemma_uinv_phase_tail_safe(tm, len, pc, big_m, g, od, qend);
     // tail_end_h(c0, fuel, h0) == h0, so the lift re-deposits the tail at the SAME offset.
     lemma_run_tail(tm, c0, fuel, h0, t);
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v-side (α-tail) capstone — mirror of the u-side uinv phase tail_safe stack.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// **v-side (α-tail) mirror of [`lemma_uinv_half_a_tail_safe`].** Surge grows with output, so this is
+/// parametric in the high α-offset `h` (binding constraint = block-3 pbb3 surge).
+#[verifier::rlimit(4000)]
+pub proof fn lemma_uinv_half_a_tail_safe_v(tm: Tm, len: nat, pc: nat, big_m: nat, g: nat, od: Seq<nat>, h: nat)
+    requires
+        tm_wf(tm),
+        tm.n == 5,
+        tm.m == tm_mod5(len),
+        pc + 3 <= len,
+        tm.quints.len() == 288 * (len + 1),
+        forall|i: int| pc * 288 <= i < pc * 288 + 288 ==> #[trigger] tm.quints[i] == seret1x_gen(4, entry5(pc + 1), i as nat),
+        forall|i: int| (pc + 1) * 288 <= i < (pc + 1) * 288 + 288 ==> #[trigger] tm.quints[i] == pbb3x_gen(4, 1, 2, entry5(pc + 2), i as nat),
+        forall|i: int| (pc + 2) * 288 <= i < (pc + 2) * 288 + 288 ==> #[trigger] tm.quints[i] == seret1x_gen(3, entry5(pc + 3), i as nat),
+        forall|i: int| (pc + 3) * 288 <= i < (pc + 3) * 288 + 288 ==> #[trigger] tm.quints[i] == pbb3x_gen(4, 3, 2, entry5(pc + 4), i as nat),
+        1 <= big_m,
+        g >= big_m + 2,
+        forall|k: int| 0 <= k < od.len() ==> 1 <= #[trigger] od[k] <= 4,
+        h >= od.len() + 6 * big_m + 3,
+    ensures
+        tail_safe_v(tm, TmConfig { u: copy_u(0, big_m, g, tm.m), v: dpack(od, tm.m), a: 0, q: entry5(pc) },
+            uinv_half_a_fuel(big_m, g, od.len()), h),
+        tail_end_h_v(tm, TmConfig { u: copy_u(0, big_m, g, tm.m), v: dpack(od, tm.m), a: 0, q: entry5(pc) },
+            uinv_half_a_fuel(big_m, g, od.len()), h) == h,
+{
+    let m = tm.m;
+    let h0 = h;
+    let bigu = copy_u(0, big_m, g, m);
+    let c0 = TmConfig { u: bigu, v: dpack(od, m), a: 0, q: entry5(pc) };
+    crate::gap2_relnum_dds::lemma_seq_pow_len(seq![4nat, 1nat, 2nat], big_m);
+
+    // ── block 0: seret1[4] @ pc → entry5(pc+1). ──
+    lemma_pbb3x_walkback(tm, len, pc + 1, 4, 1, 2, entry5(pc + 2), 1);
+    lemma_pbb3x_walkback(tm, len, pc + 1, 4, 1, 2, entry5(pc + 2), 2);
+    lemma_pbb3x_walkback(tm, len, pc + 1, 4, 1, 2, entry5(pc + 2), 3);
+    lemma_pbb3x_walkback(tm, len, pc + 1, 4, 1, 2, entry5(pc + 2), 4);
+    lemma_seret1x_phase(tm, len, pc, bigu, od, 4, entry5(pc + 1),
+        ((pc + 1) * 288 + 1) as int, ((pc + 1) * 288 + 2) as int,
+        ((pc + 1) * 288 + 3) as int, ((pc + 1) * 288 + 4) as int);
+    let od1 = od + seq![4nat];
+    let c1 = TmConfig { u: bigu, v: dpack(od1, m), a: 0, q: entry5(pc + 1) };
+    let f0 = (2 * od.len() + 4) as nat;
+    assert(tm_run(tm, c0, f0) == c1);
+    lemma_seret1x_phase_tail_safe_v(tm, len, pc, bigu, od, 4, entry5(pc + 1),
+        ((pc + 1) * 288 + 1) as int, ((pc + 1) * 288 + 2) as int,
+        ((pc + 1) * 288 + 3) as int, ((pc + 1) * 288 + 4) as int, h0);
+
+    // ── block 1: pbb3(4,1,2) @ pc+1 → entry5(pc+2). ──
+    cat_bound(od, seq![4nat]);
+    lemma_pbb3x_phase_any(tm, len, pc + 1, big_m, g, od1, 4, 1, 2, entry5(pc + 2));
+    let od2 = od1 + seq_pow(seq![4nat, 1nat, 2nat], big_m);
+    let c2 = TmConfig { u: bigu, v: dpack(od2, m), a: 0, q: entry5(pc + 2) };
+    let f1 = pb3_fuel(big_m, g, od1.len());
+    assert(tm_run(tm, c1, f1) == c2);
+    lemma_pbb3x_phase_any_tail_safe_v(tm, len, pc + 1, big_m, g, od1, 4, 1, 2, entry5(pc + 2), h0);
+    lemma_tail_v_chain(tm, c0, f0, f1, h0, h0, h0);
+
+    // ── block 2: seret1[3] @ pc+2 → entry5(pc+3). ──
+    crate::gap2_relnum_dds::lemma_seq_pow_bound(seq![4nat, 1nat, 2nat], big_m, 1, 4);
+    cat_bound(od1, seq_pow(seq![4nat, 1nat, 2nat], big_m));
+    lemma_pbb3x_walkback(tm, len, pc + 3, 4, 3, 2, entry5(pc + 4), 1);
+    lemma_pbb3x_walkback(tm, len, pc + 3, 4, 3, 2, entry5(pc + 4), 2);
+    lemma_pbb3x_walkback(tm, len, pc + 3, 4, 3, 2, entry5(pc + 4), 3);
+    lemma_pbb3x_walkback(tm, len, pc + 3, 4, 3, 2, entry5(pc + 4), 4);
+    lemma_seret1x_phase(tm, len, pc + 2, bigu, od2, 3, entry5(pc + 3),
+        ((pc + 3) * 288 + 1) as int, ((pc + 3) * 288 + 2) as int,
+        ((pc + 3) * 288 + 3) as int, ((pc + 3) * 288 + 4) as int);
+    let od3 = od2 + seq![3nat];
+    let c3 = TmConfig { u: bigu, v: dpack(od3, m), a: 0, q: entry5(pc + 3) };
+    let f2 = (2 * od2.len() + 4) as nat;
+    assert(tm_run(tm, c2, f2) == c3);
+    crate::gap2_relnum_dds::lemma_seq_pow_len(seq![4nat, 1nat, 2nat], big_m);
+    assert(seq_pow(seq![4nat, 1nat, 2nat], big_m).len() == 3 * big_m) by(nonlinear_arith)
+        requires
+            seq_pow(seq![4nat, 1nat, 2nat], big_m).len() == big_m * seq![4nat, 1nat, 2nat].len(),
+            seq![4nat, 1nat, 2nat].len() == 3;
+    assert(od1.len() == od.len() + 1);
+    assert(od2.len() == od.len() + 1 + 3 * big_m);
+    lemma_seret1x_phase_tail_safe_v(tm, len, pc + 2, bigu, od2, 3, entry5(pc + 3),
+        ((pc + 3) * 288 + 1) as int, ((pc + 3) * 288 + 2) as int,
+        ((pc + 3) * 288 + 3) as int, ((pc + 3) * 288 + 4) as int, h0);
+    lemma_tm_run_split(tm, c0, f0, f1);
+    lemma_tail_v_chain(tm, c0, (f0 + f1) as nat, f2, h0, h0, h0);
+
+    // ── block 3: pbb3(4,3,2) @ pc+3 → entry5(pc+4). ──
+    cat_bound(od2, seq![3nat]);
+    lemma_pbb3x_phase_any(tm, len, pc + 3, big_m, g, od3, 4, 3, 2, entry5(pc + 4));
+    let od4 = od3 + seq_pow(seq![4nat, 3nat, 2nat], big_m);
+    let c4 = TmConfig { u: bigu, v: dpack(od4, m), a: 0, q: entry5(pc + 4) };
+    let f3 = pb3_fuel(big_m, g, od3.len());
+    assert(tm_run(tm, c3, f3) == c4);
+    assert(od3.len() == od2.len() + 1);
+    assert(od3.len() == od.len() + 2 + 3 * big_m);
+    lemma_pbb3x_phase_any_tail_safe_v(tm, len, pc + 3, big_m, g, od3, 4, 3, 2, entry5(pc + 4), h0);
+    lemma_tm_run_split(tm, c0, (f0 + f1) as nat, f2);
+    lemma_tail_v_chain(tm, c0, (f0 + f1 + f2) as nat, f3, h0, h0, h0);
+
+    // ── fuel match. ──
+    crate::gap2_relnum_dds::lemma_seq_pow_len(seq![4nat, 1nat, 2nat], big_m);
+    crate::gap2_relnum_dds::lemma_seq_pow_len(seq![4nat, 3nat, 2nat], big_m);
+    assert(od1.len() == od.len() + 1);
+    assert(od2.len() == od.len() + 1 + 3 * big_m);
+    assert(od3.len() == od.len() + 2 + 3 * big_m);
+    assert(uinv_half_a_fuel(big_m, g, od.len()) == (f0 + f1 + f2 + f3) as nat);
+}
+
+/// **v-side (α-tail) mirror of [`lemma_uinv_half_b_tail_safe`].** Parametric in `h` (binding = block-7 pbb1 surge).
+#[verifier::rlimit(4000)]
+pub proof fn lemma_uinv_half_b_tail_safe_v(tm: Tm, len: nat, pc4: nat, big_m: nat, g: nat, od4: Seq<nat>, qend: nat, h: nat)
+    requires
+        tm_wf(tm),
+        tm.n == 5,
+        tm.m == tm_mod5(len),
+        pc4 + 3 <= len,
+        tm.quints.len() == 288 * (len + 1),
+        forall|i: int| pc4 * 288 <= i < pc4 * 288 + 288 ==> #[trigger] tm.quints[i] == seret1x_gen(2, entry5(pc4 + 1), i as nat),
+        forall|i: int| (pc4 + 1) * 288 <= i < (pc4 + 1) * 288 + 288 ==> #[trigger] tm.quints[i] == pbb1x_gen(1, entry5(pc4 + 2), i as nat),
+        forall|i: int| (pc4 + 2) * 288 <= i < (pc4 + 2) * 288 + 288 ==> #[trigger] tm.quints[i] == seret3x_gen(4, 1, 2, entry5(pc4 + 3), i as nat),
+        forall|i: int| (pc4 + 3) * 288 <= i < (pc4 + 3) * 288 + 288 ==> #[trigger] tm.quints[i] == pbb1x_gen(3, qend, i as nat),
+        1 <= big_m,
+        g >= big_m + 2,
+        forall|k: int| 0 <= k < od4.len() ==> 1 <= #[trigger] od4[k] <= 4,
+        h >= od4.len() + 2 * big_m + 5,
+    ensures
+        tail_safe_v(tm, TmConfig { u: copy_u(0, big_m, g, tm.m), v: dpack(od4, tm.m), a: 0, q: entry5(pc4) },
+            uinv_half_b_fuel(big_m, g, od4.len()), h),
+        tail_end_h_v(tm, TmConfig { u: copy_u(0, big_m, g, tm.m), v: dpack(od4, tm.m), a: 0, q: entry5(pc4) },
+            uinv_half_b_fuel(big_m, g, od4.len()), h) == h,
+{
+    let m = tm.m;
+    let h0 = h;
+    let bigu = copy_u(0, big_m, g, m);
+    let c4 = TmConfig { u: bigu, v: dpack(od4, m), a: 0, q: entry5(pc4) };
+    crate::gap2_relnum_dds::lemma_seq_pow_len(seq![1nat], big_m);
+
+    // ── block 4: seret1[2] @ pc4 → entry5(pc4+1). ──
+    lemma_pbb1x_walkback(tm, len, pc4 + 1, 1, entry5(pc4 + 2), 1);
+    lemma_pbb1x_walkback(tm, len, pc4 + 1, 1, entry5(pc4 + 2), 2);
+    lemma_pbb1x_walkback(tm, len, pc4 + 1, 1, entry5(pc4 + 2), 3);
+    lemma_pbb1x_walkback(tm, len, pc4 + 1, 1, entry5(pc4 + 2), 4);
+    lemma_seret1x_phase(tm, len, pc4, bigu, od4, 2, entry5(pc4 + 1),
+        ((pc4 + 1) * 288 + 1) as int, ((pc4 + 1) * 288 + 2) as int,
+        ((pc4 + 1) * 288 + 3) as int, ((pc4 + 1) * 288 + 4) as int);
+    let od5 = od4 + seq![2nat];
+    let c5 = TmConfig { u: bigu, v: dpack(od5, m), a: 0, q: entry5(pc4 + 1) };
+    let f4 = (2 * od4.len() + 4) as nat;
+    assert(tm_run(tm, c4, f4) == c5);
+    lemma_seret1x_phase_tail_safe_v(tm, len, pc4, bigu, od4, 2, entry5(pc4 + 1),
+        ((pc4 + 1) * 288 + 1) as int, ((pc4 + 1) * 288 + 2) as int,
+        ((pc4 + 1) * 288 + 3) as int, ((pc4 + 1) * 288 + 4) as int, h0);
+
+    // ── block 5: pbb1(1) @ pc4+1 → entry5(pc4+2). ──
+    cat_bound(od4, seq![2nat]);
+    lemma_pbb1x_phase_any(tm, len, pc4 + 1, big_m, g, od5, 1, entry5(pc4 + 2));
+    let od6 = od5 + seq_pow(seq![1nat], big_m);
+    let c6 = TmConfig { u: bigu, v: dpack(od6, m), a: 0, q: entry5(pc4 + 2) };
+    let f5 = pb1_fuel(big_m, g, od5.len());
+    assert(tm_run(tm, c5, f5) == c6);
+    lemma_pbb1x_phase_any_tail_safe_v(tm, len, pc4 + 1, big_m, g, od5, 1, entry5(pc4 + 2), h0);
+    lemma_tail_v_chain(tm, c4, f4, f5, h0, h0, h0);
+
+    // ── block 6: seret3(4,1,2) @ pc4+2 → entry5(pc4+3). ──
+    crate::gap2_relnum_dds::lemma_seq_pow_bound(seq![1nat], big_m, 1, 4);
+    cat_bound(od5, seq_pow(seq![1nat], big_m));
+    lemma_pbb1x_walkback(tm, len, pc4 + 3, 3, qend, 1);
+    lemma_pbb1x_walkback(tm, len, pc4 + 3, 3, qend, 2);
+    lemma_pbb1x_walkback(tm, len, pc4 + 3, 3, qend, 3);
+    lemma_pbb1x_walkback(tm, len, pc4 + 3, 3, qend, 4);
+    lemma_seret3x_phase(tm, len, pc4 + 2, bigu, od6, 4, 1, 2, entry5(pc4 + 3),
+        ((pc4 + 3) * 288 + 1) as int, ((pc4 + 3) * 288 + 2) as int,
+        ((pc4 + 3) * 288 + 3) as int, ((pc4 + 3) * 288 + 4) as int);
+    let od7 = od6 + seq![4nat, 1nat, 2nat];
+    let c7 = TmConfig { u: bigu, v: dpack(od7, m), a: 0, q: entry5(pc4 + 3) };
+    let f6 = (2 * od6.len() + 8) as nat;
+    assert(tm_run(tm, c6, f6) == c7);
+    crate::gap2_relnum_dds::lemma_seq_pow_len(seq![1nat], big_m);
+    assert(seq_pow(seq![1nat], big_m).len() == big_m) by(nonlinear_arith)
+        requires
+            seq_pow(seq![1nat], big_m).len() == big_m * seq![1nat].len(),
+            seq![1nat].len() == 1;
+    assert(od5.len() == od4.len() + 1);
+    assert(od6.len() == od4.len() + 1 + big_m);
+    lemma_seret3x_phase_tail_safe_v(tm, len, pc4 + 2, bigu, od6, 4, 1, 2, entry5(pc4 + 3),
+        ((pc4 + 3) * 288 + 1) as int, ((pc4 + 3) * 288 + 2) as int,
+        ((pc4 + 3) * 288 + 3) as int, ((pc4 + 3) * 288 + 4) as int, h0);
+    lemma_tm_run_split(tm, c4, f4, f5);
+    lemma_tail_v_chain(tm, c4, (f4 + f5) as nat, f6, h0, h0, h0);
+
+    // ── block 7: pbb1(3) @ pc4+3 → qend. ──
+    cat_bound(od6, seq![4nat, 1nat, 2nat]);
+    lemma_pbb1x_phase_any(tm, len, pc4 + 3, big_m, g, od7, 3, qend);
+    let od8 = od7 + seq_pow(seq![3nat], big_m);
+    let c8 = TmConfig { u: bigu, v: dpack(od8, m), a: 0, q: qend };
+    let f7 = pb1_fuel(big_m, g, od7.len());
+    assert(tm_run(tm, c7, f7) == c8);
+    assert(od7.len() == od6.len() + 3);
+    assert(od7.len() == od4.len() + 4 + big_m);
+    lemma_pbb1x_phase_any_tail_safe_v(tm, len, pc4 + 3, big_m, g, od7, 3, qend, h0);
+    lemma_tm_run_split(tm, c4, (f4 + f5) as nat, f6);
+    lemma_tail_v_chain(tm, c4, (f4 + f5 + f6) as nat, f7, h0, h0, h0);
+
+    // ── fuel match. ──
+    crate::gap2_relnum_dds::lemma_seq_pow_len(seq![1nat], big_m);
+    assert(od5.len() == od4.len() + 1);
+    assert(od6.len() == od4.len() + 1 + big_m);
+    assert(od7.len() == od4.len() + 4 + big_m);
+    assert(uinv_half_b_fuel(big_m, g, od4.len()) == (f4 + f5 + f6 + f7) as nat);
+}
+
+/// **v-side (α-tail) mirror of [`lemma_uinv_phase_tail_safe`].** Chains the two half `_v` companions; the
+/// single surge bound `h >= od.len() + 8M + 7` is the tightest (block-7) margin over the whole 8-block phase.
+pub proof fn lemma_uinv_phase_tail_safe_v(tm: Tm, len: nat, pc: nat, big_m: nat, g: nat, od: Seq<nat>, qend: nat, h: nat)
+    requires
+        tm_wf(tm),
+        tm.n == 5,
+        tm.m == tm_mod5(len),
+        pc + 7 <= len,
+        tm.quints.len() == 288 * (len + 1),
+        forall|i: int| pc * 288 <= i < pc * 288 + 288 ==> #[trigger] tm.quints[i] == seret1x_gen(4, entry5(pc + 1), i as nat),
+        forall|i: int| (pc + 1) * 288 <= i < (pc + 1) * 288 + 288 ==> #[trigger] tm.quints[i] == pbb3x_gen(4, 1, 2, entry5(pc + 2), i as nat),
+        forall|i: int| (pc + 2) * 288 <= i < (pc + 2) * 288 + 288 ==> #[trigger] tm.quints[i] == seret1x_gen(3, entry5(pc + 3), i as nat),
+        forall|i: int| (pc + 3) * 288 <= i < (pc + 3) * 288 + 288 ==> #[trigger] tm.quints[i] == pbb3x_gen(4, 3, 2, entry5(pc + 4), i as nat),
+        forall|i: int| (pc + 4) * 288 <= i < (pc + 4) * 288 + 288 ==> #[trigger] tm.quints[i] == seret1x_gen(2, entry5(pc + 5), i as nat),
+        forall|i: int| (pc + 5) * 288 <= i < (pc + 5) * 288 + 288 ==> #[trigger] tm.quints[i] == pbb1x_gen(1, entry5(pc + 6), i as nat),
+        forall|i: int| (pc + 6) * 288 <= i < (pc + 6) * 288 + 288 ==> #[trigger] tm.quints[i] == seret3x_gen(4, 1, 2, entry5(pc + 7), i as nat),
+        forall|i: int| (pc + 7) * 288 <= i < (pc + 7) * 288 + 288 ==> #[trigger] tm.quints[i] == pbb1x_gen(3, qend, i as nat),
+        1 <= big_m,
+        g >= big_m + 2,
+        forall|k: int| 0 <= k < od.len() ==> 1 <= #[trigger] od[k] <= 4,
+        h >= od.len() + 8 * big_m + 7,
+    ensures
+        tail_safe_v(tm, TmConfig { u: copy_u(0, big_m, g, tm.m), v: dpack(od, tm.m), a: 0, q: entry5(pc) },
+            uinv_phase_fuel(big_m, g, od.len()), h),
+        tail_end_h_v(tm, TmConfig { u: copy_u(0, big_m, g, tm.m), v: dpack(od, tm.m), a: 0, q: entry5(pc) },
+            uinv_phase_fuel(big_m, g, od.len()), h) == h,
+{
+    let m = tm.m;
+    let h0 = h;
+    let bigu = copy_u(0, big_m, g, m);
+    let c0 = TmConfig { u: bigu, v: dpack(od, m), a: 0, q: entry5(pc) };
+
+    // ── first half (blocks 0–3): tm_run(c0, ha) == c4, tail_safe at h0 → h0. ──
+    lemma_uinv_half_a(tm, len, pc, big_m, g, od);
+    let od4 = od + seq![4nat] + seq_pow(seq![4nat, 1nat, 2nat], big_m)
+        + seq![3nat] + seq_pow(seq![4nat, 3nat, 2nat], big_m);
+    let c4 = TmConfig { u: bigu, v: dpack(od4, m), a: 0, q: entry5(pc + 4) };
+    assert(tm_run(tm, c0, uinv_half_a_fuel(big_m, g, od.len())) == c4);
+    lemma_uinv_half_a_tail_safe_v(tm, len, pc, big_m, g, od, h0);
+
+    // ── od4 digits ∈ 1..4 (for the second half's requires). ──
+    crate::gap2_relnum_dds::lemma_seq_pow_bound(seq![4nat, 1nat, 2nat], big_m, 1, 4);
+    crate::gap2_relnum_dds::lemma_seq_pow_bound(seq![4nat, 3nat, 2nat], big_m, 1, 4);
+    cat_bound(od, seq![4nat]);
+    cat_bound(od + seq![4nat], seq_pow(seq![4nat, 1nat, 2nat], big_m));
+    cat_bound(od + seq![4nat] + seq_pow(seq![4nat, 1nat, 2nat], big_m), seq![3nat]);
+    cat_bound(od + seq![4nat] + seq_pow(seq![4nat, 1nat, 2nat], big_m) + seq![3nat],
+        seq_pow(seq![4nat, 3nat, 2nat], big_m));
+
+    // ── od4 length (needed BOTH for the second half's surge bound AND fuel matching). ──
+    crate::gap2_relnum_dds::lemma_seq_pow_len(seq![4nat, 1nat, 2nat], big_m);
+    crate::gap2_relnum_dds::lemma_seq_pow_len(seq![4nat, 3nat, 2nat], big_m);
+    assert(od4.len() == od.len() + 2 + 6 * big_m);
+
+    // ── second half (blocks 4–7): tail_safe at h0 → h0. h0 >= od4.len()+2M+5 by the phase bound. ──
+    assert(h0 >= od4.len() + 2 * big_m + 5);
+    lemma_uinv_half_b_tail_safe_v(tm, len, pc + 4, big_m, g, od4, qend, h0);
+
+    // ── compose the two halves at h0. ──
+    lemma_tail_v_chain(tm, c0, uinv_half_a_fuel(big_m, g, od.len()),
+        uinv_half_b_fuel(big_m, g, od4.len()), h0, h0, h0);
+    assert(uinv_phase_fuel(big_m, g, od.len())
+        == (uinv_half_a_fuel(big_m, g, od.len()) + uinv_half_b_fuel(big_m, g, od4.len())) as nat);
+}
+
+/// **v-side high-α-tail lift of the full `uinv` phase** — mirror of [`lemma_uinv_phase_tail`]. The α-block
+/// `t` rides one separator-blank above the output at offset `h` and survives the whole phase untouched.
+pub proof fn lemma_uinv_phase_tail_v(tm: Tm, len: nat, pc: nat, big_m: nat, g: nat, od: Seq<nat>, qend: nat, t: nat, h: nat)
+    requires
+        tm_wf(tm),
+        tm.n == 5,
+        tm.m == tm_mod5(len),
+        pc + 7 <= len,
+        tm.quints.len() == 288 * (len + 1),
+        forall|i: int| pc * 288 <= i < pc * 288 + 288 ==> #[trigger] tm.quints[i] == seret1x_gen(4, entry5(pc + 1), i as nat),
+        forall|i: int| (pc + 1) * 288 <= i < (pc + 1) * 288 + 288 ==> #[trigger] tm.quints[i] == pbb3x_gen(4, 1, 2, entry5(pc + 2), i as nat),
+        forall|i: int| (pc + 2) * 288 <= i < (pc + 2) * 288 + 288 ==> #[trigger] tm.quints[i] == seret1x_gen(3, entry5(pc + 3), i as nat),
+        forall|i: int| (pc + 3) * 288 <= i < (pc + 3) * 288 + 288 ==> #[trigger] tm.quints[i] == pbb3x_gen(4, 3, 2, entry5(pc + 4), i as nat),
+        forall|i: int| (pc + 4) * 288 <= i < (pc + 4) * 288 + 288 ==> #[trigger] tm.quints[i] == seret1x_gen(2, entry5(pc + 5), i as nat),
+        forall|i: int| (pc + 5) * 288 <= i < (pc + 5) * 288 + 288 ==> #[trigger] tm.quints[i] == pbb1x_gen(1, entry5(pc + 6), i as nat),
+        forall|i: int| (pc + 6) * 288 <= i < (pc + 6) * 288 + 288 ==> #[trigger] tm.quints[i] == seret3x_gen(4, 1, 2, entry5(pc + 7), i as nat),
+        forall|i: int| (pc + 7) * 288 <= i < (pc + 7) * 288 + 288 ==> #[trigger] tm.quints[i] == pbb1x_gen(3, qend, i as nat),
+        1 <= big_m,
+        g >= big_m + 2,
+        forall|k: int| 0 <= k < od.len() ==> 1 <= #[trigger] od[k] <= 4,
+        h >= od.len() + 8 * big_m + 7,
+    ensures
+        tm_run(tm,
+            add_hi_v(TmConfig { u: copy_u(0, big_m, g, tm.m), v: dpack(od, tm.m), a: 0, q: entry5(pc) },
+                h, t, tm.m),
+            uinv_phase_fuel(big_m, g, od.len()))
+            == add_hi_v(TmConfig { u: copy_u(0, big_m, g, tm.m),
+                v: dpack(od + uinv_digits((big_m - 1) as nat), tm.m), a: 0, q: qend },
+                h, t, tm.m),
+{
+    let m = tm.m;
+    let h0 = h;
+    let c0 = TmConfig { u: copy_u(0, big_m, g, m), v: dpack(od, m), a: 0, q: entry5(pc) };
+    let fuel = uinv_phase_fuel(big_m, g, od.len());
+
+    lemma_uinv_phase(tm, len, pc, big_m, g, od, qend);
+    lemma_uinv_phase_tail_safe_v(tm, len, pc, big_m, g, od, qend, h0);
+    // tail_end_h(c0, fuel, h0) == h0, so the lift re-deposits the tail at the SAME offset.
+    lemma_run_tail_v(tm, c0, fuel, h0, t);
 }
 
 } // verus!
