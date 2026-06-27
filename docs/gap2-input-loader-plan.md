@@ -263,10 +263,39 @@ chained through ignition to `mm_in_H0(mm, α, 0) ⟺ α declared word-number`.
   `[counter blocks] 0 [relnum-scratch] 0 [α-block] 0`. (If region navigation proves hairy, n=5 with a
   dedicated sentinel symbol `5` is the fallback — gadgets are alphabet-monotone, assemble4 generalizes.)
 
-  **NEXT = the R-P copy-and-park ASSEMBLY:** handle the ignition split (digit0 in `start(d0)` state,
-  digit1 scanned `a`, digits2+ in `u`); design `start(i)` to deposit d0 + recover a clean running
-  config; walk α off into a blank-delimited parked block; leave the head at a known boundary. This pins
-  `start` (currently abstract in B-IG `ignition_quads(ndig, start)`) and the `psc_act` window layout.
+  **NEXT = the R-P copy-and-park ASSEMBLY.** ✅ CONCRETE ALGORITHM WORKED OUT (2026-06-26): from the
+  ignition output `c1 = {u: dpack([d2,d3,…]), v: 0, a: d1, q: start(d0)}` (digit0 in the state, head at
+  d1) —
+    1. **`start(i)` step** (scanning d1): write `a2=d1`, move **R** → pushes d1 onto u, pops the empty v;
+       result `u' = u·m + d1 = dpack([d1,d2,…])`, scanned `= 0`, state → `deposit(i)`. (Preserves d1 by
+       writing it back; uses the move to re-pack d1 into u in order.)
+    2. **`deposit(i)` step** (scanning the blank 0): write `a2 = i = d0`, move **L** → pushes d0 onto the
+       empty v, pops u's low digit; result `v' = dpack([d0])`, scanned `= d1`, `u = dpack([d2,…])`, state
+       → `q_walk`. (Deposits the state-held d0 onto v.)
+    3. **`lemma_dwalk_left`** over `blk = [d1,d2,…,d_{L-1}]` → pushes them onto v atop d0; result
+       `v = dpile(dpack([d0]), blk)`, `u = 0`, scanned `= 0`, head on the left blank.
+  **Net:** α's digit sequence is parked **reversed** in v (high digit lowest: reading v low→high gives
+  `d_{L-1}…d1 d0`), with u freed as workspace and the head on a blank boundary. R-cmp then compares this
+  reversed α-block against relnum generated/compared in the same reversed order (or applies one more
+  reversal via `lemma_dwalk_right`).
+
+  **✅ COPY-AND-PARK CORE DONE (`tm_rp.rs`, 7/0; crate 706/0).** `lemma_rp_entry` (the 2-step handshake)
+  + `lemma_rp_copy_park` (entry ∘ `lemma_dwalk_left` over `[d1]+tail`, `3+tail.len()` steps to
+  `{u:0, v: dpile(dpack([d0]), [d1]+tail), a:0, q:q_walk}`). Both are **generic over an abstract `tm`**
+  carrying the 5 handshake + 4 walk quintuples at given indices — the eventual `psc_act` window supplies
+  them via `lemma_slot_index`. This PINS `start(d0) := the start-handshake state` (the abstract param in
+  B-IG `ignition_quads(ndig, start)`).
+
+  **NEXT (psc_act wiring + the single-digit branch):** (1) build the concrete `psc_act` window dispatch
+  placing the start/deposit/walk quintuples (one start+deposit pair per digit `d0 ∈ 1..4`), discharge
+  `lemma_assemble4_wf`, and locate the quintuples with `lemma_slot_index` to feed `lemma_rp_copy_park`;
+  (2) thread `tm_config_wf` (via `lemma_dpack_digits_le`) for the eventual `lemma_tm_h0_iff`. **Design Q
+  still open:** the walk runs `blk.len()` steps and stops at the natural blank, so the length L need not
+  be known in advance (✓ matches unknown-length α). But the start step assumed a scanned digit `d1` —
+  the BWD-exactness must also handle/diverge on **single-digit α** (`u==0` after the start R-move, scan
+  `0`): make `deposit(d0)`'s `(deposit, 0, d0, q_walk, L)` land a config whose subsequent walk sees an
+  empty block and proceeds, OR add a length-≥2 guard. (A 1-digit word-number is never a `relnum` — the
+  collapse relator is long — so divergence/non-accept is correct there.)
 - **R-relnum-gen — generate relnum(a,b)'s base-m digits.** For an enumerated declared `(a,b)`, emit the
   digits of `relnum(a,b)` = the symbols of the collapsed Miller relator `ρ(collapse(g_a g_b⁻¹))`
   (length Θ(a+b); `t·(b⁻¹)ⁱ·a·(b)ⁱ·t⁻¹·a⁻ⁱ·b⁻¹·aⁱ`, `i=j+1`, `b=tat⁻¹`). Loop control via counters
@@ -363,12 +392,13 @@ ORDER (low-first vs high-first) and `inverse_word`'s exact digit transform befor
 
 ---
 
-*Status (2026-06-26): SPEC BACKBONE + IGNITION + R-AL + R-P PRIMITIVES BUILT. B-FR/B-IG (ignition,
-`gap2_ignition.rs`) + B-relnum-spec/B-W-assembly (`gap2_relnum.rs`) + **R-AL (n=4 assembler,
-`tm_assemble4.rs` 17/0)** + **R-P digit-string algebra (`tm_dstring.rs` 14/0)** + **R-P digit-walk
-gadgets left+right (`tm_dwalk.rs` 6/0)** DONE; crate 699/0. The whole remaining obligation is ONE spec:
-a machine satisfying `mm_decides_relnum`, built as Route (i) — a bespoke n=4 `tm_wf` TM `psc_tm(e)` over
-the assemble4 scaffold. Tape layout DECIDED = Option (B) canonicalize, blank-delimited regions
-(no free sentinel symbol at n=4 — see symbol-space note). α-digit algebra + walk gadgets in hand. NEXT =
-the R-P copy-and-park ASSEMBLY (pins `start` + the `psc_act` window layout) → R-relnum-gen / R-cmp /
-R-S / R-C / R-MC. The conditional chain already stands; this brick removes the last axiom.*
+*Status (2026-06-26): SPEC BACKBONE + IGNITION + R-AL + the full R-P PRIMITIVE LAYER BUILT.
+B-FR/B-IG (ignition, `gap2_ignition.rs`) + B-relnum-spec/B-W-assembly (`gap2_relnum.rs`) + **R-AL
+(`tm_assemble4.rs` 17/0)** + **R-P digit-string algebra (`tm_dstring.rs` 14/0)** + **R-P digit-walk
+gadgets (`tm_dwalk.rs` 6/0)** + **R-P copy-and-park core (`tm_rp.rs` 7/0)** DONE; crate 706/0. The whole
+remaining obligation is ONE spec: a machine satisfying `mm_decides_relnum`, built as Route (i) — a
+bespoke n=4 `tm_wf` TM `psc_tm(e)` over the assemble4 scaffold. Tape layout = Option (B) canonicalize,
+blank-delimited regions; α-digit algebra + walk gadgets + copy-park core all in hand (generic over the
+quintuple indices a `psc_act` window will supply). NEXT = wire the `psc_act` start/deposit/walk windows
+(pins ignition `start`) + thread `tm_config_wf` → R-relnum-gen (the deep brick) / R-cmp / R-S / R-C /
+R-MC. The conditional chain already stands; this brick removes the last axiom.*
