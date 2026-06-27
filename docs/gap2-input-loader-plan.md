@@ -1138,3 +1138,17 @@ loop's is `q_bhome`). `w % m == 0` is established in-body (`g−M ≥ 2 ⟹ m | 
    / `lemma_relnum_is_fam_digits`); its `dpack` value is `relnum(a,b)`.
 4. **Concrete `tm`/`tm_wf`** (assemble5) — instantiate the threaded indices via `lemma_slot_index`; the
    `psc_act` window. Then R-cmp / R-S / R-C / R-MC / B-W → discharge `ceer_realizes` → drop the axiom.
+
+> **⚠ N+10 FINDING — the phase chain wants the CONCRETE assemble5 tm, NOT more abstract threading.** Within
+> a phase the 4 power-blocks emit DIFFERENT symbols via `(q_surge, 0, s, q_eret, R)`. Sharing `q_surge`
+> across blocks is a `tm_wf` determinism CONFLICT (same `(state,read)=(q_surge,0)`, different writes `s`), so
+> each block needs its OWN emit machinery (distinct states/indices). Threading 8 blocks' worth of ~100-param
+> sets abstractly is impractical; the assemble5 scaffold gives each block its own window (`pc → distinct
+> entry4/idx`) for free. **So the recommended next move is to build the assemble5 tm and lay the per-block
+> windows, then prove the chain about the CONCRETE machine** (each step instantiates the relevant
+> `lemma_power_block_step_*` / `lemma_surge_emit_return_*` via `lemma_slot_index`, exactly as `gap2_psc_rp.rs`
+> instantiates `lemma_rp_copy_park`). The within-phase chain and the master-mgmt gadgets (`load_master`,
+> `q_clean`) also depend on the global tape layout (where the `a+1`/`b+1` counters live relative to master /
+> output) — pin that layout when building the assemble5 windows (couples with R-P's `[counters]0[scratch]
+> 0[α-block]0` and the dovetail). The 4 verified `lemma_power_block_step_*` primitives are the per-block
+> atoms that concrete assembly consumes.
