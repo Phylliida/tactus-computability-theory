@@ -361,3 +361,4 @@
 // GAP-2 G2-F Route (i): the EMITTER SEQUENCER -- chains per-block phase lemmas (state-id splice, no glue)
 // into the full fam_digits emission. See gap2_emit_seq.rs / §N+12.
 #[cfg(verus_keep_ghost)] pub mod gap2_emit_seq;
+#[cfg(verus_keep_ghost)] pub mod gap2_master_mgmt;
