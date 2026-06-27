@@ -1551,3 +1551,51 @@ start at `g' = g+b+2`, master `a+1`. So the wiring is a clean 3-lemma `lemma_tm_
 the 3 window-layouts (8 uinv blocks + q_clean's 9 quints + u_phase's blocks), set `qend := q_s` /
 `q_home := entry5(pc_u)`. q_clean needs `1 ≤ v0 % m ≤ 4` (the output's low digit is a real digit). The only
 genuinely-new construction is **item 4** (lay the initial double-repunit `u` from input `e`, couples to R-P).
+
+### N+16 — ITEM 4 u-SIDE FLOAT-UP DONE + the v-SIDE α-block lift (the float-up/lift TOOLKIT is CLOSED). crate 1486 → 1512/0.
+
+**Design locked (2026-06-27, w/ Danielle port 8051):** item 4 = take the dovetail's natural blank-separated
+two-counter block `D = R(b+1) + m^(b+2)·R(a+1)` (`b+1` ones, sep blank, `a+1` ones) and **float it up by a gap
+`g`** so `u == m^g·D == copy_u(0,b+1,g) + m^(g+b+2)·R(a+1)` (the EXACT `add_hi`-tailed phase-1 start config). The
+phase constraints force `g ≥ max(b+3, a−b+1)` (phase 2's master `a+1` at gap `g'=g+b+2` needs `g' ≥ a+3`), so `g`
+SCALES with `a` — a large variable gap, **counter-driven, not a fixed-sentinel shift**. Use `g = a+b+3` (a
+counter concatenation; Danielle's call — avoids a tape `max`/subtract). The float-up is `block_loop`'s "consume the
+counter, master's absolute position preserved" mechanic with the emit (surge) stripped — a pure **transporter**.
+
+**✅ ITEM 4 u-SIDE FLOAT-UP — DONE (`gap2_init.rs`, additive).** The genuinely-new, **dovetail-agnostic** core:
+- **`lemma_shift_right_ones`** — the `(q,1,0,q,R)` no-emit float-up, the **rightward mirror** of
+  `gap2_master_mgmt::lemma_wipe_ones_left`. READS a one, WRITES a blank, moves R: each step `u' = m·u` (the
+  written `0` becomes `u`'s new low digit) and pops a one off the gap-counter packed in `v`. Over a gap-counter of
+  `len+1` ones (`1` scanned + `len` in `v`) bounded by a separator `rv` (`rv%m ≠ 1`), it floats `u` up by
+  `m^(len+1)` and lands on `rv`'s low cell. Induction on `len`, structurally identical to `lemma_wipe_ones_left`.
+- **`init_block(a,b,m) = R(b+1) + m^(b+2)·R(a+1)`** (the block `D`) + **`lemma_init_double_repunit_value`**:
+  `m^g·D == copy_u(0,b+1,g) + m^(g+b+2)·R(a+1)` (pure place-value: `lemma_copy_u_start` + `lemma_pow_nat_add`).
+- **`lemma_lay_init`** — the headline: from `{u: D, v: R(g−1), a: 1, q}` (the gap-counter of `g` ones at the head,
+  `rv = 0` = empty local output) running the shift-up `g` steps gives EXACTLY
+  `add_hi({u: copy_u(0,b+1,g), v: 0, a: 0, q}, g+b+2, R(a+1), m)` — the config `lemma_uinv_phase_tail` consumes
+  (`q` splices to `entry5(pc)` at the concrete `psc_act`).
+
+**SCOPE (Danielle-confirmed):** the remaining pre-shift pieces — (P1) lay `D` in `u`, (P2) lay the `g`-one
+gap-counter in `v` — are pure **addressing** problems coupled to R-S's output format (where the dovetail parks
+`a,b`). They are R-S **glue**, NOT item-4 logic; build them WITH R-S when the source layout is known. Item 4's
+standalone u-side scope is satisfied by `lemma_lay_init`: when R-S delivers the pre-shift config, item 4 = a
+`lemma_lay_init` composition.
+
+**✅ v-SIDE α-BLOCK HIGH-TAIL LIFT — DONE (`gap2_tail_lift_v.rs`, additive).** The missing mirror: the global
+layout parks α in an α-block to the RIGHT of the emitter output (`[…output] 0 [α-block] 0`), so at the emit pivot
+`v == dpack(od) + m^H·A` — the α-block is a **high tail in `v`**. The emit phases are stated in the LOCAL frame
+`v == dpack(od)`; to apply them on the concrete machine, lift over the α-tail. The **exact L↔R mirror** of the
+`u`-side `add_hi` lift: `add_hi_v(c) = {v: c.v + m^H·A, ..c}` leaves `(q,a)` untouched ⟹ same quint fires; an
+**L-move** pushes onto `v` (tail `H→H+1`, unconditional), an **R-move** pops `v` (tail `H→H-1`, needs `H ≥ 1`).
+So `tail_safe_v` = "`H ≥ 1` before every R-move" (the head never reaching the α-block while shuttling over the
+output). Verbatim mirror: `add_hi_v` / `tail_safe_v` / `tail_end_h_v` / `lemma_apply_add_hi_v_{l,r}` /
+`lemma_run_tail_v` / `lemma_tail_unfold_v` / `lemma_step_tail_safe_v` / `lemma_tail_safe_v_split` /
+`lemma_tail_v_chain` (reuses `gap2_tail_lift::lemma_match_is`). All verified first-try, no escape hatches.
+
+**The float-up/lift TOOLKIT is now CLOSED** (u-side shift `lemma_lay_init` + u-side `add_hi` lift +
+v-side `add_hi_v` lift). **NEXT = assemble the machine (R-S phase)** — the dovetail/search that produces `(a,b)`
+and the pre-shift config (P1/P2), then R-cmp / R-S / R-C / R-MC / B-W → discharge `ceer_realizes`. Per Danielle:
+do NOT enter R-S mid-toolkit (now done); R-S should be a composition of the verified tools. When R-S's emit step
+needs the α-block carried through a phase, discharge `tail_safe_v` over the emit gadgets (a v-side mirror of the
+`gap2_tail_emit`/`gap2_tail_power`/`gap2_tail_phase1` discharge work) — a sizeable but mechanical mirror, deferred
+to R-S integration when the concrete α offset `H` is known.
