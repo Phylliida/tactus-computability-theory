@@ -982,14 +982,15 @@ PRE-EXISTING asserts elsewhere in the module (`lemma_unmark` S7 turn `0*m==0`; `
 `pow_nat(m,1)==m`/`m*1==m`). Each fixed by spelling out the multiplication-by-0/1 step. These are the
 "~2% false-miss" SST churn; sound, but worth knowing the next edit may re-poke a different assert.
 
-### REMAINING (the edge cases + the higher-level wiring)
+### REMAINING (the higher-level wiring — ALL copy_refresh edge cases now DONE)
 
-2. **`g=M` no-gap copy_refresh** — ✅ **DONE (N+9, see below).**
-3. **small-M whole-copy** (`M∈{1,2}`) — PARTIAL (M=2 general DONE N+9; M=2 no-gap + M=1 remain).
+2. **`g=M` no-gap copy_refresh** — ✅ **DONE (N+9).**
+3. **small-M whole-copy** (`M∈{1,2}`) — ✅ **DONE (N+9): M=2 {g=2 no-gap, g≥4 general}, M=1 {g=1, g=2, g≥3}.**
+   **`copy_refresh` is now machine-checked for EVERY `(M≥1, g≥M)` the fixed emitter TM can encounter.**
 5. **16-block sequencing** + `psc_act` window + R-cmp/R-S/R-C/R-MC/B-W → discharge `ceer_realizes`. This is
-   where a CONCRETE `tm` is built (distinct quints at distinct indices, `tm_wf` proven) and fed to
-   `lemma_copy_refresh`; the parametric `q_b`/turn determinism (5/1/0 distinct) is already discharged by
-   construction there.
+   where a CONCRETE `tm` is built (distinct quints at distinct indices, `tm_wf` proven) and fed to the
+   per-`(M,g)` copy_refresh lemmas (the 16-block sequencer case-splits on `M∈{1,2,≥3}` × `g∈{M, M+1(only M=1), ≥M+2}`);
+   the parametric `q_b`/turn determinism (5/1/0 distinct) is already discharged by construction there.
 
 ## SESSION UPDATE 2026-06-27 (N+9) — g=M NO-GAP copy_refresh DONE + M=2 GENERAL DONE (module tm_copy_refresh 165→194, crate 998→1027)
 
@@ -1043,3 +1044,27 @@ Worth a Danielle confirmation before building M=1, since it changes the needed g
 
 After small-M: **16-block sequencing** (build the CONCRETE `tm`, `tm_wf`, feed the per-(M,g) copy_refresh
 lemmas) + `psc_act` window + R-cmp/R-S/R-C/R-MC/B-W → discharge `ceer_realizes` → drop `axiom_ceer_fp_embedding`.
+
+### ✅✅ ADDENDUM (same session N+9, cont.) — ALL small-M DONE; `copy_refresh` COMPLETE for every (M,g)
+
+Both the M=2-no-gap and M=1 (all 3 gaps) "TODO"s above are now CLOSED (module 194→329, crate 1027→1162,
+0 errors, additive, no escape hatches). Commits `4d1209a` (M=2 no-gap), `382ef7d` (M=1 general), `cd2e1b5`
+(M=1 no-gap + gap-1). The predicted recipes held exactly:
+- **M=2 no-gap:** `lemma_mark_j0_g2`/`lemma_copy_iter_j0_g2` (j=0, gap-seeks vanish) + `lemma_mark_fwd_j1gj1`
+  /`lemma_mark_j1gj1`/`lemma_copy_iter_j1gj1` (j=1 gj1, a2b lands directly, return ends at S9) +
+  `lemma_copy_loop_m2_nogap` + `lemma_copy_refresh_m2_nogap` (loop ∘ terminate_nogap ∘ unmark_nogap, 40 steps).
+- **M=1 general (g≥3):** `lemma_unmark_m1` + `lemma_mark_terminate_m1` (single five; every `M−1`-length
+  sub-walk vanishes) + `lemma_copy_refresh_m1` (single j0 ∘ terminate_m1 ∘ unmark_m1, 6g+12 steps).
+- **M=1 g=2 (gap-1):** `lemma_unmark_m1_g2` + `lemma_mark_terminate_m1_g2` (both gap-seeks vanish) +
+  `lemma_copy_refresh_m1_g2` (copy via existing `lemma_copy_iter_j0_g2(big_m=1)`, 24 steps).
+- **M=1 g=1 (no-gap):** `lemma_copy_iter_j0_g1` (BESPOKE 4-step MARK-FIRST copy — deposit-first would make
+  temp+master adjacent 1s with no separator) + `lemma_unmark_m1_nogap` + `lemma_mark_terminate_m1_nogap`
+  (2 contiguous ones) + `lemma_copy_refresh_m1_nogap` (16 steps).
+
+**Net: `copy_refresh` is machine-checked for EVERY (M≥1, g≥M).** The 16-block sequencer will dispatch
+`lemma_copy_refresh{,_nogap}` (M≥2), `_m2_nogap` (M=2,g=2), `_m1{,_g2,_nogap}` (M=1) by case-split on the
+runtime `(M,g)`. **NEXT = the 16-block sequencing** (build the concrete `tm`/`tm_wf`, thread the per-(M,g)
+dispatch) → `psc_act` window → R-cmp/R-S/R-C/R-MC/B-W → discharge `ceer_realizes` → drop the axiom.
+⚠ Recurring proof idiom for these edges (learned this session): split apply_quint conjunctions with mixed
+div/mod into a raw-form assert + per-field `nonlinear_arith`; establish `pow_nat(m,1)==m` etc. via
+`lemma_pow_nat_unfold` + `nonlinear_arith requires` (NOT a bare `by{}` block — it drops the `m·1` step).
