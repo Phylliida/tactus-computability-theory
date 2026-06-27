@@ -313,3 +313,9 @@
 // (dpile(0,s)==dpack(drev(s)), drev involution) the per-block return walk uses to cancel the surge's
 // reversal. See tm_dwalk_prefix.rs / docs/gap2-input-loader-plan.md §5 (STEP 2 model B).
 #[cfg(verus_keep_ghost)] pub mod tm_dwalk_prefix;
+
+// GAP-2 G2-F Route (i) brick R-relnum-gen (STEP 2, model B): the per-block iteration. Assembles ONE
+// emitter iteration from the verified halves -- surge (move-R + dwalk_right to frontier) + emit + return
+// (move-L + dwalk_left_prefix home) + dec_temp -- into lemma_block_iter_block1/_block3: home->home,
+// output ++= blk, temp -> temp-1. See tm_block_iter.rs / docs/gap2-input-loader-plan.md §5 (STEP 2 model B).
+#[cfg(verus_keep_ghost)] pub mod tm_block_iter;

@@ -184,6 +184,30 @@ pub proof fn lemma_dpile_split(v: nat, s: Seq<nat>, m: nat)
     }
 }
 
+/// **`dpile` over concatenation.** `dpile(v, a + b, m) == dpile(dpile(v, a, m), b, m)` — piling `a` then
+/// `b` is piling `a ++ b`. The tool for folding the emit (`dpile(dpile(U·m, od), blk)`) into a single
+/// `dpile(U·m, od ++ blk)`. Induction on `a` (drop_first).
+pub proof fn lemma_dpile_concat(v: nat, a: Seq<nat>, b: Seq<nat>, m: nat)
+    ensures
+        dpile(v, a + b, m) == dpile(dpile(v, a, m), b, m),
+    decreases a.len(),
+{
+    if a.len() == 0 {
+        assert(a + b =~= b);
+        assert(dpile(v, a, m) == v);
+    } else {
+        // (a+b)[0] == a[0]; (a+b).drop_first() == a.drop_first() + b.
+        assert((a + b).len() > 0);
+        assert((a + b)[0] == a[0]);
+        assert((a + b).drop_first() =~= a.drop_first() + b);
+        // dpile(v, a+b) == dpile(v·m + a[0], a.drop_first() + b).
+        assert(dpile(v, a + b, m) == dpile(v * m + a[0], a.drop_first() + b, m));
+        lemma_dpile_concat(v * m + a[0], a.drop_first(), b, m);
+        // == dpile(dpile(v·m+a[0], a.drop_first()), b) == dpile(dpile(v, a), b).
+        assert(dpile(v, a, m) == dpile(v * m + a[0], a.drop_first(), m));
+    }
+}
+
 /// **The reversal bridge.** `dpile(0, s, m) == dpack(drev(s), m)` — piling `s` low-first onto an empty
 /// stack yields the `dpack` of `s` reversed. Induction on `s`: peel `s[0]` (the deepest pile push = the
 /// HIGH `drev` digit), [`lemma_dpile_split`] off it, [`lemma_dpack_append`] the matching high block.
