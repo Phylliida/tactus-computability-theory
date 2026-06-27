@@ -349,3 +349,7 @@
 // STRIDE=48 window; a phase lemma (analog of gap2_psc_rp::lemma_rp_phase) proves the block's step about
 // the concrete machine. Starts with the singleton-emit window. See gap2_emit_window.rs / §N+11.
 #[cfg(verus_keep_ghost)] pub mod gap2_emit_window;
+
+// GAP-2 G2-F Route (i): the POWER-BLOCK window (block1, (s)^M) over assemble5 -- the fattest emitter
+// window (32 states/64 quints, full copy_refresh+block_loop). See gap2_emit_power.rs / §N+11.
+#[cfg(verus_keep_ghost)] pub mod gap2_emit_power;
