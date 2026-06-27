@@ -184,16 +184,60 @@ chained through ignition to `mm_in_H0(mm, α, 0) ⟺ α declared word-number`.
   `mm_decides_relnum` (B-MC ∘ B-PSC ∘ B-S ∘ B-relnum-submachine) + drop the axiom via
   `lemma_ceer_word_problem_in_h3` (§4.5). The assembly bridge (above) is already done.
 
-> **⚠ ARCHITECTURE RE-OPENED (2026-06-26, after B-relnum/B-W-assembly).** With the spec backbone done,
-> the remaining work is the machine for `mm_decides_relnum`, and the read-loop architecture (§6 q2)
-> deserves a real re-decision before ~1000 lines of code. **Two routes:** (i) the documented n≥4 TM
-> read-loop (B-AL re-assembly + new read gadget — large, re-derives gadgetry), vs (ii) a base-m→unary
-> **modular-machine prefix** feeding the EXISTING proven `rm_to_tm(match_rm(e))` n=2 pipeline verbatim
-> (reuses the whole `tm_h0`/`rm_to_tm`/`search_rm` stack; cost = the residue-arithmetic of the prefix).
-> A port-8051 design pass leaned (ii) — re-deriving the n≥4 gadget framework is high-entropy, while the
-> modmachine is *natively* a base-m digit popper. But the committed plan is (i); this is a genuine fork.
-> **Danielle's call needed before the machine build.** Either way, B-relnum-spec/B-W-assembly stand
-> (machine-independent).
+> **✅ ARCHITECTURE RESOLVED (2026-06-26, port 8051): ROUTE (i)** — a bespoke **n≥4 `tm_wf` TM**
+> `psc_tm(e)`, base-m native. Route (ii) (modmachine prefix → n=2 pipeline) was rejected after a code
+> dive surfaced two facts that killed its "verbatim reuse" premise:
+>
+> - **FACT 1 (ignition is already route-(i)-shaped).** `lemma_ignition_yields` steps
+>   `(α,0) → (α/m, start(i))`, and `rep1`'s definition confirms `(α/m, start(i)) = rep1(c1)` with
+>   `c1 = {u: α/m², v: 0, a: (α/m)%m, q: start(i)}` — a TM config **scanning α's base-m digits**, α's
+>   higher digits on the left tape. The scanned symbol `(α/m)%m ∈ 1..4` (from `numbers_word`), so the
+>   consumer needs **n ≥ 4**. The built ignition lands exactly in a route-(i) reading config, bridged
+>   by the GENERIC `lemma_tm_h0_iff(tm, ctm)`. There is no RM-initial-config landing spot (c1's scanned
+>   symbol is a generic digit, not `sep()=2` + a start state).
+> - **FACT 2 (the n=2 pipeline input is a 2^α blow-up).** `rm2_config_enc(instrs, c_k).registers[0] =
+>   godel_encode(c_k.registers) = 2^α` for input α; then `rm_config_enc = two_counter_config(2^α, 0, …)`
+>   with `u = repunit_m(2^α, m)` — a tape of **2^α ones**. So feeding α into `rm_to_tm(search_rm)`
+>   "verbatim" needs the read loop to build `repunit_m(2^α, m)`: an **exponential** raw-quad expansion,
+>   not a simple `R←R·m+d` fold. Route (ii)'s cost premise ("reuse n=2 stack verbatim, cost = prefix
+>   residue arithmetic") is false — the prefix is itself a 2^α dragon.
+>
+> **The deeper point:** α and `relnum(a,b)` are BOTH base-m word-numbers (`relnum` IS the base-m number
+> whose digits are the collapsed relator's symbols). Comparing them is natural in base-m (digit-by-digit)
+> and unnatural through a unary/Gödel bottleneck. The problem is base-m-native; an n≥4 TM fits it; the
+> n=2 unary pipeline is what creates the expansion dragon.
+>
+> **Alphabet-monotone audit — CONFIRMED.** Every TM gadget lemma (`lemma_inc`/`lemma_dec`/
+> `lemma_peek_gadget`/`lemma_bounce_*`/`lemma_*_right`/walk) requires `tm_wf(tm)` **+ `tm.n >= 2`**
+> (never `n == 2`), taking quint indices as params. The n≥4 assembly REUSES them — only new content is
+> read gadgets distinguishing digit-symbols 3,4. Only `rm_to_tm` (tm_assemble.rs:265) hardcodes `n:2`;
+> the n≥4 re-assembly is "widen the pipe", not a gadget rewrite.
+
+### Route (i) brick plan (the build)
+
+`mm = ignition_quads ++ tm_to_modmachine(psc_tm(e))`, `psc_tm(e)` a single **n≥4 `tm_wf` TM**:
+
+- **R-AL — the n≥4 assembly foundation.** An n≥4 analog of `rm_to_tm`'s `Tm` constructor (or a
+  parametric `n`); prove `tm_wf` and the per-gadget step lemmas go through at `n=4` by reusing the
+  alphabet-monotone gadget lemmas. **← first brick (smallest, unblocks everything).**
+- **R-P — the read phase.** From `c1` (scanning α's digits), consume α's base-m digits off the left
+  tape. New read/peek gadgets distinguish symbols `1..4`. (Design sub-choice: keep α as base-m digits
+  on a dedicated tape region for digit-by-digit compare — do NOT fold into a unary counter, which
+  reintroduces the expansion. Stay base-m native.)
+- **R-relnum-gen — generate relnum(a,b)'s base-m digits.** For an enumerated declared `(a,b)`, emit the
+  digits of `relnum(a,b)` = the symbols of the collapsed Miller relator `ρ(collapse(g_a g_b⁻¹))`
+  (length Θ(a+b); `t·(b⁻¹)ⁱ·a·(b)ⁱ·t⁻¹·a⁻ⁱ·b⁻¹·aⁱ`, `i=j+1`, `b=tat⁻¹`). Loop control via counters
+  (symbols 1,2). Follow the collapse definition exactly — do not reinvent.
+- **R-cmp — digit-by-digit base-m compare** of the generated relnum digits against α's stored digits.
+- **R-S — the dovetail search.** Enumerate stages `s`, `(a,b)=declared_pair(e,s)`, run R-relnum-gen +
+  R-cmp, halt iff match. Mirror the `search_rm(e)` dovetail STRUCTURE (re-expressed as n≥4 TM gadgets).
+- **R-C — cleanup to origin** (mirror `tm_cleanup.rs`).
+- **R-MC — the machine-content lemma**: `lemma_ignition_yields` (1 step) ∘ `lemma_frame_reaches` ∘
+  `lemma_tm_h0_iff(psc_tm)` ∘ R-S halts-iff ⟹ `mm_decides_relnum`. Then `lemma_ceer_realizes_from_machine`.
+
+Build with Shepherdson–Sturgis (`ComputabilityOfRecursiveFunctions.pdf`, crate root) compositional
+style; reuse `multi_output_machine`/`multi_output_primitives` for any RM-core. B-relnum-spec/B-W-assembly
+(`gap2_relnum.rs`) and the ignition layer (`gap2_ignition.rs`) STAND (machine-independent / done).
 
 ## 6. Open sub-design questions (for Danielle before / during coding)
 
