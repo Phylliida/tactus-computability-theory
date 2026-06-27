@@ -1319,10 +1319,24 @@ carrying the 8 window gens per phase):
   `assert(seq![x].len() == 1)` so `M·1` stays linear.
 
 **NEXT (the remaining assembly — master-mgmt + concrete tm; distinct next phase):**
-1. **Master-management gadgets (`load_master`, `q_clean`)** — NEW TM gadgets (need design): `load_master` =
-   `copy_u(stored counter → emit-scratch master)`; `q_clean` = wipe the master zone (`read 1 → write 0 →
-   L`). WIPE-AND-LOAD between the two phases (load `b+1`, run uinv phase, `q_clean`, load `a+1`, run u
-   phase). Per the locked global tape layout (§N+11).
+1. **Master-management gadgets (`load_master`, `q_clean`)** — NEW TM gadgets (need design). **KEY DESIGN
+   RESOLUTION (N+12, with local-model port 8051):** master-mgmt is LOCAL to `u`, not cross-region. The
+   per-phase chain works in the LOCAL frame (`u` = master+gap left of the home pivot, `v` = output right of
+   it). Phase 1's last block is a power-block, so it ENDS with `u = copy_u(0, b+1, g)` exactly (master
+   preserved, temp consumed); `v` holds `uinv_digits(b)`. Phase 2 needs `u = copy_u(0, a+1, g)` with `v`
+   continuing. So between phases ONLY `u` changes — wipe the `b+1` repunit, rebuild the `a+1` repunit, both
+   operating on the local `u` region (reuse `copy_refresh`'s short marked-copy walks, NOT a far-left
+   cross-region copy). The SOURCE for `load_master` must be a LOCAL backup of `a+1` (e.g. a reserved slot
+   adjacent to the master zone) — set up once at init (the partner's "pre-load both counters locally"
+   insight, adapted: keep both `a+1`/`b+1` backups local so each phase's load is a short walk).
+   **⚠ COUPLES WITH THE GLOBAL LAYOUT / R-P (Danielle's call):** where the local counter-backups live
+   relative to `u` is a layout decision tied to R-P/the dovetail. The pre-load-both alternative (two masters
+   side-by-side, no wipe) does NOT trivially work because the chain fixes the master's position relative to
+   the temp — a second master in the gap changes `copy_u`'s value. So WIPE-AND-LOAD (with local backups) is
+   the route; `q_clean` IS needed (if `a+1 < b+1`, overwriting leaves residue ones that the chain would
+   miscount). Gadgets: `q_clean` (local: `read 1 → write 0 → L`, stop at the gap-`0`); `load_master`
+   (local marked-copy backup→master, a `copy_refresh`-style deposit producing `copy_u(0, a+1, g)`).
+   Build the init local-backup setup + both gadgets, then the two-phase wiring.
 2. **Two-phase wiring** — chain `lemma_uinv_phase` (qend = master-mgmt entry) → master-mgmt → `lemma_u_phase`
    ⟹ output `= dpack(od ++ uinv_digits(b) ++ u_digits(a)) = dpack(od ++ fam_digits(a,b))`. The `qfinal` of
    the u phase = R-cmp's `q_cmp`.
