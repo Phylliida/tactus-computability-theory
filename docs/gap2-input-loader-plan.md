@@ -1426,24 +1426,60 @@ untouched (the walk primitives already carry a `w` high tail; thread it up throu
 
 **Init tape:** `Pivot · Blank_g · R(b+1) · Blank_1(sep) · R(a+1)` — i.e. `u == m^g·R(b+1) + m^(g+b+2)·R(a+1)`.
 
-**Revised NEXT (master-mgmt collapsed to one lemma + setup + wiring):**
-1. **`lemma_uinv_phase_tail`** — additive high-tail variant of `lemma_uinv_phase` carrying `m^(g')·R(a+1)`
-   (`g' = g+b+2`). THE new critical path. **⚠ NOT mechanical (scouted 2026-06-27):** the block phase atom
-   `lemma_pbb1x_phase` (gap2_emit_power.rs:537) operates on `u == copy_u(0,M,g)` EXACTLY and calls the
-   6500-line `tm_copy_refresh::lemma_copy_refresh` core, which carries NO high tail. So threading needs a
-   STRATEGY DECISION (worth a Danielle consult before building):
-   - **(a) re-thread** `lemma_copy_refresh` + the power/block-loop emit lemmas with a `+ m^H·T` tail (deep —
-     touches the tm_copy_refresh core; the leftward walk primitives `lemma_run_walk_left`/`seek_left_blanks`
-     ALREADY carry a `w` high-tail param, so the lower layers may thread, but copy_refresh's contract is
-     stated tail-free and would need additive `_tail` variants).
-   - **(b) head-reach-bound meta-lemma** — prove once that a run whose leftward reach stays `< H` satisfies
-     `run(u + m^H·T) == run(u) + m^H·T`. Cleaner in principle but the Minsky-pair config hides the head
-     position (it's implicit in the u/v split), so "reach < H" isn't directly expressible — likely still
-     reduces to per-step tail-threading. Math fact that makes it TRUE: copy_refresh's leftward walks stop at
-     the master top (`g+M`), so with `H = g'  = g+b+2 > g+M` the tail digits are never read/written.
-2. **Init setup** — lay `u == m^g·R(b+1) + m^(g+b+2)·R(a+1)` at machine start (a `copy_refresh`/`block_loop`
+### N+14 — STRATEGY RESOLVED: the BLACK-BOX high-tail lift (option b done right). FOUNDATION VERIFIED (crate 1277 → 1315/0).
+
+**Decision (2026-06-27, after a local-model consult + first-principles analysis):** route **(b) the meta-lemma**,
+done as a true **black box** — option (a) re-threading the tail through `tm_copy_refresh`'s ~40 value-arith
+lemmas is a confirmed trap. The decisive observation that makes (b) clean: a `TmConfig` is `(u, v, a, q)` with
+the scanned symbol `a` and state `q` as **separate fields** — they are NOT computed from `u`. So adding a high
+tail `add_hi(c) = {u: c.u + m^H·T, ..c}` changes only `u`, the **same quintuple fires every step**, and the tail
+only perturbs the step *result*. An R-move sends `m^H·T → m^(H+1)·T` *unconditionally*; an L-move sends it to
+`m^(H-1)·T` and leaves the popped symbol `a'=u%m` intact **iff `H ≥ 1`**. So the SOLE safety condition is
+**`H ≥ 1` before every L-move** — a control-flow property, not a value-arith one. The earlier "reach isn't
+expressible" worry was wrong: it doesn't need to be; the lift never inspects reach, it just threads `H ± 1` per
+step and the discharge is the same induction the source gadget already does, tracking ONLY `dir` and `H`.
+
+**VERIFIED FOUNDATION (3 new modules, all additive, no escape hatches):**
+- **`gap2_tail_lift.rs`** — the reusable core. `add_hi`, `tail_safe` (the `H≥1`-before-each-L-move predicate),
+  `tail_end_h` (`±1` per step); `lemma_run_tail` = the **black-box lift** `tm_run(add_hi(c)) == add_hi(tm_run(c))`
+  given `tail_safe`; `lemma_tail_unfold` (one-step spec unfold at a known firing quint — the workhorse);
+  `lemma_step_tail_safe` (single step); `lemma_tail_safe_split` + `lemma_tail_chain` (compose tail_safe across
+  segment boundaries). **The lift touches ZERO value arithmetic of copy_refresh.**
+- **`gap2_tail_walks.rs`** — `tail_safe` for all 5 walk primitives: `seek_left_blanks`/`run_walk_left`/
+  `unmark_fives_left` (L-walks, need entry `h ≥ len+1`, offset drops by `len+1`), `seek_right_blanks`/
+  `run_walk_right` (R-walks, unconditional, offset rises). Each mirrors the primitive's own induction.
+- **`gap2_tail_phases.rs`** — `lemma_terminate_fwd_tail_safe`, the first multi-segment composition: mirrors
+  `terminate_fwd`'s 6 segments and chains the companions with `lemma_tail_chain`. **Validates the TIGHTEST
+  margin** — the master-detecting fives-walk enters at `h = M = len+1` and lands at exactly `h = 0` (blank above
+  the all-fives master); the very next step (the turn) is an R-move, so `h=0` is reached only at an unconditional
+  R-step. This is where the single separator blank between master and tail is load-bearing — **it verifies.** All
+  conceptual risk is now retired; the rest is the same mechanical mirror-and-chain pattern.
+
+**THE RECIPE for each remaining gadget companion** (`lemma_<gadget>_tail_safe`): copy the source gadget's body
+(it already derives the boundary configs `c1…cN` and `tm_run(c0, fuel_k) == c_k`), and at each segment apply the
+matching primitive/single-step companion at the tracked offset `h_k`, then `lemma_tail_chain(c0, fuel_k, segf,
+h0, h_k, h_{k+1})`. Entry offset is `H_0 = g+M+1` at every pivot boundary (each gadget has **net displacement 0**,
+so `tail_end_h == H_0` between gadgets — no cross-gadget offset bookkeeping). The offset only matters WITHIN a
+gadget; the deepest excursion (terminate) is the tight one and is already done.
+
+**Revised NEXT (the mechanical grind, then setup + wiring):**
+1. **Finish copy_refresh `tail_safe`** by mirror-and-chain, bottom-up: `mark_terminate` (= terminate_fwd done +
+   the all-R return, trivial) → `unmark_fwd`/`unmark` → `deposit` (uses `tm_walk`/`tm_dec_master` ones-walks —
+   needs their tail_safe companions too, but they're shallow: offset never near 0) → `mark_fwd`/`mark` →
+   `copy_iter` (mark∘deposit) → `copy_prefix` + `copy_loop_general` + `copy_loop` (induction over `j`, each iter
+   net-disp-0 at entry `H_0`) → **`lemma_copy_refresh_tail_safe`** (3-phase split: copy_loop ∘ mark_terminate ∘
+   unmark, each entering at `H_0`). Then the **M=1 path** (`copy_refresh_m1` + its sub-gadgets) — same recipe,
+   shallower. (`g ≥ M+2` ⟹ the *nogap* `g==M` variants are NOT on the phase path, skip them.)
+2. **Power-block + phase-block tail_safe** — `power_block_b1`/`b3` (+ `_m1`) wrap `copy_refresh`; then
+   `pbb1x_phase`/`pbb3x_phase`/`pbb*_phase_any` and the `seret1x`/`seret3x` singletons (shallow reach, easy).
+   Each enters at `H_0`, net-disp-0.
+3. **`lemma_uinv_phase_tail`** — apply `lemma_run_tail` to the whole 8-block phase run: discharge `tail_safe`
+   over `uinv_phase_fuel` by `lemma_tail_chain`-ing the 8 block-companions (each net-disp-0 at `H_0`), then the
+   lift gives `tm_run(add_hi(c0, H_0, R(a+1))) == add_hi(uinv_phase result, H_0, R(a+1))` — i.e. the phase-1
+   output with the `a+1` backup preserved at `g' = g+b+2`. (`H_0 = g'`; the tail term is `m^(g')·R(a+1)`.)
+4. **Init setup** — lay `u == m^g·R(b+1) + m^(g+b+2)·R(a+1)` at machine start (a `copy_refresh`/`block_loop`
    prelude that builds both repunits from the input `e`; couples to R-P).
-3. **Wiring** — `lemma_uinv_phase_tail` (ends q_clean's `q_s`) → `lemma_q_clean` (ends `q_home` = phase-2
+5. **Wiring** — `lemma_uinv_phase_tail` (ends q_clean's `q_s`) → `lemma_q_clean` (ends `q_home` = phase-2
    `entry5(pc2)`) → **plain `lemma_u_phase` at `g := g+b+2`** ⟹
    `v == dpack(od ++ uinv_digits(b) ++ u_digits(a)) == dpack(od ++ fam_digits(a,b))`.
-4. concrete `psc_act` tm/tm_wf + `fam_digits ⟹ relnum` → discharge `ceer_realizes` (unchanged from N+12).
+6. concrete `psc_act` tm/tm_wf + `fam_digits ⟹ relnum` → discharge `ceer_realizes` (unchanged from N+12).
