@@ -635,15 +635,38 @@ emit 0) → `q_e1/q_e2`(triple emit) → `q_eret`(move-L) → `q_home`(`dwalk_le
 `q_dwalk`(dec walk / erase) → `q_disc`(discard→`q_loop`). All `a=0` roles disambiguated by STATE; tm_wf
 determinism holds (distinct (state,scanned) pairs).
 
+**✅ ARCHITECTURE DECISION (2026-06-26, port 8051): the copy-refresh uses a MARKER ⟹ BUMP n=4 → n=5.**
+Option (B) of the fork. At n=4 the alphabet `{0,1,2,3,4}` is fully spoken for (0 blank, 1..4 = fam_digits),
+so a marker-free copy needs either a 3rd scratch unary region with two-register-increment shuttling
+(option A, intricate, error-prone) or a non-destructive marked traversal that REPLACES the verified
+consuming loop (option C, throws away `block_iter`/`block_loop` 833/0). Instead, **add sentinel symbol `5`
+(= n) as a copy marker** and keep the consuming loop. The copy is then the standard textbook copy
+(mark master `1→5`, deposit a `1` in temp, restore `5→1`). **Zero rework of this session's lemmas**: they
+all require `tm.n >= 4` (alphabet-monotone) + digits `1..4` + `m > 4`, all of which hold at n=5
+(`tm.n=5≥4`, `m>5>4`, fam_digits `1..4 < 5`, marker `5 = n` is a valid symbol `≤ n`). The R-AL scaffold
+becomes `assemble5` (a linear `n`-bump of `tm_assemble4`); ignition/α-read survive (α digits `1..4`, needs
+`n≥4`). The fallback-n=5 the plan already flagged is now the chosen path.
+
 **NEXT (remaining STEP-2 work):**
-1. **copy-refresh gadget** — before each of a phase's 4 power-blocks, rebuild `temp` (a fresh decrementing
-   copy) from the PRESERVED master. The loop leaves `u = dec_u(0, m^temp·w) = m^temp·w` (counter consumed,
-   master `w` shifted up); the master must survive to seed the next power-block's `temp`. Design: a copy
-   loop walking the master's ones onto a fresh adjacent `temp` region + restore (mirror the dwalk shuttles).
-   ⚠ The singletons between power-blocks emit with NO counter (one surge_emit_return_block1, no loop, no
-   dec) — and the master sits inert in `u` (untouched by surge/return since they only move output v↔u and
-   pivot). Confirm the master's absolute position is consistent across the singleton-then-power-block
-   alternation.
+1. **copy-refresh gadget (n=5 marker `5`)** — before each of a phase's 4 power-blocks, rebuild `temp` (a
+   fresh decrementing copy) from the PRESERVED master. The loop leaves `u = dec_u(0, m^temp·w) = m^temp·w`
+   (counter consumed, master `w` shifted UP — its absolute position drifts up by `m^temp` each loop; the
+   gap of blanks below the master grows). **The drift is fine** (port 8051): the region between pivot and
+   master is all blanks, so "seek master" is just a walk-left over the gap (the only nonzero region in `u`
+   above the pivot is the master). Concrete gadget (head starts at pivot, output parked in `v`):
+   - **seek**: walk-left `(q,0,0,q,L)` over the gap blanks (piling them onto `v` = `output·m^gap`, restored
+     on un-seek) until the first master `1`.
+   - **marked copy loop**: for each master `1` (scanning a `1`): write `5` (mark), walk-right back toward
+     the pivot skipping `5`s/`1`s(temp)/blanks, deposit a `1` adjacent to the pivot (extending temp), walk-
+     left back skipping temp-`1`s/blanks to the next unmarked master `1`. Repeat until master has no `1`
+     (all `5`). Output `v` untouched (only `u`-side pushes/pops + state).
+   - **restore + un-seek**: walk-left over the master changing `5→1`, then walk-right back to the pivot,
+     popping the seek's piled blanks off `v` to restore `output`. Land `{u: dec_u(M, m·repunit(M)... ), v:
+     dpack(output), a:0, q:q_loop}` — i.e. `[master M]0[temp M]0[output]`, ready for the next `block_loop`.
+   ⚠ Re-examine the EXACT pre/post `u` value (the master's drifted position vs. the fresh temp's position).
+   The singletons between power-blocks emit with NO counter (one `surge_emit_return_block1/3`, no loop, no
+   dec) — master sits inert in `u` (surge/return only move output `v↔u` + pivot). Build the `assemble5`
+   bump first (or keep threading quint indices, deferring assembly to the psc_act window step).
 2. **16-block sequencing** — chain the 8 blocks of `uinv_digits(b)` then the 8 of `u_digits(a)` (masters
    `i_b=b+1`, `iₐ=a+1`; ONE master alive per phase, re-init between phases). Prove output `== fam_digits(a,b)`
    (compose `lemma_dds_fam_relator` / `lemma_relnum_is_fam_digits`). The block structure (from
