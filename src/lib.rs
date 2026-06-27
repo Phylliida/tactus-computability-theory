@@ -270,3 +270,9 @@
 // (=seq_pow(dds(w),k)), symbol_power, and singletons -- so fam_relator decomposes into explicit emitter
 // digit blocks. See gap2_relnum_dds.rs / docs/gap2-input-loader-plan.md §5.
 #[cfg(verus_keep_ghost)] pub mod gap2_relnum_dds;
+
+// GAP-2 G2-F Route (i) brick R-relnum-gen: inverse_word over the block constructors. The two distribution
+// laws inverse_word(symbol_power(s,k))=symbol_power(s⁻¹,k) and inverse_word(word_power(w,k))=
+// word_power(inverse_word(w),k) -- so inverse_word(u_b) rewrites into the same primitive shapes as u_a.
+// See gap2_inverse.rs / docs/gap2-input-loader-plan.md §5.
+#[cfg(verus_keep_ghost)] pub mod gap2_inverse;
