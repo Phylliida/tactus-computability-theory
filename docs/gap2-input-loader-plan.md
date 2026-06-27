@@ -125,18 +125,33 @@ chained through ignition to `mm_in_H0(mm, α, 0) ⟺ α declared word-number`.
 
 ## 5. Brick sequence (proposed)
 
-- **B-IG** — ignition quads + `mk_mm` constructor + `mod_machine_wf` (the 4-quad determinism/frame).
-- **B-FR** — the frame/extension lemma (machine-extension preserves the no-`b=0` trajectory; transport
-  `lemma_tm_h0_iff`). *Generic, reusable; build early to de-risk.*
-- **B-AL** — alphabet-monotone gadget audit / re-parametrize `rm_to_tm` + gadgets to `n ≥ 4`
-  (or a thin n-generic wrapper). *Gating for P and S.*
+- **B-AL** ✅ **DONE (audit)** — the tm gadget lemmas (`lemma_inc`/`lemma_dec`/`lemma_walk`/…) require
+  only `tm.n >= 2` and take quint *indices* as parameters, so they are **alphabet-monotone** and reuse
+  verbatim at `n ≥ 4`. Only `rm_to_tm`'s assembly hardcodes `n:2` (`tm_assemble.rs:268`); a fresh
+  `n≥4` assembly will reuse the gadget lemmas. So B-AL is a re-assembly, *not* a gadget rewrite.
+- **B-FR** ✅ **DONE (`gap2_ignition.rs`, part of 12/0).** The frame/extension lemmas: appending
+  ignition quads (`b=0, a≠0`) is inert on the running region (`β%m ≠ 0`). `mm_extend`,
+  `lemma_yields_mono`, `lemma_mm_extend_reaches_mono`, `lemma_combined_yields_eq` (the two machines
+  yield identically off `β%m=0`), `lemma_mm_extend_terminal` (origin stays terminal), `lemma_origin_
+  reaches_zero`, and the headline `lemma_frame_reaches` (combined→base reachability under the running-
+  region invariant). Crate 650/0.
+- **B-IG** ✅ **DONE (`gap2_ignition.rs`, part of 12/0).** Concrete ignition: `ignition_quad(i,qs)` =
+  `{a:i,b:0,c:qs,dir:L}`; `ignition_quads(ndig,start)` (one per digit `1..=ndig`).
+  `lemma_ignition_quads_shape` (feeds B-FR), `lemma_ignition_yields` (`(α,0) → (α/m, start(α%m)) =
+  rep1(c1)` for `1 ≤ α%m ≤ ndig`), `lemma_mm_extend_wf` (combined `mod_machine_wf` given base wf +
+  `start(i)<m` + `ndig<m` + base quads carry `b≠0`). **The ignition layer is COMPLETE.** Crate 654/0.
 - **B-P** — the parser TM: base-m relator-word digits → `(a,b)`, with the reject branch. The genuinely
-  new sub-machine. Sub-bricks: digit-classifier, t-run counter (→ a, b), shape-validator/reject.
+  new sub-machine, and the biggest remaining brick. Sub-bricks: digit-classifier, t-run counter
+  (→ a, b), shape-validator/reject. *Couples with the ignition handoff states `start(i)` = the parser's
+  per-digit entry states (B-IG left `start` abstract for exactly this).* **← next, needs its own design
+  pass (co-design w/ Danielle).**
 - **B-S** — the search phase: re-realize `search_rm(e)` (or `rm_to_tm` of it) in the `n≥4`, `m=psc.m`
   TM, fed the parser's `(a,b)` output. Reuse `lemma_search_rm_halts_iff` for the semantics.
 - **B-C** — cleanup to origin (mirror `tm_cleanup.rs`).
 - **B-PSC** — assemble P∘S∘C into `psc_tm(e)` + the halts-iff (mirror `tm_run_sim.rs`).
-- **B-MC** — the machine-content lemma (§4.3): ignition ∘ frame ∘ `lemma_tm_h0_iff` ∘ B-PSC.
+- **B-MC** — the machine-content lemma (§4.3): `lemma_ignition_yields` (1 step) ∘ `lemma_frame_reaches`
+  + `lemma_mm_extend_reaches_mono` (both H0 directions) ∘ `lemma_tm_h0_iff` (on `psc_tm`) ∘ B-PSC.
+  The B-FR/B-IG interface is built precisely to make this a splice.
 - **B-W** — the family-relator bridge (§4.4) + fill `modular_reduction.rs` + drop the axiom (§4.5).
 
 ## 6. Open sub-design questions (for Danielle before / during coding)
