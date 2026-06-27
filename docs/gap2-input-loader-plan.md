@@ -2064,3 +2064,27 @@ invariant, NOT the final state; clean-up = wipe `v`, wipe `u`, home; REJECT = cl
 → **B-cmp.7 dual far-`5` sentinels** (consult 3 Q2: far `5` on `u` = output end, far `5` on `v` = α end;
 ACCEPT iff both hit same round; output-`5`-while-α-digit → REJECT too-short, α-`5`-while-output-digit → REJECT
 too-long). After R-cmp: R-S dovetail → R-C/R-MC/B-W → discharge `ceer_realizes` → drop `axiom_ceer_fp_embedding`.
+
+#### N+24 addendum — `lemma_cmp_round` walk-states SPLIT (second design bug caught working toward the loop) + loop encoding decision.
+
+**Second bug caught + fixed (crate 1754/0, additive):** `lemma_cmp_round` originally used ONE `q_walk` param
+for BOTH the entry-boundary state and the exit state. With value-in-state families the entry carries the
+CURRENT value `vk` (state `q_walk(vk)`) and the exit carries the NEXT value `s` (state `q_walk(s)`) — DIFFERENT
+tracks since `vk ≠ s` in general. It verified in isolation (degenerate `q_walk_in==q_walk_out`) but would NOT
+chain in the loop. **Fixed:** `lemma_cmp_round` now takes `q_walk_in` (entry, `=q_walk(vk)`) and `q_walk_out`
+(exit, `=q_walk(s)`); the loop feeds round `k`'s `q_walk_out` as round `k+1`'s `q_walk_in`. (marker-advance /
+match_round were already correct — their entry `q_back`/`q_cmp` and exit `q_walk` are distinct params.)
+
+**⚠ OPEN DESIGN DECISION for the loop induction — the value-indexed quintuple-hypothesis encoding.** Three
+options, each with a real tradeoff (pick before building B-cmp.5 loop; candidate for a port-8051 consult):
+  - **(a) spec_fn state+index functions** (`q_walk,q_cmp,q_back: spec_fn(nat)->nat`, index fns
+    `spec_fn(nat)->int`), quintuple hyps `forall V∈1..4`. Cleanest signature, BUT spec_fn applications inside
+    `forall` hit Verus/Lean trigger-inference pain (see memory `reference_tactus_quantified_specfn_no_fold` /
+    `feedback`); likely needs a recursive-predicate reformulation or careful `#![trigger]`.
+  - **(b) concrete per-value params** (`q_walk1..q_walk4`, … ~80 params + ~56 quint hyps, NO forall). Verbose
+    but trigger-free; per-round dispatch is a `match (ds[0], ds[1])` (16 branches — entry track from `ds[0]`,
+    exit track from `ds[1]`).
+  - **(c) bundle quints in a spec PREDICATE with ∃-index, `choose` per round.** Medium; the choose extraction
+    per round is mechanical but adds proof bulk.
+  Recommendation: try (a) with a recursive-predicate hypothesis (avoids the bare-forall trigger issue) before
+  falling back to (b). The digit-list/dpack/fuel threading (N+24 body) is encoding-independent and ready.
