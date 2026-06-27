@@ -953,4 +953,219 @@ pub proof fn lemma_mark_j1_tail_safe(
     lemma_tail_chain(tm, c0, (2 * g + 3) as nat, 1, h0, (g + big_m) as nat, h0);
 }
 
+/// **`mark_j0` is tail-safe** for its `2·g + 2` steps (the deposit-first `j = 0` MARK, temp = 1, fives = 0)
+/// when the tail enters at `H_0 = g+M+1`, returning to `H_0` (net-disp-0). Forward (S1–S4, `g+1` L-moves)
+/// drives the offset `H_0 → M` (lands on the master's lowest one, `M ≥ 1` — not tight); the MARK turn +
+/// return (S7–S9, lands on the pivot) are ALL R-moves. Mirror of
+/// [`crate::tm_copy_refresh::lemma_mark_j0`].
+pub proof fn lemma_mark_j0_tail_safe(
+    tm: Tm, big_m: nat, g: nat, out: nat,
+    q_mh0: nat, q_t0: nat, q_a0: nat, q_rf0: nat, q_rg0: nat, q_rt0: nat,
+    i_peel: int, i_temp: int, i_t2g: int, i_gap: int, i_mark: int, i_rf2g: int, i_rgap: int, i_rg2t: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        1 <= big_m,
+        g >= 3,
+        0 <= i_peel < tm.quints.len(),
+        0 <= i_temp < tm.quints.len(),
+        0 <= i_t2g < tm.quints.len(),
+        0 <= i_gap < tm.quints.len(),
+        0 <= i_mark < tm.quints.len(),
+        0 <= i_rf2g < tm.quints.len(),
+        0 <= i_rgap < tm.quints.len(),
+        0 <= i_rg2t < tm.quints.len(),
+        tm.quints[i_peel] == mk_quint(q_mh0, 0, 0, q_t0, Dir::L),
+        tm.quints[i_temp] == mk_quint(q_t0, 1, 1, q_t0, Dir::L),
+        tm.quints[i_t2g] == mk_quint(q_t0, 0, 0, q_a0, Dir::L),
+        tm.quints[i_gap] == mk_quint(q_a0, 0, 0, q_a0, Dir::L),
+        tm.quints[i_mark] == mk_quint(q_a0, 1, 5, q_rf0, Dir::R),
+        tm.quints[i_rf2g] == mk_quint(q_rf0, 0, 0, q_rg0, Dir::R),
+        tm.quints[i_rgap] == mk_quint(q_rg0, 0, 0, q_rg0, Dir::R),
+        tm.quints[i_rg2t] == mk_quint(q_rg0, 1, 1, q_rt0, Dir::R),
+    ensures
+        tail_safe(tm, TmConfig { u: (1 + pow_nat(tm.m, g) * repunit_m(big_m, tm.m)) as nat, v: out,
+            a: 0, q: q_mh0 }, (2 * g + 2) as nat, (g + big_m + 1) as nat),
+        tail_end_h(tm, TmConfig { u: (1 + pow_nat(tm.m, g) * repunit_m(big_m, tm.m)) as nat, v: out,
+            a: 0, q: q_mh0 }, (2 * g + 2) as nat, (g + big_m + 1) as nat) == (g + big_m + 1) as nat,
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 5);
+    let h0 = (g + big_m + 1) as nat;
+    assert(repunit_m(1, m) == 1) by { lemma_repunit_step(0, m); lemma_repunit_zero(m); }
+    lemma_pow_nat_unfold(m, 1);
+    assert(pow_nat(m, 0) == 1);
+    assert(pow_nat(m, 1) == m) by(nonlinear_arith)
+        requires pow_nat(m, 1) == m * pow_nat(m, 0), pow_nat(m, 0) == 1;
+    let rm = repunit_m(big_m, m);
+    let dep0 = (1 + pow_nat(m, g) * rm) as nat;
+    let pile_temp = pile_sym(out * m, 1, 1, m);
+    let ms_next = master_at(1, big_m, m);
+    assert(ms_next == 5 + m * repunit_m((big_m - 1) as nat, m)) by(nonlinear_arith)
+        requires
+            ms_next == 5 * repunit_m(1, m) + pow_nat(m, 1) * repunit_m((big_m - 1) as nat, m),
+            repunit_m(1, m) == 1,
+            pow_nat(m, 1) == m;
+    let c0 = TmConfig { u: dep0, v: out, a: 0, q: q_mh0 };
+
+    // ── S1: pivot-peel (L). offset H_0 → g+M. ──
+    lemma_pow_nat_unfold(m, g);
+    let u1 = pow_nat(m, (g - 1) as nat) * rm;
+    assert(dep0 == u1 * m + 1) by(nonlinear_arith)
+        requires dep0 == 1 + pow_nat(m, g) * rm, pow_nat(m, g) == m * pow_nat(m, (g - 1) as nat),
+            u1 == pow_nat(m, (g - 1) as nat) * rm;
+    lemma_div_mod_step(u1, m, 1);
+    lemma_tm_step_picks(tm, c0, i_peel);
+    let c1 = apply_quint(tm.quints[i_peel], c0, m);
+    assert(tm_step(tm, c0) == Some(c1));
+    assert(c1.u == u1 && c1.v == out * m && c1.a == 1 && c1.q == q_t0);
+    assert(tm_run(tm, c1, 0) == c1);
+    assert(tm_run(tm, c0, 1) == c1);
+    assert(quint_matches(tm.quints[i_peel], c0));
+    lemma_step_tail_safe(tm, c0, i_peel, h0);   // L, end g+M
+
+    // ── S2: walk-left over the single temp one (1 step), q_t0. offset g+M → g+M-1. ──
+    lemma_repunit_zero(m);
+    assert(c1.u == 1 * repunit_m(0, m) + pow_nat(m, 0) * u1) by(nonlinear_arith)
+        requires c1.u == u1, repunit_m(0, m) == 0, pow_nat(m, 0) == 1;
+    lemma_run_walk_left(tm, c1, q_t0, 1, 0, u1, i_temp);
+    lemma_pow_nat_unfold(m, (g - 1) as nat);
+    assert(u1 == (pow_nat(m, (g - 2) as nat) * rm) * m) by(nonlinear_arith)
+        requires u1 == pow_nat(m, (g - 1) as nat) * rm,
+            pow_nat(m, (g - 1) as nat) == m * pow_nat(m, (g - 2) as nat);
+    lemma_div_mod_step(pow_nat(m, (g - 2) as nat) * rm, m, 0);
+    let c2 = TmConfig { u: pow_nat(m, (g - 2) as nat) * rm, v: pile_temp, a: 0, q: q_t0 };
+    assert(pile_sym(out * m, 1, 1, m) == pile_temp);
+    assert(tm_run(tm, c1, 1) == c2);
+    lemma_tm_run_split(tm, c0, 1, 1);
+    assert(tm_run(tm, c0, 2) == c2);
+    lemma_run_walk_left_tail_safe(tm, c1, q_t0, 1, 0, u1, i_temp, (g + big_m) as nat);
+    assert(((g + big_m) - 1) as nat == (g + big_m - 1) as nat);
+    lemma_tail_chain(tm, c0, 1, 1, h0, (g + big_m) as nat, (g + big_m - 1) as nat);
+
+    // ── S3: temp→gap transition (L). offset g+M-1 → g+M-2. ──
+    lemma_pow_nat_unfold(m, (g - 2) as nat);
+    assert(c2.u == (pow_nat(m, (g - 3) as nat) * rm) * m) by(nonlinear_arith)
+        requires c2.u == pow_nat(m, (g - 2) as nat) * rm,
+            pow_nat(m, (g - 2) as nat) == m * pow_nat(m, (g - 3) as nat);
+    lemma_div_mod_step(pow_nat(m, (g - 3) as nat) * rm, m, 0);
+    lemma_tm_step_picks(tm, c2, i_t2g);
+    let c3 = apply_quint(tm.quints[i_t2g], c2, m);
+    assert(tm_step(tm, c2) == Some(c3));
+    assert(c3.u == pow_nat(m, (g - 3) as nat) * rm && c3.v == pile_temp * m && c3.a == 0
+        && c3.q == q_a0);
+    assert(tm_run(tm, c3, 0) == c3);
+    assert(tm_run(tm, c2, 1) == c3);
+    lemma_tm_run_split(tm, c0, 2, 1);
+    assert(tm_run(tm, c0, 3) == c3);
+    assert(quint_matches(tm.quints[i_t2g], c2));
+    lemma_step_tail_safe(tm, c2, i_t2g, (g + big_m - 1) as nat);   // L, end g+M-2
+    assert(((g + big_m - 1) - 1) as nat == (g + big_m - 2) as nat);
+    lemma_tail_chain(tm, c0, 2, 1, h0, (g + big_m - 1) as nat, (g + big_m - 2) as nat);
+
+    // ── S4: seek-left over the remaining gap (g-2 steps), q_a0. offset g+M-2 → M. ──
+    lemma_repunit_step((big_m - 1) as nat, m);
+    assert(((big_m - 1) + 1) as nat == big_m);
+    assert(rm % m != 0) by {
+        assert(rm == m * repunit_m((big_m - 1) as nat, m) + 1);
+        lemma_div_mod_step(repunit_m((big_m - 1) as nat, m), m, 1);
+    }
+    lemma_seek_left_blanks(tm, c3, q_a0, (g - 3) as nat, rm, i_gap);
+    assert(rm == repunit_m((big_m - 1) as nat, m) * m + 1) by(nonlinear_arith)
+        requires rm == m * repunit_m((big_m - 1) as nat, m) + 1;
+    lemma_div_mod_step(repunit_m((big_m - 1) as nat, m), m, 1);
+    let c5 = TmConfig {
+        u: repunit_m((big_m - 1) as nat, m),
+        v: (pile_temp * m) * pow_nat(m, (g - 2) as nat), a: 1, q: q_a0 };
+    assert(((g - 3) + 1) as nat == (g - 2) as nat);
+    assert(tm_run(tm, c3, (g - 2) as nat) == c5);
+    lemma_tm_run_split(tm, c0, 3, (g - 2) as nat);
+    assert((3 + (g - 2)) as nat == (g + 1) as nat);
+    assert(tm_run(tm, c0, (g + 1) as nat) == c5);
+    lemma_pow_nat_unfold(m, (g - 1) as nat);
+    let big_v = pile_temp * pow_nat(m, (g - 1) as nat);
+    assert((pile_temp * m) * pow_nat(m, (g - 2) as nat) == big_v) by(nonlinear_arith)
+        requires big_v == pile_temp * pow_nat(m, (g - 1) as nat),
+            pow_nat(m, (g - 1) as nat) == m * pow_nat(m, (g - 2) as nat);
+    assert(c5.v == big_v);
+    lemma_seek_left_tail_safe(tm, c3, q_a0, (g - 3) as nat, rm, i_gap, (g + big_m - 2) as nat);
+    assert(((g + big_m - 2) - (g - 2)) as nat == big_m);
+    lemma_tail_chain(tm, c0, 3, (g - 2) as nat, h0, (g + big_m - 2) as nat, big_m);
+
+    // ── MARK step (q_a0, 1, 5, q_rf0, R). offset M → M+1. ──
+    assert(big_v == (pile_temp * pow_nat(m, (g - 2) as nat)) * m) by(nonlinear_arith)
+        requires big_v == pile_temp * pow_nat(m, (g - 1) as nat),
+            pow_nat(m, (g - 1) as nat) == m * pow_nat(m, (g - 2) as nat);
+    lemma_div_mod_step(pile_temp * pow_nat(m, (g - 2) as nat), m, 0);
+    lemma_tm_step_picks(tm, c5, i_mark);
+    let c6 = apply_quint(tm.quints[i_mark], c5, m);
+    assert(tm_step(tm, c5) == Some(c6));
+    assert(c6.u == repunit_m((big_m - 1) as nat, m) * m + 5
+        && c6.v == pile_temp * pow_nat(m, (g - 2) as nat) && c6.a == 0 && c6.q == q_rf0);
+    assert(c6.u == ms_next) by(nonlinear_arith)
+        requires c6.u == repunit_m((big_m - 1) as nat, m) * m + 5,
+            ms_next == 5 + m * repunit_m((big_m - 1) as nat, m);
+    assert(tm_run(tm, c6, 0) == c6);
+    assert(tm_run(tm, c5, 1) == c6);
+    lemma_tm_run_split(tm, c0, (g + 1) as nat, 1);
+    assert(tm_run(tm, c0, (g + 2) as nat) == c6);
+    assert(quint_matches(tm.quints[i_mark], c5));
+    lemma_step_tail_safe(tm, c5, i_mark, big_m);   // R, end M+1
+    assert((big_m + 1) as nat == (big_m + 1) as nat);
+    lemma_tail_chain(tm, c0, (g + 1) as nat, 1, h0, big_m, (big_m + 1) as nat);
+
+    // ── S7: rf→gap transition (q_rf0, 0, 0, q_rg0, R). offset M+1 → M+2. ──
+    lemma_pow_nat_unfold(m, (g - 2) as nat);
+    assert(c6.v == (pile_temp * pow_nat(m, (g - 3) as nat)) * m) by(nonlinear_arith)
+        requires c6.v == pile_temp * pow_nat(m, (g - 2) as nat),
+            pow_nat(m, (g - 2) as nat) == m * pow_nat(m, (g - 3) as nat);
+    lemma_div_mod_step(pile_temp * pow_nat(m, (g - 3) as nat), m, 0);
+    lemma_tm_step_picks(tm, c6, i_rf2g);
+    let c7 = apply_quint(tm.quints[i_rf2g], c6, m);
+    assert(tm_step(tm, c6) == Some(c7));
+    assert(c7.u == ms_next * m && c7.v == pile_temp * pow_nat(m, (g - 3) as nat) && c7.a == 0
+        && c7.q == q_rg0);
+    assert(tm_run(tm, c7, 0) == c7);
+    assert(tm_run(tm, c6, 1) == c7);
+    lemma_tm_run_split(tm, c0, (g + 2) as nat, 1);
+    assert(tm_run(tm, c0, (g + 3) as nat) == c7);
+    assert(quint_matches(tm.quints[i_rf2g], c6));
+    lemma_step_tail_safe(tm, c6, i_rf2g, (big_m + 1) as nat);   // R, end M+2
+    assert(((big_m + 1) + 1) as nat == (big_m + 2) as nat);
+    lemma_tail_chain(tm, c0, (g + 2) as nat, 1, h0, (big_m + 1) as nat, (big_m + 2) as nat);
+
+    // ── S8: seek_right_blanks over the gap (g-2 steps), q_rg0. offset M+2 → g+M. ──
+    lemma_pile_sym_div_mod(out * m, 1, 1, m);
+    assert(c7.v == pow_nat(m, (g - 3) as nat) * pile_temp) by(nonlinear_arith)
+        requires c7.v == pile_temp * pow_nat(m, (g - 3) as nat);
+    lemma_seek_right_blanks(tm, c7, q_rg0, (g - 3) as nat, pile_temp, i_rgap);
+    assert(pile_sym(out * m, 1, 0, m) == out * m);
+    let c9 = TmConfig { u: c7.u * pow_nat(m, (g - 2) as nat), v: out * m, a: 1, q: q_rg0 };
+    assert(((g - 3) + 1) as nat == (g - 2) as nat);
+    assert(tm_run(tm, c7, (g - 2) as nat) == c9);
+    lemma_tm_run_split(tm, c0, (g + 3) as nat, (g - 2) as nat);
+    assert((g + 3 + (g - 2)) as nat == (2 * g + 1) as nat);
+    assert(tm_run(tm, c0, (2 * g + 1) as nat) == c9);
+    lemma_seek_right_tail_safe(tm, c7, q_rg0, (g - 3) as nat, pile_temp, i_rgap, (big_m + 2) as nat);
+    assert(((big_m + 2) + (g - 3) + 1) as nat == (g + big_m) as nat);
+    lemma_tail_chain(tm, c0, (g + 3) as nat, (g - 2) as nat, h0, (big_m + 2) as nat, (g + big_m) as nat);
+
+    // ── S9: rg→temp transition (q_rg0, 1, 1, q_rt0, R) lands on the pivot. offset g+M → H_0. ──
+    lemma_tm_step_picks(tm, c9, i_rg2t);
+    let c10 = apply_quint(tm.quints[i_rg2t], c9, m);
+    assert(tm_step(tm, c9) == Some(c10));
+    assert(c10.q == q_rt0);
+    assert(tm_run(tm, c10, 0) == c10);
+    assert(tm_run(tm, c9, 1) == c10);
+    lemma_tm_run_split(tm, c0, (2 * g + 1) as nat, 1);
+    assert((2 * g + 1 + 1) as nat == (2 * g + 2) as nat);
+    assert(tm_run(tm, c0, (2 * g + 2) as nat) == c10);
+    assert(quint_matches(tm.quints[i_rg2t], c9));
+    lemma_step_tail_safe(tm, c9, i_rg2t, (g + big_m) as nat);   // R, end H_0
+    assert(((g + big_m) + 1) as nat == h0);
+    lemma_tail_chain(tm, c0, (2 * g + 1) as nat, 1, h0, (g + big_m) as nat, h0);
+}
+
 } // verus!
