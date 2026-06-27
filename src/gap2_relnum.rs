@@ -33,11 +33,14 @@ use verus_group_theory::miller_collapse_preserve::dbar;
 use verus_group_theory::miller_collapse_limit::{dbar_union_pred, lemma_emb_slice_independent,
     lemma_seq_index_contains};
 use verus_group_theory::word_numbering_decode::decode_word;
-use verus_group_theory::machine_group::ModMachine;
+use verus_group_theory::word_numbering::numbers_word;
+use verus_group_theory::machine_group::{ModMachine, mm_in_H0, mm_terminal};
+use verus_group_theory::pred_relabel::relabel_hom;
+use verus_group_theory::pred_homomorphism::lemma_hom_pred_empty;
 use crate::ceer::{CEER, declared_pair};
 use crate::ceer_group::ceer_relator;
 use crate::ceer_layer05::{ceer_to_word, ceer_decls_fam, ceer_decls_fam_at, ceer_relator_at};
-use crate::ceer_relator_match::{cb_of, rho};
+use crate::ceer_relator_match::{cb_of, rho, p1_of, p2_of, ceer_realizes};
 
 verus! {
 
@@ -219,6 +222,96 @@ pub proof fn lemma_dbar_from_declared(e: CEER, s: nat, a: nat, b: nat)
     assert(dbar(big_m, fam(big_m)).contains(fam_relator(a, b)));
     assert(dbar_union_pred(fam, fam_relator(a, b))) by {
         assert(dbar(big_m, fam(big_m)).contains(fam_relator(a, b)));
+    }
+}
+
+// ============================================================================
+// B-W §4.4 — discharge ceer_realizes from an abstract machine-accept contract
+// ============================================================================
+
+/// `ρ` maps the empty word to the empty word (relabel homomorphism of `ε`).
+proof fn lemma_rho_empty(e: CEER, mm: ModMachine, m: nat)
+    ensures
+        rho(e, mm, m, empty_word()) =~= empty_word(),
+{
+    lemma_hom_pred_empty(relabel_hom(p1_of(e), p2_of(mm, m), cb_of(mm)));
+}
+
+/// **The abstract machine contract (what `psc_tm(e)` / the modular machine must deliver).** `mm`
+/// *decides relnum-membership* for CEER `e` at word-numbering modulus `m` iff its origin is terminal
+/// and `H₀(mm)` — among nonzero word-numbers — is exactly the `relnum`-images of declared pairs:
+///   * (FWD accept) every declared pair `(a,b)` puts `relnum(a,b)` into `H₀`;
+///   * (BWD exact) every nonzero word-number in `H₀` is the `relnum` of some declared pair.
+/// This is the generate-and-compare accept condition, phrased purely over `declared_pair`/`relnum` —
+/// **architecture-independent** (a TM read-loop OR a modular-machine prefix may realize it). It is the
+/// last GAP-2 obligation: build a machine satisfying this, and [`lemma_ceer_realizes_from_machine`]
+/// discharges `ceer_realizes`.
+pub open spec fn mm_decides_relnum(e: CEER, mm: ModMachine, m: nat) -> bool {
+    &&& mm_terminal(mm, 0, 0)
+    &&& forall|s: nat, a: nat, b: nat|
+            #![trigger declared_pair(e, s), relnum(e, mm, m, a, b)]
+            declared_pair(e, s) == Some((a, b)) ==> mm_in_H0(mm, relnum(e, mm, m, a, b), 0)
+    &&& forall|alpha: nat| #![trigger mm_in_H0(mm, alpha, 0)]
+            (numbers_word(2, m, alpha) && alpha != 0 && mm_in_H0(mm, alpha, 0))
+                ==> exists|s: nat, a: nat, b: nat|
+                        #![trigger declared_pair(e, s), relnum(e, mm, m, a, b)]
+                        declared_pair(e, s) == Some((a, b)) && alpha == relnum(e, mm, m, a, b)
+}
+
+/// **B-W §4.4 assembly (conditional).** A modular machine that decides relnum-membership realizes the
+/// CEER declared-relator family in Cohen's `ceer_realizes` sense. Composes the family-relator ↔
+/// declared-pair bridge ([`lemma_fam_relator_from_dbar`]/[`lemma_dbar_from_declared`]) with the machine
+/// contract; the `ceer_realizes` BWD `r ≠ ε` clause is free (`α ≠ 0` forces `r ≠ ε` because
+/// `decode_word(cb,2,m, ρ(ε)) = 0`). This isolates the FINAL GAP-2 obligation to building a machine
+/// satisfying [`mm_decides_relnum`].
+pub proof fn lemma_ceer_realizes_from_machine(e: CEER, mm: ModMachine, m: nat)
+    requires
+        mm_decides_relnum(e, mm, m),
+    ensures
+        ceer_realizes(e, mm, m),
+{
+    let cb = cb_of(mm);
+    // clause 1: mm_terminal(mm,0,0) — directly from mm_decides_relnum.
+    // clause 2 (FWD): a nonempty family relator's decode-image is in H₀.
+    assert forall|r: Word| #![trigger dbar_union_pred(ceer_decls_fam(e), r)]
+        (dbar_union_pred(ceer_decls_fam(e), r) && r != empty_word())
+            implies mm_in_H0(mm, decode_word(cb, 2, m, rho(e, mm, m, r)), 0) by {
+        lemma_fam_relator_from_dbar(e, r);
+        let (s, a, b) = choose|s: nat, a: nat, b: nat|
+            declared_pair(e, s) == Some((a, b)) && r == fam_relator(a, b);
+        assert(declared_pair(e, s) == Some((a, b)) && r == fam_relator(a, b));
+        // decode∘ρ(r) = decode∘ρ(fam_relator(a,b)) = relnum(a,b); machine FWD accept fires.
+        assert(decode_word(cb, 2, m, rho(e, mm, m, r)) == relnum(e, mm, m, a, b));
+        assert(mm_in_H0(mm, relnum(e, mm, m, a, b), 0));
+    }
+    // clause 3 (BWD): a nonzero word-number in H₀ is the decode-image of a nonempty family relator.
+    assert forall|alpha: nat| #![trigger mm_in_H0(mm, alpha, 0)]
+        (numbers_word(2, m, alpha) && alpha != 0 && mm_in_H0(mm, alpha, 0))
+            implies exists|r: Word| dbar_union_pred(ceer_decls_fam(e), r) && r != empty_word()
+                && alpha == decode_word(cb, 2, m, rho(e, mm, m, r)) by {
+        // machine BWD exactness gives the declared pair.
+        let (s, a, b) = choose|s: nat, a: nat, b: nat|
+            declared_pair(e, s) == Some((a, b)) && alpha == relnum(e, mm, m, a, b);
+        assert(declared_pair(e, s) == Some((a, b)) && alpha == relnum(e, mm, m, a, b));
+        let r = fam_relator(a, b);
+        lemma_dbar_from_declared(e, s, a, b);
+        assert(dbar_union_pred(ceer_decls_fam(e), r));
+        assert(alpha == decode_word(cb, 2, m, rho(e, mm, m, r)));
+        // r ≠ ε: else decode∘ρ(ε) = 0 = alpha, contradicting alpha ≠ 0.
+        assert(r != empty_word()) by {
+            if r == empty_word() {
+                lemma_rho_empty(e, mm, m);
+                assert(rho(e, mm, m, r) =~= empty_word());
+                assert(decode_word(cb, 2, m, rho(e, mm, m, r)) == 0) by {
+                    assert(empty_word().len() == 0);
+                    assert(rho(e, mm, m, r).len() == 0);
+                }
+                assert(alpha == 0);
+                assert(false);
+            }
+        }
+        assert(dbar_union_pred(ceer_decls_fam(e), r) && r != empty_word()
+            && alpha == decode_word(cb, 2, m, rho(e, mm, m, r)));
     }
 }
 
