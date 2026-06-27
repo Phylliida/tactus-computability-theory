@@ -1428,8 +1428,19 @@ untouched (the walk primitives already carry a `w` high tail; thread it up throu
 
 **Revised NEXT (master-mgmt collapsed to one lemma + setup + wiring):**
 1. **`lemma_uinv_phase_tail`** — additive high-tail variant of `lemma_uinv_phase` carrying `m^(g')·R(a+1)`
-   (`g' = g+b+2`). Thread the tail through the 8-block chain / block phase lemmas (`pbb1x_phase_any`, etc.).
-   THE new critical path.
+   (`g' = g+b+2`). THE new critical path. **⚠ NOT mechanical (scouted 2026-06-27):** the block phase atom
+   `lemma_pbb1x_phase` (gap2_emit_power.rs:537) operates on `u == copy_u(0,M,g)` EXACTLY and calls the
+   6500-line `tm_copy_refresh::lemma_copy_refresh` core, which carries NO high tail. So threading needs a
+   STRATEGY DECISION (worth a Danielle consult before building):
+   - **(a) re-thread** `lemma_copy_refresh` + the power/block-loop emit lemmas with a `+ m^H·T` tail (deep —
+     touches the tm_copy_refresh core; the leftward walk primitives `lemma_run_walk_left`/`seek_left_blanks`
+     ALREADY carry a `w` high-tail param, so the lower layers may thread, but copy_refresh's contract is
+     stated tail-free and would need additive `_tail` variants).
+   - **(b) head-reach-bound meta-lemma** — prove once that a run whose leftward reach stays `< H` satisfies
+     `run(u + m^H·T) == run(u) + m^H·T`. Cleaner in principle but the Minsky-pair config hides the head
+     position (it's implicit in the u/v split), so "reach < H" isn't directly expressible — likely still
+     reduces to per-step tail-threading. Math fact that makes it TRUE: copy_refresh's leftward walks stop at
+     the master top (`g+M`), so with `H = g'  = g+b+2 > g+M` the tail digits are never read/written.
 2. **Init setup** — lay `u == m^g·R(b+1) + m^(g+b+2)·R(a+1)` at machine start (a `copy_refresh`/`block_loop`
    prelude that builds both repunits from the input `e`; couples to R-P).
 3. **Wiring** — `lemma_uinv_phase_tail` (ends q_clean's `q_s`) → `lemma_q_clean` (ends `q_home` = phase-2
