@@ -347,6 +347,38 @@ chained through ignition to `mm_in_H0(mm, α, 0) ⟺ α declared word-number`.
   scaffold (template: `gap2_psc_rp.rs` / `tm_assemble4::lemma_assemble4_peek_demo`). The spec target is now
   PINNED (`fam_digits`/`lemma_dds_fam_relator`); the Evaluation side reuses `lemma_relnum_is_decode_digit_seq`
   + `lemma_dpack_*` to turn the produced digits into the `relnum` value.
+
+  **✅ STEP 2 ARCHITECTURE DECIDED (2026-06-26, port 8051): MODEL (B) HOME/SHUTTLE.** The tension: the
+  emitter has THREE logical regions (masters `iₐ`, `i_b`; an active loop temp; the growing output) but
+  Minsky pair form has only TWO stacks `u,v`, and an L-move emitting onto `v` POPS `u`. The clean
+  "consume-the-counter-while-piling" trick (model A) only works for 1-digit blocks (emit==decrement
+  coincide) and cannot preserve masters across the 16 blocks. **Decision: the AC standard single-tape
+  discipline.** Fixed tape layout, head shuttles:
+  ```
+    [iₐ ones] 0 [i_b ones] 0 [output digits] 0 [blanks]
+                            ↑ HOME PIVOT (the 0 before output)
+  ```
+  Per-block iteration for `(blk)ⁱ` (block now lives in the STATE-transition graph, not in tape ticks — the
+  multi-digit cost is shifted to state space, masters stay put on the left, never popped):
+    1. **Peek/dec the master** at home (left into `i_b`/`iₐ`), confirm `> 0`.
+    2. **Rightward surge** to the frontier: skip the output non-destructively (write-back, `a2=scanned`).
+    3. **Sequential write**: a state cycle `e0→e1→…→e0`, each writes one digit of `blk`, moves R.
+    4. **Home return**: move L over the output back to the home pivot.
+    5. Loop until the master is exhausted.
+  **The safe write-back traversals ALREADY EXIST** — `tm_dwalk::lemma_dwalk_right` (surge to frontier,
+  block `v→u` via `dpile(c.u,blk)`) and `lemma_dwalk_left` (return home, block `u→v`) write back the
+  scanned symbol (`a2=s`), so they are exactly the non-destructive shuttles. New STEP-2 bricks: the
+  frontier block-emit (a state-cycle of 1-step `(e_k,0,blk[k],e_{k+1},R)` writes onto `u` over the frontier
+  blanks), the dec-master-in-layout-and-return-home gadget, and the per-block loop (growing-output
+  induction). Model (A) ABANDONED.
+
+  **✅ STEP 2 brick 1 DONE (`tm_emit.rs`, crate 766/0).** The symbol-power emit loop
+  `lemma_emit_symbol_power_inner`: the loop quintuple `(q_emit,1,s,q_emit,L)` consumes a `repunit_m(i)` and
+  piles `i` copies of `s` onto `v` (`pile_sym`, the symbol-generalized `pile_ones`). `lemma_pile_sym_shift`
+  + `lemma_pile_sym_is_dpile` bridge the accumulator to `dpile(·, seq_pow([s],i))` — the digit-seq algebra
+  form, so an emitted run composes with the explicit `fam_digits` decomposition. (NOTE: written before the
+  model-B decision; the `pile_sym`/`dpile` output-accounting algebra is reused under model B, even though
+  model B's per-block loop is the home/shuttle one, not this direct-consume loop.)
 - **R-cmp — digit-by-digit base-m compare** of the generated relnum digits against α's stored digits.
 - **R-S — the dovetail search.** Enumerate stages `s`, `(a,b)=declared_pair(e,s)`, run R-relnum-gen +
   R-cmp, halt iff match. Mirror the `search_rm(e)` dovetail STRUCTURE (re-expressed as n≥4 TM gadgets).
