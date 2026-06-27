@@ -276,3 +276,8 @@
 // word_power(inverse_word(w),k) -- so inverse_word(u_b) rewrites into the same primitive shapes as u_a.
 // See gap2_inverse.rs / docs/gap2-input-loader-plan.md §5.
 #[cfg(verus_keep_ghost)] pub mod gap2_inverse;
+
+// GAP-2 G2-F Route (i) brick R-relnum-gen: the fam_relator decomposition. fam_relator(a,b) = u_a ++
+// inverse_word(u_b) (apply_embedding bridge); the 3-letter b/b⁻¹ inverses; inverse_word(u_b) as 8
+// explicit primitive pieces. See gap2_fam_split.rs / docs/gap2-input-loader-plan.md §5.
+#[cfg(verus_keep_ghost)] pub mod gap2_fam_split;
