@@ -223,3 +223,9 @@
 // = { fam_relator(a,b) : declared_pair(e,s)=Some((a,b)) }, the spec backbone the generate-and-compare
 // relator-decider targets. Machine-architecture-independent. See gap2_relnum.rs.
 #[cfg(verus_keep_ghost)] pub mod gap2_relnum;
+
+// GAP-2 G2-F Route (i) brick R-AL: the n=4 uniform-window TM assembler -- the substrate for
+// psc_tm(e). A tm_wf TM over alphabet 0..4 (so word-number digits 1..4 fit as tape symbols), built
+// from a pluggable per-position action table; the alphabet-widened analog of tm_assemble.rs. The
+// counter gadget step-lemmas (all tm.n>=2-monotone) fire verbatim on it. See tm_assemble4.rs.
+#[cfg(verus_keep_ghost)] pub mod tm_assemble4;
