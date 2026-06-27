@@ -258,3 +258,9 @@
 // symbol = dpack's lowest digit), and lemma_relnum_is_dpack gives relnum = dpack(decode_digit_seq(...)) --
 // the emitter's spec target and the compare's invariant. See gap2_relnum_digits.rs.
 #[cfg(verus_keep_ghost)] pub mod gap2_relnum_digits;
+
+// GAP-2 G2-F Route (i) brick R-relnum-gen (spec): rho drops out of the digit analysis. The block-shift
+// relabel rho = relabel_hom(...,cb) is invisible to decode_word because letter_digit(cb,2,.) un-shifts it
+// (lemma_decode_rho_unshift); lemma_relnum_no_rho gives relnum = decode_word(0,2,m,fam_relator(a,b)).
+// See gap2_rho_unshift.rs.
+#[cfg(verus_keep_ghost)] pub mod gap2_rho_unshift;
