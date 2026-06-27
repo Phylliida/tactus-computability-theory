@@ -20,6 +20,9 @@ use verus_group_theory::word_numbering::lemma_div_mod_step;
 use crate::tm::{Tm, TmConfig, tm_wf, tm_step, tm_run, quint_matches, apply_quint};
 use crate::tm_gadget::{mk_quint, lemma_tm_step_picks};
 use crate::tm_dstring::{dpack, dpile, pow_nat, lemma_pow_nat_unfold};
+use crate::tm_dwalk_prefix::{drev, lemma_drev_len, lemma_drev_digit_bound, lemma_drev_involution,
+    lemma_dpile_is_dpack_drev};
+use crate::tm_run_lemmas::lemma_tm_run_split;
 
 verus! {
 
@@ -200,6 +203,142 @@ pub proof fn lemma_dwalk_left_gen(
         lemma_dwalk_left_gen(tm, c_next, q_walk, r, w, i1, i2, i3, i4);
         assert(tm_run(tm, c, blk.len()) == tm_run(tm, c_next, r.len()));
     }
+}
+
+/// **The balanced α-probe round-trip (B-cmp.1, the composition).** Composes the right-gen walk, the
+/// turnaround at the `5`-mark, and the left-gen walk into a single net-identity-on-`v` move — the M1
+/// compare's non-destructive read of the parked `alpha` (see `docs/gap2-input-loader-plan.md` §N+20, the
+/// side-separation "probe" pattern).
+///
+/// Setup: head scanning the low α digit `blk[0]` (the already-compared prefix `blk`, each digit `1..4`),
+/// with the rest of the block and the `5`-marked tail above (`v == dpack(blk.drop_first()) + m^{|blk|-1}·w`,
+/// `w == m·whi + 5` so the tail's low cell is the marker `5` and `whi` is α's suffix above it), output
+/// sitting in `u`, state `q_back`. The machine:
+///   1. **walks right** over `blk` (peeling it onto `u`), landing scanning the `5` ([`lemma_dwalk_right_gen`]);
+///   2. **turns around** with one L-move on the `5`-quintuple `(q_back, 5, 5, q_walk, L)` — rewriting the
+///      mark (so α is value-preserved) and flipping to the leftward state, the free pop handing the head
+///      the reversed block's low digit;
+///   3. **walks left** over `drev(blk)` (peeling the block back onto `v`), landing one cell into `u`
+///      scanning the output frontier `u % m` ([`lemma_dwalk_left_gen`]).
+/// Net effect: `v` is restored to the full α stack `dpack(blk) + m^{|blk|}·w` (the scanned α digit folded
+/// back in, the `5`-mark intact), the head has stepped one cell left into `u`, ready to read the output
+/// frontier. Fuel `2·|blk| + 1`. Requires `n ≥ 5` (the mark `5` must be a real symbol). The probe changes
+/// no tape content — it only repositions the head and re-frames the boundary.
+pub proof fn lemma_cmp_balanced_roundtrip(
+    tm: Tm, c: TmConfig, q_back: nat, q_walk: nat, blk: Seq<nat>, w: nat, whi: nat,
+    i1: int, i2: int, i3: int, i4: int, j: int,
+    l1: int, l2: int, l3: int, l4: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        blk.len() >= 1,
+        forall|k: int| 0 <= k < blk.len() ==> 1 <= #[trigger] blk[k] <= 4,
+        c.a == blk[0],
+        w == tm.m * whi + 5,
+        c.v == dpack(blk.drop_first(), tm.m) + pow_nat(tm.m, (blk.len() - 1) as nat) * w,
+        c.q == q_back,
+        0 <= i1 < tm.quints.len(),
+        0 <= i2 < tm.quints.len(),
+        0 <= i3 < tm.quints.len(),
+        0 <= i4 < tm.quints.len(),
+        0 <= j < tm.quints.len(),
+        0 <= l1 < tm.quints.len(),
+        0 <= l2 < tm.quints.len(),
+        0 <= l3 < tm.quints.len(),
+        0 <= l4 < tm.quints.len(),
+        tm.quints[i1] == mk_quint(q_back, 1, 1, q_back, Dir::R),
+        tm.quints[i2] == mk_quint(q_back, 2, 2, q_back, Dir::R),
+        tm.quints[i3] == mk_quint(q_back, 3, 3, q_back, Dir::R),
+        tm.quints[i4] == mk_quint(q_back, 4, 4, q_back, Dir::R),
+        tm.quints[j]  == mk_quint(q_back, 5, 5, q_walk, Dir::L),
+        tm.quints[l1] == mk_quint(q_walk, 1, 1, q_walk, Dir::L),
+        tm.quints[l2] == mk_quint(q_walk, 2, 2, q_walk, Dir::L),
+        tm.quints[l3] == mk_quint(q_walk, 3, 3, q_walk, Dir::L),
+        tm.quints[l4] == mk_quint(q_walk, 4, 4, q_walk, Dir::L),
+    ensures
+        tm_run(tm, c, (2 * blk.len() + 1) as nat)
+            == (TmConfig {
+                    u: c.u / tm.m,
+                    v: dpack(blk, tm.m) + pow_nat(tm.m, blk.len()) * w,
+                    a: c.u % tm.m,
+                    q: q_walk,
+               }),
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 5);   // tm_wf ⟹ 0 < n < m, n ≥ 5 ⟹ m ≥ 6
+    let k = blk.len();
+    // w decomposition: w / m == whi, w % m == 5 (5 < m).
+    assert(m * whi == whi * m) by(nonlinear_arith);
+    assert(w == whi * m + 5);
+    lemma_div_mod_step(whi, m, 5);
+    assert(w / m == whi);
+    assert(w % m == 5);
+
+    // ── Phase 1: walk right over blk, landing on the 5-mark.
+    lemma_dwalk_right_gen(tm, c, q_back, blk, w, i1, i2, i3, i4);
+    let c_right = TmConfig { u: dpile(c.u, blk, m), v: w / m, a: w % m, q: q_back };
+    assert(tm_run(tm, c, k) == c_right);
+    assert(c_right.a == 5);
+
+    // ── Phase 2: turnaround. The 5-quintuple (q_back, 5, 5, q_walk, L) fires.
+    assert(quint_matches(tm.quints[j], c_right));   // q == q_back, a == 5
+    lemma_tm_step_picks(tm, c_right, j);
+    let c_turn = apply_quint(tm.quints[j], c_right, m);
+    assert(tm_step(tm, c_right) == Some(c_turn));
+    // L-move with a2 == 5: u' = u/m, v' = v*m + 5, a' = u%m, q' = q_walk.
+    assert(c_turn.v == c_right.v * m + 5);
+    assert(c_turn.v == whi * m + 5);   // c_right.v == w/m == whi
+    assert(c_turn.v == w);
+    assert(c_turn.q == q_walk);
+
+    // decompose dpile(c.u, blk) to read the turnaround's u-pop.
+    let dr = drev(blk);
+    lemma_drev_len(blk);              // |dr| == k
+    lemma_drev_digit_bound(blk, 4);   // dr digits in 1..4
+    lemma_dpile_is_dpack_drev(c.u, blk, m);   // dpile(c.u, blk) == c.u·m^k + dpack(dr)
+    assert(dr.len() == k);
+    assert(1 <= dr[0] <= 4);          // k ≥ 1 ⟹ dr nonempty
+    assert(dr[0] < m);
+    assert(dpack(dr, m) == dr[0] + m * dpack(dr.drop_first(), m));   // dpack unfold (dr nonempty)
+    lemma_pow_nat_unfold(m, k);       // m^k == m·m^{k-1}
+    let xx = dpack(dr.drop_first(), m) + pow_nat(m, (k - 1) as nat) * c.u;
+    assert(dpile(c.u, blk, m) == xx * m + dr[0]) by(nonlinear_arith)
+        requires
+            dpile(c.u, blk, m) == c.u * pow_nat(m, k) + dpack(dr, m),
+            dpack(dr, m) == dr[0] + m * dpack(dr.drop_first(), m),
+            pow_nat(m, k) == m * pow_nat(m, (k - 1) as nat),
+            xx == dpack(dr.drop_first(), m) + pow_nat(m, (k - 1) as nat) * c.u;
+    lemma_div_mod_step(xx, m, dr[0]);   // (xx·m + dr[0])/m == xx, %m == dr[0]
+    assert(c_turn.u == dpile(c.u, blk, m) / m);
+    assert(c_turn.a == dpile(c.u, blk, m) % m);
+    assert(c_turn.u == xx);
+    assert(c_turn.a == dr[0]);
+
+    // ── Phase 3: walk left over dr (= drev(blk)), tail c.u.
+    assert((dr.len() - 1) as nat == (k - 1) as nat);
+    lemma_dwalk_left_gen(tm, c_turn, q_walk, dr, c.u, l1, l2, l3, l4);
+    let c_final = TmConfig { u: c.u / m, v: dpile(c_turn.v, dr, m), a: c.u % m, q: q_walk };
+    assert(tm_run(tm, c_turn, k) == c_final);
+
+    // final v == dpile(w, dr) == w·m^k + dpack(blk).
+    lemma_dpile_is_dpack_drev(w, dr, m);   // dpile(w, dr) == w·m^{|dr|} + dpack(drev(dr))
+    lemma_drev_involution(blk);            // drev(dr) =~= blk
+    assert(drev(dr) =~= blk);
+    assert(dpack(drev(dr), m) == dpack(blk, m));
+    assert(dpile(c_turn.v, dr, m) == dpile(w, dr, m));   // c_turn.v == w
+    assert(dpile(w, dr, m) == w * pow_nat(m, k) + dpack(blk, m));
+    assert(w * pow_nat(m, k) == pow_nat(m, k) * w) by(nonlinear_arith);
+    assert(c_final.v == dpack(blk, m) + pow_nat(m, k) * w);
+
+    // ── Compose the three runs: 2k+1 = k + (1 + k).
+    lemma_tm_run_split(tm, c, k, (k + 1) as nat);     // tm_run(c, 2k+1) == tm_run(c_right, k+1)
+    lemma_tm_run_split(tm, c_right, 1, k);            // tm_run(c_right, k+1) == tm_run(tm_run(c_right,1), k)
+    assert(tm_run(tm, c_turn, 0) == c_turn);
+    assert(tm_run(tm, c_right, 1) == c_turn);         // single step
+    assert((2 * k + 1) as nat == (k + (k + 1)) as nat);
+    assert(tm_run(tm, c, (2 * k + 1) as nat) == c_final);
 }
 
 } // verus!
