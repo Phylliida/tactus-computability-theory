@@ -22,7 +22,7 @@ use verus_group_theory::machine_group::Dir;
 use verus_group_theory::word_numbering::lemma_div_mod_step;
 use crate::tm::{Tm, TmConfig, tm_wf, tm_step, tm_run, quint_matches, apply_quint};
 use crate::tm_gadget::{mk_quint, lemma_tm_step_picks};
-use crate::tm_two_counter::{repunit_m, lemma_repunit_zero};
+use crate::tm_two_counter::{repunit_m, lemma_repunit_zero, lemma_repunit_step};
 use crate::tm_dstring::{pow_nat, lemma_pow_nat_unfold};
 use crate::tm_walk::{pile_ones, lemma_pile_ones_div_mod};
 use crate::tm_run_lemmas::lemma_tm_run_split;
@@ -144,6 +144,68 @@ pub proof fn lemma_copy_u_end_unmarked(big_m: nat, g: nat, m: nat)
     assert(pow_nat(m, big_m) * (pow_nat(m, (g - big_m) as nat) * repunit_m(big_m, m))
         == pow_nat(m, g) * repunit_m(big_m, m)) by(nonlinear_arith)
         requires pow_nat(m, g) == pow_nat(m, big_m) * pow_nat(m, (g - big_m) as nat);
+}
+
+/// **High-end repunit recurrence:** `repunit(j+1) == repunit(j) + m^j` (append a `1` at the TOP, the
+/// complement of [`crate::tm_two_counter::lemma_repunit_step`]'s low-end `m·repunit(j)+1`). Induction on j.
+pub proof fn lemma_repunit_high(j: nat, m: nat)
+    ensures
+        repunit_m((j + 1) as nat, m) == repunit_m(j, m) + pow_nat(m, j),
+    decreases j,
+{
+    lemma_repunit_step(j, m);   // R(j+1) == m·R(j)+1
+    if j == 0 {
+        lemma_repunit_zero(m);  // R(0)==0
+        assert(pow_nat(m, 0) == 1);
+    } else {
+        lemma_repunit_high((j - 1) as nat, m);   // R(j) == R(j-1) + P(j-1)     (f2)
+        lemma_repunit_step((j - 1) as nat, m);   // R(j) == m·R(j-1)+1          (f3)
+        lemma_pow_nat_unfold(m, j);              // P(j) == m·P(j-1)            (f4)
+        // distribute f2 by m:  m·R(j) == m·R(j-1) + m·P(j-1).
+        assert(m * repunit_m(j, m)
+            == m * repunit_m((j - 1) as nat, m) + m * pow_nat(m, (j - 1) as nat)) by(nonlinear_arith)
+            requires repunit_m(j, m) == repunit_m((j - 1) as nat, m) + pow_nat(m, (j - 1) as nat);
+        // R(j+1) = m·R(j)+1 = (m·R(j-1)+1) + m·P(j-1) = R(j) + P(j)  — linear in the named products.
+        assert(repunit_m((j + 1) as nat, m) == repunit_m(j, m) + pow_nat(m, j));
+    }
+}
+
+/// **The marked-copy iteration arithmetic.** For `j < big_m`, one copy iteration takes
+/// `copy_u(j) → copy_u(j+1)` by exactly two in-place additions: `+4·m^(G+j)` (mark the lowest unmarked
+/// master one, `1 → 5`) and `+m^j` (deposit a fresh temp one at the high-end separator):
+///   `copy_u(j+1, M, G) == copy_u(j, M, G) + 4·m^(G+j) + m^j`.
+/// The mark and deposit are the two physical sub-gadgets ([`lemma_deposit`] is the `+m^j`). Proven from
+/// the high-end repunit recurrence (`R(j+1)=R(j)+m^j`) and the low-end one (`R(M−j)=m·R(M−j−1)+1`), which
+/// collapse the `5 + m·R(M−j−1) − R(M−j) = 4` cross-term. **This pins the iteration's correctness target.**
+pub proof fn lemma_copy_u_iter_arith(j: nat, big_m: nat, g: nat, m: nat)
+    requires
+        j < big_m,
+    ensures
+        copy_u((j + 1) as nat, big_m, g, m)
+            == copy_u(j, big_m, g, m) + 4 * pow_nat(m, (g + j) as nat) + pow_nat(m, j),
+{
+    lemma_repunit_high(j, m);                          // R(j+1) == R(j) + P(j)
+    lemma_pow_nat_unfold(m, (j + 1) as nat);           // P(j+1) == m·P(j)
+    lemma_pow_nat_add(m, g, j);                        // P(g+j) == P(g)·P(j)
+    lemma_repunit_step((big_m - j - 1) as nat, m);     // R(M−j) == m·R(M−j−1)+1
+    assert(((big_m - j - 1) + 1) as nat == (big_m - j) as nat);
+    assert((big_m - (j + 1)) as nat == (big_m - j - 1) as nat);
+    // Both sides reduce to  R(j) + P(j) + P(g)·(5·R(j) + m·P(j)·R(M−j−1)) + 5·P(g)·P(j).
+    assert(copy_u((j + 1) as nat, big_m, g, m)
+        == copy_u(j, big_m, g, m) + 4 * pow_nat(m, (g + j) as nat) + pow_nat(m, j))
+        by(nonlinear_arith)
+        requires
+            copy_u((j + 1) as nat, big_m, g, m)
+                == repunit_m((j + 1) as nat, m) + pow_nat(m, g)
+                    * (5 * repunit_m((j + 1) as nat, m)
+                        + pow_nat(m, (j + 1) as nat) * repunit_m((big_m - j - 1) as nat, m)),
+            copy_u(j, big_m, g, m)
+                == repunit_m(j, m) + pow_nat(m, g)
+                    * (5 * repunit_m(j, m) + pow_nat(m, j) * repunit_m((big_m - j) as nat, m)),
+            repunit_m((j + 1) as nat, m) == repunit_m(j, m) + pow_nat(m, j),
+            pow_nat(m, (j + 1) as nat) == m * pow_nat(m, j),
+            pow_nat(m, (g + j) as nat) == pow_nat(m, g) * pow_nat(m, j),
+            repunit_m((big_m - j) as nat, m) == m * repunit_m((big_m - j - 1) as nat, m) + 1;
 }
 
 /// **Seek-left over a blank gap to the master.** From `{u: m^g·r, a: 0, q: q_seek}` with `r % m != 0`
