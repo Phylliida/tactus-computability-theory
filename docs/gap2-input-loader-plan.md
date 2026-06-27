@@ -1643,3 +1643,39 @@ the "sink" whose interface is now pinned: output low in `v`, α-block as a v-tai
 `ceer_realizes`. The peer-recommended order is R-cmp first (it constrains the emit/α orientations upstream);
 `q_clean` will also need a v-tail companion (`lemma_q_clean_*_tail_safe_v`) since the α-block rides above the
 output across the inter-phase wipe too.
+
+#### R-S proper arc — entry plan for the next session (the tail/lift toolkit is now CLOSED; this is the new frontier)
+
+The whole tail-carry substrate is done (`lemma_uinv_phase_tail` u-side, `lemma_uinv_phase_tail_v` +
+`lemma_u_phase_tail_v` v-side, `lemma_run_tail_uv` combined). What remains is genuinely-new TM gadget
+logic + the dovetail control flow — design-heavy, and per the AGENDA pattern these pieces are **co-design
+points with Danielle** (port 8051). Surfaced design considerations to settle BEFORE coding:
+
+1. **⚠ R-cmp MUST be NON-DESTRUCTIVE on α (the load-bearing design question).** α is the machine INPUT,
+   fixed across the whole dovetail — every stage `s` compares its own emitted output against the SAME α
+   block. So R-cmp cannot consume α (a naive peel-both-and-erase compare destroys it). Options to weigh:
+   (a) mark/compare/restore α in place (more states, but no copy); (b) the per-stage output is disposable —
+   compare by consuming the OUTPUT against a non-destructively-read α (read α's digit via peek, don't erase);
+   (c) copy α to scratch each stage (simple but Θ(|α|) copy per stage — and the dovetail runs ~stages² so
+   this is fine asymptotically). Likely (b): walk the output low→high, for each output digit peek the
+   matching α digit (ping-pong via `dwalk_left`/`dwalk_right`), reject on mismatch; accept iff both exhaust
+   together. The output IS consumed (good — it must be cleared before the next stage anyway).
+2. **⚠ Orientation/reversal must be checked against R-P.** The emitter writes `fam_digits` low-first into
+   `v` (`dpack`); R-P parked α **reversed** in its block (N+2 note: "α parked reversed in v, high digit
+   lowest"). Confirm the two land in the SAME order at the compare, or insert one `dwalk` reversal. The
+   compare only needs psc_tm to emit in `decode_word`'s canonical order to match α — pin this first.
+3. **R-S dovetail = mirror `search_rm`'s STRUCTURE** (already proven: `lemma_search_rm_halts_iff`), re-expressed
+   as n=5 TM gadgets: enumerate `s`, decode `(a,b)=declared_pair(e,s)` into the parked counters, run
+   pre-shift→emit→R-cmp, on mismatch clear the output + advance `s` + loop; on match fall through to R-C.
+   The dovetail counters `s, a+1, b+1` live in the persistent left region (a high u-tail during emit, carried
+   by `lemma_run_tail_uv`'s `T_backup` slot — OR re-derived from `s` each stage; pick when wiring).
+4. **Pre-shift glue (P1/P2 + α-tail `lay_init`)** is coupled to the dovetail's parked-counter layout (item 3),
+   so build it WITH R-S. The α-tail `lay_init` now has its substrate: `lemma_shift_right_ones` + a new
+   `lemma_shift_right_ones_tail_safe_v` (mirror `lemma_run_walk_right_tail_safe_v`) lifted by `lemma_run_tail_v`.
+5. **R-C / R-MC / B-W** are the closeout: cleanup-to-origin (mirror `tm_cleanup`), the machine-content splice
+   (`lemma_ignition_yields` ∘ `lemma_frame_reaches` ∘ `lemma_tm_h0_iff` ∘ R-S halts-iff ⟹ `mm_decides_relnum`),
+   then `lemma_ceer_realizes_from_machine` (DONE) discharges `ceer_realizes` and drops `axiom_ceer_fp_embedding`.
+
+**Recommended first concrete brick next session:** settle items 1–2 with Danielle (the R-cmp algorithm +
+orientation), then build the R-cmp comparison phase lemma as a self-contained gadget over the assemble5
+scaffold (its interface is pinned: head at `qfinal`/`q_cmp`, output low in `v`, α as a v-tail at offset `H`).
