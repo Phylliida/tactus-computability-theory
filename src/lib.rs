@@ -261,6 +261,11 @@
 // tm_cmp_traverse.rs and docs/gap2-input-loader-plan.md sec N+20.
 #[cfg(verus_keep_ghost)] pub mod tm_cmp_traverse;
 
+// GAP-2 G2-F Route (i) brick R-cmp (B-cmp.5): the compare LOOP -- iterate lemma_cmp_round over a digit
+// list `ds`, value-in-state encoding (qw/qc/qb: spec_fn(nat)->nat, qr shared). lemma_cmp_loop runs n
+// matched rounds INV(k0) -> INV(k0+n). See tm_cmp_loop.rs and docs/gap2-input-loader-plan.md sec N+24.
+#[cfg(verus_keep_ghost)] pub mod tm_cmp_loop;
+
 // GAP-2 G2-F Route (i) brick R-P: the copy-and-park core. lemma_rp_entry (2-step handshake depositing
 // the ignition-held low digit d0 onto v) + lemma_rp_copy_park (entry o dwalk_left) park alpha's digit
 // sequence reversed in v, freeing u as workspace -- the canonical layout R-cmp reads. See tm_rp.rs.
