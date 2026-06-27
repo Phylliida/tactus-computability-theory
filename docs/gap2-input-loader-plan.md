@@ -1521,3 +1521,23 @@ gadget; the deepest excursion (terminate) is the tight one and is already done.
    `entry5(pc2)`) → **plain `lemma_u_phase` at `g := g+b+2`** ⟹
    `v == dpack(od ++ uinv_digits(b) ++ u_digits(a)) == dpack(od ++ fam_digits(a,b))`.
 6. concrete `psc_act` tm/tm_wf + `fam_digits ⟹ relnum` → discharge `ceer_realizes` (unchanged from N+12).
+
+### N+15 — THE HIGH-TAIL LIFT IS COMPLETE (items 1–3 above DONE; crate 1486/0, no escape hatches).
+
+`lemma_uinv_phase_tail` (in `gap2_emit_seq.rs`) is verified: `tm_run(add_hi(c0, H_0, t)) == add_hi(uinv_phase
+result, H_0, t)` — the 8-block phase-1 emission runs with the `a+1` backup preserved as an inert high tail at
+`H_0 = g+M+1`, re-deposited at the same offset. The recipe ("copy source body, apply per-segment companion at the
+tracked offset, `lemma_tail_chain`") held 100% — every new module verified first-try (one omitted `seq_pow_len`
+length-lemma was the only fix). New modules / additions:
+- **`gap2_tail_power.rs`** — `lemma_power_block_step_block{1,3}{,_m1}_tail_safe` = `copy_refresh_tail_safe` ∘
+  `block_loop_block*_tail_safe`, 2-piece chain at `H_0`.
+- **`gap2_tail_phase1_m1.rs`** — the M=1 `copy_refresh` path (`mark_terminate_m1`/`unmark_m1`/`copy_refresh_m1`
+  tail_safe; fuel `6g+12`, `H_0 = g+2`). Both phase-2/3 share the 5-L-down-to-0, 5-R-back skeleton.
+- **per-window phase companions appended to `gap2_emit_power.rs` / `gap2_emit_power3.rs` / `gap2_emit_window.rs`**
+  (must live there for the module-private `locate_*`): `pbb1x/pbb3x{,_m1,_phase_any}` + `seret1x/seret3x`
+  `_phase_tail_safe`. `seret` is parametric in `h` (offset only rises over the output, never below `H_0`).
+- **`gap2_emit_seq.rs`** — `lemma_uinv_half_a/b_tail_safe` (chain 4 block companions each) →
+  `lemma_uinv_phase_tail_safe` (chain the halves) → `lemma_uinv_phase_tail` (apply `lemma_run_tail`).
+
+**NEXT = items 4–6 above** (init setup laying `u`, wiring `uinv_phase_tail → q_clean → u_phase`, concrete
+`psc_act` + `fam_digits ⟹ relnum`) → discharge `ceer_realizes`, the last GAP-2 piece.
