@@ -28,6 +28,8 @@ use crate::tm_assemble5::{entry5, tm_mod5, lemma_tm_wf_n5, lemma_slot_index5, le
 use crate::tm_dstring::dpack;
 use crate::tm_block_iter::{lemma_surge_emit_return_block1, lemma_surge_emit_return_block3};
 
+use crate::gap2_tail_lift::{tail_safe, tail_end_h};
+use crate::gap2_tail_emit::{lemma_surge_emit_return_block1_tail_safe, lemma_surge_emit_return_block3_tail_safe};
 verus! {
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -589,6 +591,192 @@ pub proof fn lemma_seret3x_walkback(tm: Tm, len: nat, pc: nat, s0: nat, s1: nat,
     lemma_slot_index5(pc, 0, sym);
     assert(idx == pc * 288 + 0 * 6 + sym);
     assert(tm.quints[idx] == seret3x_gen(s0, s1, s2, qexit, idx as nat));
+}
+
+pub proof fn lemma_seret1x_phase_tail_safe(tm: Tm, len: nat, pc: nat, big_u: nat, od: Seq<nat>, s: nat,
+    qexit: nat, jl1: int, jl2: int, jl3: int, jl4: int, h: nat)
+    requires
+        tm_wf(tm),
+        tm.n == 5,
+        tm.m == tm_mod5(len),
+        pc <= len,
+        tm.quints.len() == 288 * (len + 1),
+        forall|i: int| pc * 288 <= i < pc * 288 + 288 ==> #[trigger] tm.quints[i] == seret1x_gen(s, qexit, i as nat),
+        1 <= s <= 4,
+        forall|k: int| 0 <= k < od.len() ==> 1 <= #[trigger] od[k] <= 4,
+        // the 4 walk-back self-loops AT qexit (the next window's inert off-0 self-loops).
+        0 <= jl1 < tm.quints.len(),
+        0 <= jl2 < tm.quints.len(),
+        0 <= jl3 < tm.quints.len(),
+        0 <= jl4 < tm.quints.len(),
+        tm.quints[jl1] == mk_quint(qexit, 1, 1, qexit, Dir::L),
+        tm.quints[jl2] == mk_quint(qexit, 2, 2, qexit, Dir::L),
+        tm.quints[jl3] == mk_quint(qexit, 3, 3, qexit, Dir::L),
+        tm.quints[jl4] == mk_quint(qexit, 4, 4, qexit, Dir::L),
+    ensures
+        tail_safe(tm, TmConfig { u: big_u, v: dpack(od, tm.m), a: 0, q: entry5(pc) },
+            (2 * od.len() + 4) as nat, h),
+        tail_end_h(tm, TmConfig { u: big_u, v: dpack(od, tm.m), a: 0, q: entry5(pc) },
+            (2 * od.len() + 4) as nat, h) == h,
+{
+    assert(pc * 288 + 288 <= 288 * (len + 1)) by(nonlinear_arith) requires pc <= len;
+    let base = (pc * 288) as int;
+
+    let q_iter = entry5(pc);
+    let q_surge = (entry5(pc) + 1) as nat;
+    let q_eret = (entry5(pc) + 2) as nat;
+
+    // ── locate the 7 window-pc quints (q_iter, q_surge, q_eret); off_l targets qexit. ──
+    let i_pivot_r = (pc * 288 + 0 * 6 + 0) as int;
+    let ir1 = (pc * 288 + 1 * 6 + 1) as int;
+    let ir2 = (pc * 288 + 1 * 6 + 2) as int;
+    let ir3 = (pc * 288 + 1 * 6 + 3) as int;
+    let ir4 = (pc * 288 + 1 * 6 + 4) as int;
+    let i_emit = (pc * 288 + 1 * 6 + 0) as int;
+    let i_off_l = (pc * 288 + 2 * 6 + 0) as int;
+
+    assert(base <= i_pivot_r < base + 288);
+    assert(base <= ir1 < base + 288);
+    assert(base <= ir2 < base + 288);
+    assert(base <= ir3 < base + 288);
+    assert(base <= ir4 < base + 288);
+    assert(base <= i_emit < base + 288);
+    assert(base <= i_off_l < base + 288);
+
+    assert(tm.quints[i_pivot_r] == mk_quint(q_iter, 0, 0, q_surge, Dir::R)) by {
+        lemma_slot_index5(pc, 0, 0);
+        assert(tm.quints[i_pivot_r] == seret1x_gen(s, qexit, i_pivot_r as nat));
+    }
+    assert(tm.quints[ir1] == mk_quint(q_surge, 1, 1, q_surge, Dir::R)) by {
+        lemma_slot_index5(pc, 1, 1);
+        assert(tm.quints[ir1] == seret1x_gen(s, qexit, ir1 as nat));
+    }
+    assert(tm.quints[ir2] == mk_quint(q_surge, 2, 2, q_surge, Dir::R)) by {
+        lemma_slot_index5(pc, 1, 2);
+        assert(tm.quints[ir2] == seret1x_gen(s, qexit, ir2 as nat));
+    }
+    assert(tm.quints[ir3] == mk_quint(q_surge, 3, 3, q_surge, Dir::R)) by {
+        lemma_slot_index5(pc, 1, 3);
+        assert(tm.quints[ir3] == seret1x_gen(s, qexit, ir3 as nat));
+    }
+    assert(tm.quints[ir4] == mk_quint(q_surge, 4, 4, q_surge, Dir::R)) by {
+        lemma_slot_index5(pc, 1, 4);
+        assert(tm.quints[ir4] == seret1x_gen(s, qexit, ir4 as nat));
+    }
+    assert(tm.quints[i_emit] == mk_quint(q_surge, 0, s, q_eret, Dir::R)) by {
+        lemma_slot_index5(pc, 1, 0);
+        assert(tm.quints[i_emit] == seret1x_gen(s, qexit, i_emit as nat));
+    }
+    assert(tm.quints[i_off_l] == mk_quint(q_eret, 0, 0, qexit, Dir::L)) by {
+        lemma_slot_index5(pc, 2, 0);
+        assert(tm.quints[i_off_l] == seret1x_gen(s, qexit, i_off_l as nat));
+    }
+
+    // ── invoke the verified singleton step with q_home = qexit, walk-back quints jl1..jl4. ──
+    lemma_surge_emit_return_block1_tail_safe(tm, big_u, od, s,
+        q_iter, q_surge, q_eret, qexit,
+        i_pivot_r, ir1, ir2, ir3, ir4,
+        i_emit, i_off_l, jl1, jl2, jl3, jl4, h);
+}
+
+pub proof fn lemma_seret3x_phase_tail_safe(tm: Tm, len: nat, pc: nat, big_u: nat, od: Seq<nat>,
+    s0: nat, s1: nat, s2: nat, qexit: nat, jl1: int, jl2: int, jl3: int, jl4: int, h: nat)
+    requires
+        tm_wf(tm),
+        tm.n == 5,
+        tm.m == tm_mod5(len),
+        pc <= len,
+        tm.quints.len() == 288 * (len + 1),
+        forall|i: int| pc * 288 <= i < pc * 288 + 288 ==> #[trigger] tm.quints[i] == seret3x_gen(s0, s1, s2, qexit, i as nat),
+        1 <= s0 <= 4,
+        1 <= s1 <= 4,
+        1 <= s2 <= 4,
+        forall|k: int| 0 <= k < od.len() ==> 1 <= #[trigger] od[k] <= 4,
+        0 <= jl1 < tm.quints.len(),
+        0 <= jl2 < tm.quints.len(),
+        0 <= jl3 < tm.quints.len(),
+        0 <= jl4 < tm.quints.len(),
+        tm.quints[jl1] == mk_quint(qexit, 1, 1, qexit, Dir::L),
+        tm.quints[jl2] == mk_quint(qexit, 2, 2, qexit, Dir::L),
+        tm.quints[jl3] == mk_quint(qexit, 3, 3, qexit, Dir::L),
+        tm.quints[jl4] == mk_quint(qexit, 4, 4, qexit, Dir::L),
+    ensures
+        tail_safe(tm, TmConfig { u: big_u, v: dpack(od, tm.m), a: 0, q: entry5(pc) },
+            (2 * od.len() + 8) as nat, h),
+        tail_end_h(tm, TmConfig { u: big_u, v: dpack(od, tm.m), a: 0, q: entry5(pc) },
+            (2 * od.len() + 8) as nat, h) == h,
+{
+    assert(pc * 288 + 288 <= 288 * (len + 1)) by(nonlinear_arith) requires pc <= len;
+    let base = (pc * 288) as int;
+
+    let q_iter = entry5(pc);
+    let q_surge = (entry5(pc) + 1) as nat;
+    let q_e1 = (entry5(pc) + 2) as nat;
+    let q_e2 = (entry5(pc) + 3) as nat;
+    let q_eret = (entry5(pc) + 4) as nat;
+
+    let i_pivot_r = (pc * 288 + 0 * 6 + 0) as int;
+    let ir1 = (pc * 288 + 1 * 6 + 1) as int;
+    let ir2 = (pc * 288 + 1 * 6 + 2) as int;
+    let ir3 = (pc * 288 + 1 * 6 + 3) as int;
+    let ir4 = (pc * 288 + 1 * 6 + 4) as int;
+    let i_e0 = (pc * 288 + 1 * 6 + 0) as int;
+    let i_e1 = (pc * 288 + 2 * 6 + 0) as int;
+    let i_e2 = (pc * 288 + 3 * 6 + 0) as int;
+    let i_off_l = (pc * 288 + 4 * 6 + 0) as int;
+
+    assert(base <= i_pivot_r < base + 288);
+    assert(base <= ir1 < base + 288);
+    assert(base <= ir2 < base + 288);
+    assert(base <= ir3 < base + 288);
+    assert(base <= ir4 < base + 288);
+    assert(base <= i_e0 < base + 288);
+    assert(base <= i_e1 < base + 288);
+    assert(base <= i_e2 < base + 288);
+    assert(base <= i_off_l < base + 288);
+
+    assert(tm.quints[i_pivot_r] == mk_quint(q_iter, 0, 0, q_surge, Dir::R)) by {
+        lemma_slot_index5(pc, 0, 0);
+        assert(tm.quints[i_pivot_r] == seret3x_gen(s0, s1, s2, qexit, i_pivot_r as nat));
+    }
+    assert(tm.quints[ir1] == mk_quint(q_surge, 1, 1, q_surge, Dir::R)) by {
+        lemma_slot_index5(pc, 1, 1);
+        assert(tm.quints[ir1] == seret3x_gen(s0, s1, s2, qexit, ir1 as nat));
+    }
+    assert(tm.quints[ir2] == mk_quint(q_surge, 2, 2, q_surge, Dir::R)) by {
+        lemma_slot_index5(pc, 1, 2);
+        assert(tm.quints[ir2] == seret3x_gen(s0, s1, s2, qexit, ir2 as nat));
+    }
+    assert(tm.quints[ir3] == mk_quint(q_surge, 3, 3, q_surge, Dir::R)) by {
+        lemma_slot_index5(pc, 1, 3);
+        assert(tm.quints[ir3] == seret3x_gen(s0, s1, s2, qexit, ir3 as nat));
+    }
+    assert(tm.quints[ir4] == mk_quint(q_surge, 4, 4, q_surge, Dir::R)) by {
+        lemma_slot_index5(pc, 1, 4);
+        assert(tm.quints[ir4] == seret3x_gen(s0, s1, s2, qexit, ir4 as nat));
+    }
+    assert(tm.quints[i_e0] == mk_quint(q_surge, 0, s0, q_e1, Dir::R)) by {
+        lemma_slot_index5(pc, 1, 0);
+        assert(tm.quints[i_e0] == seret3x_gen(s0, s1, s2, qexit, i_e0 as nat));
+    }
+    assert(tm.quints[i_e1] == mk_quint(q_e1, 0, s1, q_e2, Dir::R)) by {
+        lemma_slot_index5(pc, 2, 0);
+        assert(tm.quints[i_e1] == seret3x_gen(s0, s1, s2, qexit, i_e1 as nat));
+    }
+    assert(tm.quints[i_e2] == mk_quint(q_e2, 0, s2, q_eret, Dir::R)) by {
+        lemma_slot_index5(pc, 3, 0);
+        assert(tm.quints[i_e2] == seret3x_gen(s0, s1, s2, qexit, i_e2 as nat));
+    }
+    assert(tm.quints[i_off_l] == mk_quint(q_eret, 0, 0, qexit, Dir::L)) by {
+        lemma_slot_index5(pc, 4, 0);
+        assert(tm.quints[i_off_l] == seret3x_gen(s0, s1, s2, qexit, i_off_l as nat));
+    }
+
+    // ── invoke the verified triple-singleton step with q_home = qexit, walk-back quints jl1..jl4. ──
+    lemma_surge_emit_return_block3_tail_safe(tm, big_u, od, s0, s1, s2,
+        q_iter, q_surge, q_e1, q_e2, q_eret, qexit,
+        i_pivot_r, ir1, ir2, ir3, ir4,
+        i_e0, i_e1, i_e2, i_off_l, jl1, jl2, jl3, jl4, h);
 }
 
 } // verus!

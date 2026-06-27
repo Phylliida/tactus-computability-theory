@@ -35,6 +35,8 @@ use crate::gap2_relnum_dds::seq_pow;
 use crate::tm_power_block::{power_block_fuel_b3, lemma_power_block_step_block3};
 use crate::tm_power_block_m1::{power_block_fuel_b3_m1, lemma_power_block_step_block3_m1};
 
+use crate::gap2_tail_lift::{tail_safe, tail_end_h};
+use crate::gap2_tail_power::{lemma_power_block_step_block3_tail_safe, lemma_power_block_step_block3_m1_tail_safe};
 verus! {
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -581,6 +583,254 @@ pub proof fn lemma_pbb3x_phase_any(tm: Tm, len: nat, pc: nat, big_m: nat, g: nat
         lemma_pbb3x_m1_phase(tm, len, pc, g, od, s0, s1, s2, qexit);
     } else {
         lemma_pbb3x_phase(tm, len, pc, big_m, g, od, s0, s1, s2, qexit);
+    }
+}
+
+pub proof fn lemma_pbb3x_phase_tail_safe(tm: Tm, len: nat, pc: nat, big_m: nat, g: nat, od: Seq<nat>,
+    s0: nat, s1: nat, s2: nat, qexit: nat)
+    requires
+        tm_wf(tm),
+        tm.n == 5,
+        tm.m == tm_mod5(len),
+        pc <= len,
+        tm.quints.len() == 288 * (len + 1),
+        forall|i: int| pc * 288 <= i < pc * 288 + 288 ==> #[trigger] tm.quints[i] == pbb3x_gen(s0, s1, s2, qexit, i as nat),
+        2 <= big_m,
+        g >= big_m + 2,
+        1 <= s0 <= 4,
+        1 <= s1 <= 4,
+        1 <= s2 <= 4,
+        forall|k: int| 0 <= k < od.len() ==> 1 <= #[trigger] od[k] <= 4,
+    ensures
+        tail_safe(tm,
+            TmConfig { u: copy_u(0, big_m, g, tm.m), v: dpack(od, tm.m), a: 0, q: entry5(pc) },
+            power_block_fuel_b3(big_m, g, od.len()), (g + big_m + 1) as nat),
+        tail_end_h(tm,
+            TmConfig { u: copy_u(0, big_m, g, tm.m), v: dpack(od, tm.m), a: 0, q: entry5(pc) },
+            power_block_fuel_b3(big_m, g, od.len()), (g + big_m + 1) as nat)
+            == (g + big_m + 1) as nat,
+{
+    let e = entry5(pc);
+    // ── copy_refresh j=0 deposit-first (off 0–6). ──
+    let i_dpeel0 = (pc * 288 + 0 * 6 + 0) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 0, 0, 0, 1, Dir::L);
+    let i_dtemp0 = (pc * 288 + 1 * 6 + 1) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 1, 1, 1, 1, Dir::L);
+    let i_dins0  = (pc * 288 + 1 * 6 + 0) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 1, 0, 1, 2, Dir::R);
+    let i_dwb0   = (pc * 288 + 2 * 6 + 1) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 2, 1, 1, 2, Dir::R);
+    let i_peel0  = (pc * 288 + 2 * 6 + 0) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 2, 0, 0, 3, Dir::L);
+    let i_temp0  = (pc * 288 + 3 * 6 + 1) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 3, 1, 1, 3, Dir::L);
+    let i_t2g0   = (pc * 288 + 3 * 6 + 0) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 3, 0, 0, 4, Dir::L);
+    let i_gap0   = (pc * 288 + 4 * 6 + 0) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 4, 0, 0, 4, Dir::L);
+    let i_mark0  = (pc * 288 + 4 * 6 + 1) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 4, 1, 5, 5, Dir::R);
+    let i_rf2g0  = (pc * 288 + 5 * 6 + 0) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 5, 0, 0, 6, Dir::R);
+    let i_rgap0  = (pc * 288 + 6 * 6 + 0) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 6, 0, 0, 6, Dir::R);
+    let i_rg2t0  = (pc * 288 + 6 * 6 + 1) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 6, 1, 1, 7, Dir::R);
+    // ── copy_refresh home-cycle. ──
+    let i_peel   = (pc * 288 + 7 * 6 + 0) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 7, 0, 0, 8, Dir::L);
+    let i_temp   = (pc * 288 + 8 * 6 + 1) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 8, 1, 1, 8, Dir::L);
+    let i_t2g    = (pc * 288 + 8 * 6 + 0) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 8, 0, 0, 9, Dir::L);
+    let i_gap    = (pc * 288 + 9 * 6 + 0) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 9, 0, 0, 9, Dir::L);
+    let i_a2b    = (pc * 288 + 9 * 6 + 5) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 9, 5, 5, 10, Dir::L);
+    let i_fives  = (pc * 288 + 10 * 6 + 5) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 10, 5, 5, 10, Dir::L);
+    let i_mark   = (pc * 288 + 10 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 10, 1, 5, 11, Dir::R);
+    let i_rfives = (pc * 288 + 11 * 6 + 5) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 11, 5, 5, 11, Dir::R);
+    let i_rf2g   = (pc * 288 + 11 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 11, 0, 0, 12, Dir::R);
+    let i_rgap   = (pc * 288 + 12 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 12, 0, 0, 12, Dir::R);
+    let i_rg2t   = (pc * 288 + 12 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 12, 1, 1, 13, Dir::R);
+    let i_rtemp  = (pc * 288 + 13 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 13, 1, 1, 13, Dir::R);
+    let i_dpeel  = (pc * 288 + 13 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 13, 0, 0, 14, Dir::L);
+    let i_dtemp  = (pc * 288 + 14 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 14, 1, 1, 14, Dir::L);
+    let i_dins   = (pc * 288 + 14 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 14, 0, 1, 7, Dir::R);
+    let i_dwb    = (pc * 288 + 7 * 6 + 1) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 7, 1, 1, 7, Dir::R);
+    // ── copy_refresh terminate walk-back. ──
+    let i_turn   = (pc * 288 + 10 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 10, 0, 0, 15, Dir::R);
+    let i_master = (pc * 288 + 15 * 6 + 5) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 15, 5, 5, 15, Dir::R);
+    let i_tm2g   = (pc * 288 + 15 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 15, 0, 0, 16, Dir::R);
+    let i_trgap  = (pc * 288 + 16 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 16, 0, 0, 16, Dir::R);
+    let i_tg2t   = (pc * 288 + 16 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 16, 1, 1, 17, Dir::R);
+    let i_trtemp = (pc * 288 + 17 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 17, 1, 1, 17, Dir::R);
+    // ── copy_refresh unmark (home == q_ret == e+17). ──
+    let i_upeel  = (pc * 288 + 17 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 17, 0, 0, 18, Dir::L);
+    let i_utemp  = (pc * 288 + 18 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 18, 1, 1, 18, Dir::L);
+    let i_ut2g   = (pc * 288 + 18 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 18, 0, 0, 19, Dir::L);
+    let i_ugap   = (pc * 288 + 19 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 19, 0, 0, 19, Dir::L);
+    let i_uu1    = (pc * 288 + 19 * 6 + 5) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 19, 5, 1, 20, Dir::L);
+    let i_uurest = (pc * 288 + 20 * 6 + 5) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 20, 5, 1, 20, Dir::L);
+    let i_uturn  = (pc * 288 + 20 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 20, 0, 0, 21, Dir::R);
+    let i_umaster= (pc * 288 + 21 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 21, 1, 1, 21, Dir::R);
+    let i_um2g   = (pc * 288 + 21 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 21, 0, 0, 22, Dir::R);
+    let i_urgap  = (pc * 288 + 22 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 22, 0, 0, 22, Dir::R);
+    let i_ug2t   = (pc * 288 + 22 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 22, 1, 1, 23, Dir::R);
+    let i_urtemp = (pc * 288 + 23 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 23, 1, 1, 23, Dir::R);
+    // ── block_loop (triple emit); exit → external qexit. ──
+    let i_peek   = (pc * 288 + 23 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 23, 0, 0, 24, Dir::L);
+    let i_cont   = (pc * 288 + 24 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 24, 1, 1, 25, Dir::R);
+    let i_exit   = (pc * 288 + 24 * 6 + 0) as int; locate_pbb3x_exit(tm, len, pc, s0, s1, s2, qexit);
+    let i_pivot_r= (pc * 288 + 25 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 25, 0, 0, 26, Dir::R);
+    let ir1      = (pc * 288 + 26 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 26, 1, 1, 26, Dir::R);
+    let ir2      = (pc * 288 + 26 * 6 + 2) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 26, 2, 2, 26, Dir::R);
+    let ir3      = (pc * 288 + 26 * 6 + 3) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 26, 3, 3, 26, Dir::R);
+    let ir4      = (pc * 288 + 26 * 6 + 4) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 26, 4, 4, 26, Dir::R);
+    let i_e0     = (pc * 288 + 26 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 26, 0, s0, 27, Dir::R);
+    let i_e1     = (pc * 288 + 27 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 27, 0, s1, 28, Dir::R);
+    let i_e2     = (pc * 288 + 28 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 28, 0, s2, 29, Dir::R);
+    let i_off_l  = (pc * 288 + 29 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 29, 0, 0, 30, Dir::L);
+    let il1      = (pc * 288 + 30 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 30, 1, 1, 30, Dir::L);
+    let il2      = (pc * 288 + 30 * 6 + 2) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 30, 2, 2, 30, Dir::L);
+    let il3      = (pc * 288 + 30 * 6 + 3) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 30, 3, 3, 30, Dir::L);
+    let il4      = (pc * 288 + 30 * 6 + 4) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 30, 4, 4, 30, Dir::L);
+    let i_pivot  = (pc * 288 + 30 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 30, 0, 0, 31, Dir::L);
+    let i_one_l  = (pc * 288 + 31 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 31, 1, 1, 31, Dir::L);
+    let i_erase  = (pc * 288 + 31 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 31, 0, 0, 32, Dir::R);
+    let i_disc   = (pc * 288 + 32 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 32, 1, 0, 23, Dir::R);
+
+    // ── invoke the verified triple power-block step (q_dh0 = e, q_exit = qexit external). ──
+    lemma_power_block_step_block3_tail_safe(tm, big_m, g, od, s0, s1, s2,
+        e + 0, e + 1, e + 2, e + 3, e + 4, e + 5, e + 6,
+        e + 7, e + 8, e + 9, e + 10, e + 11, e + 12, e + 13, e + 14,
+        e + 15, e + 16, e + 17,
+        e + 18, e + 19, e + 20, e + 21, e + 22, e + 23,
+        e + 24, e + 25, e + 26, e + 27, e + 28, e + 29, e + 30, e + 31, e + 32, qexit,
+        i_dpeel0, i_dtemp0, i_dins0, i_dwb0,
+        i_peel0, i_temp0, i_t2g0, i_gap0, i_mark0, i_rf2g0, i_rgap0, i_rg2t0,
+        i_peel, i_temp, i_t2g, i_gap, i_a2b, i_fives, i_mark, i_rfives, i_rf2g, i_rgap, i_rg2t, i_rtemp,
+        i_dpeel, i_dtemp, i_dins, i_dwb,
+        i_turn, i_master, i_tm2g, i_trgap, i_tg2t, i_trtemp,
+        i_upeel, i_utemp, i_ut2g, i_ugap, i_uu1, i_uurest,
+        i_uturn, i_umaster, i_um2g, i_urgap, i_ug2t, i_urtemp,
+        i_peek, i_cont, i_exit,
+        i_pivot_r, ir1, ir2, ir3, ir4,
+        i_e0, i_e1, i_e2, i_off_l, il1, il2, il3, il4,
+        i_pivot, i_one_l, i_erase, i_disc);
+}
+
+pub proof fn lemma_pbb3x_m1_phase_tail_safe(tm: Tm, len: nat, pc: nat, g: nat, od: Seq<nat>,
+    s0: nat, s1: nat, s2: nat, qexit: nat)
+    requires
+        tm_wf(tm),
+        tm.n == 5,
+        tm.m == tm_mod5(len),
+        pc <= len,
+        tm.quints.len() == 288 * (len + 1),
+        forall|i: int| pc * 288 <= i < pc * 288 + 288 ==> #[trigger] tm.quints[i] == pbb3x_gen(s0, s1, s2, qexit, i as nat),
+        g >= 3,
+        1 <= s0 <= 4,
+        1 <= s1 <= 4,
+        1 <= s2 <= 4,
+        forall|k: int| 0 <= k < od.len() ==> 1 <= #[trigger] od[k] <= 4,
+    ensures
+        tail_safe(tm,
+            TmConfig { u: copy_u(0, 1, g, tm.m), v: dpack(od, tm.m), a: 0, q: entry5(pc) },
+            power_block_fuel_b3_m1(g, od.len()), (g + 2) as nat),
+        tail_end_h(tm,
+            TmConfig { u: copy_u(0, 1, g, tm.m), v: dpack(od, tm.m), a: 0, q: entry5(pc) },
+            power_block_fuel_b3_m1(g, od.len()), (g + 2) as nat)
+            == (g + 2) as nat,
+{
+    let e = entry5(pc);
+    // ── copy_refresh_m1 j=0 copy (off 0–6). ──
+    let i_dpeel  = (pc * 288 + 0 * 6 + 0) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 0, 0, 0, 1, Dir::L);
+    let i_dtemp  = (pc * 288 + 1 * 6 + 1) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 1, 1, 1, 1, Dir::L);
+    let i_dins   = (pc * 288 + 1 * 6 + 0) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 1, 0, 1, 2, Dir::R);
+    let i_dwb    = (pc * 288 + 2 * 6 + 1) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 2, 1, 1, 2, Dir::R);
+    let i_cpeel  = (pc * 288 + 2 * 6 + 0) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 2, 0, 0, 3, Dir::L);
+    let i_ctemp  = (pc * 288 + 3 * 6 + 1) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 3, 1, 1, 3, Dir::L);
+    let i_ct2g   = (pc * 288 + 3 * 6 + 0) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 3, 0, 0, 4, Dir::L);
+    let i_cgap   = (pc * 288 + 4 * 6 + 0) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 4, 0, 0, 4, Dir::L);
+    let i_cmark  = (pc * 288 + 4 * 6 + 1) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 4, 1, 5, 5, Dir::R);
+    let i_crf2g  = (pc * 288 + 5 * 6 + 0) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 5, 0, 0, 6, Dir::R);
+    let i_crgap  = (pc * 288 + 6 * 6 + 0) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 6, 0, 0, 6, Dir::R);
+    let i_crg2t  = (pc * 288 + 6 * 6 + 1) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 6, 1, 1, 7, Dir::R);
+    // ── copy_refresh_m1 terminate (home == q_home == e+7). ──
+    let i_tpeel  = (pc * 288 + 7 * 6 + 0) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 7, 0, 0, 8, Dir::L);
+    let i_ttemp  = (pc * 288 + 8 * 6 + 1) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 8, 1, 1, 8, Dir::L);
+    let i_tt2g   = (pc * 288 + 8 * 6 + 0) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 8, 0, 0, 9, Dir::L);
+    let i_tgap   = (pc * 288 + 9 * 6 + 0) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 9, 0, 0, 9, Dir::L);
+    let i_ta2b   = (pc * 288 + 9 * 6 + 5) as int;  locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 9, 5, 5, 10, Dir::L);
+    let i_tturn  = (pc * 288 + 10 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 10, 0, 0, 15, Dir::R);
+    let i_tmaster= (pc * 288 + 15 * 6 + 5) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 15, 5, 5, 15, Dir::R);
+    let i_tm2g   = (pc * 288 + 15 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 15, 0, 0, 16, Dir::R);
+    let i_trgap  = (pc * 288 + 16 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 16, 0, 0, 16, Dir::R);
+    let i_tg2t   = (pc * 288 + 16 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 16, 1, 1, 17, Dir::R);
+    // ── copy_refresh_m1 unmark (home == q_ret == e+17). ──
+    let i_upeel  = (pc * 288 + 17 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 17, 0, 0, 18, Dir::L);
+    let i_utemp  = (pc * 288 + 18 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 18, 1, 1, 18, Dir::L);
+    let i_ut2g   = (pc * 288 + 18 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 18, 0, 0, 19, Dir::L);
+    let i_ugap   = (pc * 288 + 19 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 19, 0, 0, 19, Dir::L);
+    let i_uu1    = (pc * 288 + 19 * 6 + 5) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 19, 5, 1, 20, Dir::L);
+    let i_uturn  = (pc * 288 + 20 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 20, 0, 0, 21, Dir::R);
+    let i_umaster= (pc * 288 + 21 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 21, 1, 1, 21, Dir::R);
+    let i_um2g   = (pc * 288 + 21 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 21, 0, 0, 22, Dir::R);
+    let i_urgap  = (pc * 288 + 22 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 22, 0, 0, 22, Dir::R);
+    let i_ug2t   = (pc * 288 + 22 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 22, 1, 1, 23, Dir::R);
+    // ── block_loop (triple emit, q_loop := q_urt == e+23), exit → qexit. ──
+    let i_peek   = (pc * 288 + 23 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 23, 0, 0, 24, Dir::L);
+    let i_cont   = (pc * 288 + 24 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 24, 1, 1, 25, Dir::R);
+    let i_exit   = (pc * 288 + 24 * 6 + 0) as int; locate_pbb3x_exit(tm, len, pc, s0, s1, s2, qexit);
+    let i_pivot_r= (pc * 288 + 25 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 25, 0, 0, 26, Dir::R);
+    let ir1      = (pc * 288 + 26 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 26, 1, 1, 26, Dir::R);
+    let ir2      = (pc * 288 + 26 * 6 + 2) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 26, 2, 2, 26, Dir::R);
+    let ir3      = (pc * 288 + 26 * 6 + 3) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 26, 3, 3, 26, Dir::R);
+    let ir4      = (pc * 288 + 26 * 6 + 4) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 26, 4, 4, 26, Dir::R);
+    let i_e0     = (pc * 288 + 26 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 26, 0, s0, 27, Dir::R);
+    let i_e1     = (pc * 288 + 27 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 27, 0, s1, 28, Dir::R);
+    let i_e2     = (pc * 288 + 28 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 28, 0, s2, 29, Dir::R);
+    let i_off_l  = (pc * 288 + 29 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 29, 0, 0, 30, Dir::L);
+    let il1      = (pc * 288 + 30 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 30, 1, 1, 30, Dir::L);
+    let il2      = (pc * 288 + 30 * 6 + 2) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 30, 2, 2, 30, Dir::L);
+    let il3      = (pc * 288 + 30 * 6 + 3) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 30, 3, 3, 30, Dir::L);
+    let il4      = (pc * 288 + 30 * 6 + 4) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 30, 4, 4, 30, Dir::L);
+    let i_pivot  = (pc * 288 + 30 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 30, 0, 0, 31, Dir::L);
+    let i_one_l  = (pc * 288 + 31 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 31, 1, 1, 31, Dir::L);
+    let i_erase  = (pc * 288 + 31 * 6 + 0) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 31, 0, 0, 32, Dir::R);
+    let i_disc   = (pc * 288 + 32 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 32, 1, 0, 23, Dir::R);
+    let i_one_r  = (pc * 288 + 23 * 6 + 1) as int; locate_pbb3x(tm, len, pc, s0, s1, s2, qexit, 23, 1, 1, 23, Dir::R);
+
+    // ── invoke the verified M=1 triple power-block step (q_dh0 = e, q_exit = qexit external). ──
+    lemma_power_block_step_block3_m1_tail_safe(tm, g, od, s0, s1, s2,
+        e + 0, e + 1, e + 2, e + 3, e + 4, e + 5, e + 6,
+        e + 8, e + 9, e + 10, e + 15, e + 16, e + 17, e + 7,
+        e + 18, e + 19, e + 20, e + 21, e + 22, e + 23,
+        e + 24, e + 25, e + 26, e + 27, e + 28, e + 29, e + 30, e + 31, e + 32, qexit,
+        i_dpeel, i_dtemp, i_dins, i_dwb,
+        i_cpeel, i_ctemp, i_ct2g, i_cgap, i_cmark, i_crf2g, i_crgap, i_crg2t,
+        i_tpeel, i_ttemp, i_tt2g, i_tgap, i_ta2b,
+        i_tturn, i_tmaster, i_tm2g, i_trgap, i_tg2t,
+        i_upeel, i_utemp, i_ut2g, i_ugap, i_uu1,
+        i_uturn, i_umaster, i_um2g, i_urgap, i_ug2t,
+        i_peek, i_cont, i_exit,
+        i_pivot_r, ir1, ir2, ir3, ir4,
+        i_e0, i_e1, i_e2, i_off_l, il1, il2, il3, il4,
+        i_pivot, i_one_l, i_erase, i_disc, i_one_r);
+}
+
+pub proof fn lemma_pbb3x_phase_any_tail_safe(tm: Tm, len: nat, pc: nat, big_m: nat, g: nat, od: Seq<nat>,
+    s0: nat, s1: nat, s2: nat, qexit: nat)
+    requires
+        tm_wf(tm),
+        tm.n == 5,
+        tm.m == tm_mod5(len),
+        pc <= len,
+        tm.quints.len() == 288 * (len + 1),
+        forall|i: int| pc * 288 <= i < pc * 288 + 288 ==> #[trigger] tm.quints[i] == pbb3x_gen(s0, s1, s2, qexit, i as nat),
+        1 <= big_m,
+        g >= big_m + 2,
+        1 <= s0 <= 4,
+        1 <= s1 <= 4,
+        1 <= s2 <= 4,
+        forall|k: int| 0 <= k < od.len() ==> 1 <= #[trigger] od[k] <= 4,
+    ensures
+        tail_safe(tm,
+            TmConfig { u: copy_u(0, big_m, g, tm.m), v: dpack(od, tm.m), a: 0, q: entry5(pc) },
+            pb3_fuel(big_m, g, od.len()), (g + big_m + 1) as nat),
+        tail_end_h(tm,
+            TmConfig { u: copy_u(0, big_m, g, tm.m), v: dpack(od, tm.m), a: 0, q: entry5(pc) },
+            pb3_fuel(big_m, g, od.len()), (g + big_m + 1) as nat)
+            == (g + big_m + 1) as nat,
+{
+    if big_m == 1 {
+        lemma_pbb3x_m1_phase_tail_safe(tm, len, pc, g, od, s0, s1, s2, qexit);
+    } else {
+        lemma_pbb3x_phase_tail_safe(tm, len, pc, big_m, g, od, s0, s1, s2, qexit);
     }
 }
 
