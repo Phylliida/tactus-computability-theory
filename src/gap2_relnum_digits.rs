@@ -22,8 +22,11 @@
 
 use vstd::prelude::*;
 use verus_group_theory::word::Word;
+use verus_group_theory::symbol::Symbol;
+use verus_group_theory::machine_group::symbol_power;
 use verus_group_theory::word_numbering_decode::{decode_word, letter_digit, in_c_block,
     c_alphabet_word, lemma_alphabet_letter_section};
+use crate::tm_two_counter::repunit_m;
 use verus_group_theory::machine_group::ModMachine;
 use crate::ceer::CEER;
 use crate::gap2_relnum::{relnum, fam_relator};
@@ -160,6 +163,36 @@ pub proof fn lemma_decode_digit_seq_bound(c_base: nat, n: nat, w: Word)
                 assert(ds[k] == rest[k - 1]);
             }
         }
+    }
+}
+
+/// **`decode_word` of a `symbol_power` block.** A run of `k` copies of a single symbol `s` contributes
+/// `letter_digit(c,n,s) · repunit_m(k, m)` to the word-number (its digit appears at every place value
+/// `1, m, …, m^{k-1}`). The closed form for the `a⁻ⁱ = symbol_power(Inv(0),i)` and `aⁱ =
+/// symbol_power(Gen(0),i)` blocks of the collapse relator `u_j`. Direct induction on `k` via
+/// `decode_word`'s last-symbol recurrence (`symbol_power(s,k).drop_last() = symbol_power(s,k-1)`,
+/// `.last() = s`) and the low-end repunit recurrence `repunit_m(k) = m·repunit_m(k-1) + 1`.
+pub proof fn lemma_decode_word_symbol_power(c_base: nat, n: nat, m: nat, s: Symbol, k: nat)
+    ensures
+        decode_word(c_base, n, m, symbol_power(s, k)) == letter_digit(c_base, n, s) * repunit_m(k, m),
+    decreases k,
+{
+    if k == 0 {
+        assert(symbol_power(s, 0) =~= Seq::<Symbol>::empty());
+        assert(repunit_m(0, m) == 0);
+        assert(letter_digit(c_base, n, s) * 0 == 0) by(nonlinear_arith);
+    } else {
+        // symbol_power(s,k) = symbol_power(s,k-1) ++ [s].
+        assert(symbol_power(s, k).last() == s);
+        assert(symbol_power(s, k).drop_last() =~= symbol_power(s, (k - 1) as nat));
+        lemma_decode_word_symbol_power(c_base, n, m, s, (k - 1) as nat);   // IH
+        let d = letter_digit(c_base, n, s);
+        // decode_word(k) == decode_word(k-1)·m + d == (d·repunit(k-1))·m + d == d·(m·repunit(k-1)+1).
+        assert(decode_word(c_base, n, m, symbol_power(s, k))
+            == decode_word(c_base, n, m, symbol_power(s, (k - 1) as nat)) * m + d);
+        assert((d * repunit_m((k - 1) as nat, m)) * m + d == d * (m * repunit_m((k - 1) as nat, m) + 1))
+            by(nonlinear_arith);
+        assert(repunit_m(k, m) == m * repunit_m((k - 1) as nat, m) + 1);
     }
 }
 
