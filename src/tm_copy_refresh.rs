@@ -17,13 +17,17 @@
 //! `docs/gap2-input-loader-plan.md` §5 (R-relnum-gen STEP 2, model B). Fully verified, no escape hatches.
 
 use vstd::prelude::*;
+use vstd::arithmetic::div_mod::lemma_fundamental_div_mod;
 use verus_group_theory::machine_group::Dir;
 use verus_group_theory::word_numbering::lemma_div_mod_step;
 use crate::tm::{Tm, TmConfig, tm_wf, tm_step, tm_run, quint_matches, apply_quint};
 use crate::tm_gadget::{mk_quint, lemma_tm_step_picks};
 use crate::tm_two_counter::{repunit_m, lemma_repunit_zero};
 use crate::tm_dstring::{pow_nat, lemma_pow_nat_unfold};
-use crate::tm_dec_master::dec_u;
+use crate::tm_walk::{pile_ones, lemma_pile_ones_div_mod};
+use crate::tm_run_lemmas::lemma_tm_run_split;
+use crate::tm_dec_master::{dec_u, lemma_walk_left_prefix, lemma_walk_back_prefix};
+use crate::tm_block_loop::lemma_dec_u_step;
 
 verus! {
 
@@ -267,6 +271,153 @@ pub proof fn lemma_seek_right_blanks(tm: Tm, c: TmConfig, q_seek: nat, g: nat, r
         assert(c_next.u * pow_nat(m, g) == c.u * pow_nat(m, (g + 1) as nat)) by(nonlinear_arith)
             requires c_next.u == c.u * m + 0, pow_nat(m, (g + 1) as nat) == m * pow_nat(m, g);
         assert(tm_run(tm, c, (g + 1) as nat) == tm_run(tm, c_next, g));
+    }
+}
+
+// ============================================================================
+// the deposit (high-end temp grow) — the dec_temp MIRROR (insert, not discard)
+// ============================================================================
+
+/// **The `deposit` gadget — grow the temp counter by ONE at its HIGH end (the temp/master separator),
+/// returning to the home pivot.** The stationary-master copy-refresh deposit (plan §5 / N+5 mechanics note):
+/// the home layout is `[temp: j ones][separator blank][gap…][master @ G]…` with the head on the pivot `0`
+/// before the temp counter. Four quintuples — the MIRROR of [`crate::tm_dec_master::lemma_dec_temp`], with
+/// the erase+discard replaced by a single INSERT-turnaround that writes a fresh `1` at the separator blank:
+///   `(q_dh, 0, 0, q_dw, L)`  peel the pivot (push it onto v, expose temp's inner one),
+///   `(q_dw, 1, 1, q_dw, L)`  walk left over temp's ones to the temp/master separator blank,
+///   `(q_dw, 0, 1, q_bk, R)`  INSERT-turnaround: write a `1` at the separator (was `0`), grow temp,
+///   `(q_bk, 1, 1, q_bk, R)`  walk back, reconstructing temp+1 (the high content `w` shifts DOWN one).
+/// From `{u: dec_u(j, w), v: out, a: 0, q_dh}` (`w % m == 0`, the separator is a blank), `2·j + 2` steps
+/// reach `{u: dec_u(j, w) + m^j, v: out, a: 0, q_bk}` — temp grown to `j + 1` ones at the high end (so the
+/// gap above shrinks by one), the output `v` round-tripped (pushed onto the pile, restored). Composes
+/// [`crate::tm_dec_master::lemma_walk_left_prefix`] + [`crate::tm_dec_master::lemma_walk_back_prefix`].
+pub proof fn lemma_deposit(
+    tm: Tm, j: nat, w: nat, out: nat,
+    q_dh: nat, q_dw: nat, q_bk: nat,
+    i_pivot: int, i_one_l: int, i_ins: int, i_one_r: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 2,
+        w % tm.m == 0,
+        0 <= i_pivot < tm.quints.len(),
+        0 <= i_one_l < tm.quints.len(),
+        0 <= i_ins < tm.quints.len(),
+        0 <= i_one_r < tm.quints.len(),
+        tm.quints[i_pivot] == mk_quint(q_dh, 0, 0, q_dw, Dir::L),
+        tm.quints[i_one_l] == mk_quint(q_dw, 1, 1, q_dw, Dir::L),
+        tm.quints[i_ins] == mk_quint(q_dw, 0, 1, q_bk, Dir::R),
+        tm.quints[i_one_r] == mk_quint(q_bk, 1, 1, q_bk, Dir::R),
+    ensures
+        tm_run(tm,
+            TmConfig { u: dec_u(j, w, tm.m), v: out, a: 0, q: q_dh },
+            (2 * j + 2) as nat)
+            == (TmConfig { u: (dec_u(j, w, tm.m) + pow_nat(tm.m, j)) as nat, v: out, a: 0, q: q_bk }),
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 2);   // tm_wf ⟹ 0 < n < m, n ≥ 2
+    let c0 = TmConfig { u: dec_u(j, w, m), v: out, a: 0, q: q_dh };
+    let v1 = out * m;   // the output with the pivot 0 pushed on top
+    lemma_div_mod_step(out, m, 0);   // v1/m == out, v1%m == 0
+    assert(out * m + 0 == v1);
+
+    // w == (w/m)·m  (w%m == 0).
+    lemma_fundamental_div_mod(w as int, m as int);
+    assert(w == m * (w / m)) by { assert(w % m == 0); }
+    assert(m * (w / m) == w);
+
+    // ── Step 1: peel the pivot (q_dh, 0, 0, q_dw, L). ──
+    // dec_u(j,w) % m == 0 when j==0 (== w, w%m==0), == 1 when j>=1; we want the head on temp's low one
+    // (j>=1) or directly on the separator (j==0). Compute u0/m and u0%m uniformly.
+    lemma_tm_step_picks(tm, c0, i_pivot);
+    let c_peel = apply_quint(tm.quints[i_pivot], c0, m);
+    assert(tm_step(tm, c0) == Some(c_peel));
+    assert(c_peel.v == v1);
+    assert(c_peel.q == q_dw);
+    assert(tm_run(tm, c_peel, 0) == c_peel);
+    assert(tm_run(tm, c0, 1) == c_peel);
+
+    if j == 0 {
+        // u0 == dec_u(0,w) == w; head onto the separator (a == w%m == 0), u == w/m.
+        assert(dec_u(0, w, m) == w) by { lemma_repunit_zero(m); assert(pow_nat(m, 0) == 1); }
+        assert(c_peel.u == w / m);
+        assert(c_peel.a == 0);   // w % m == 0
+        // ── Step 2 (j==0): INSERT directly (q_dw, 0, 1, q_bk, R). ──
+        lemma_tm_step_picks(tm, c_peel, i_ins);
+        let c_ins = apply_quint(tm.quints[i_ins], c_peel, m);
+        assert(tm_step(tm, c_peel) == Some(c_ins));
+        // R-move, a2 == 1: u = (w/m)·m + 1 == w + 1, v = v1/m == out, a = v1%m == 0.
+        assert(c_ins.u == (w / m) * m + 1);
+        assert((w / m) * m == w) by(nonlinear_arith) requires m * (w / m) == w;
+        assert(c_ins.u == w + 1);
+        assert(c_ins.v == out);
+        assert(c_ins.a == 0);
+        assert(c_ins.q == q_bk);
+        // dec_u(0,w) + m^0 == w + 1.
+        assert(pow_nat(m, 0) == 1);
+        assert((dec_u(0, w, m) + pow_nat(m, 0)) as nat == w + 1) by { assert(dec_u(0, w, m) == w); }
+        assert(c_ins == (TmConfig { u: (dec_u(0, w, m) + pow_nat(m, 0)) as nat, v: out, a: 0, q: q_bk }));
+        assert(tm_run(tm, c_ins, 0) == c_ins);
+        assert(tm_run(tm, c_peel, 1) == c_ins);
+        lemma_tm_run_split(tm, c0, 1, 1);
+        assert((2 * j + 2) as nat == 2);
+        assert(tm_run(tm, c0, 2) == c_ins);
+    } else {
+        // u0 == dec_u(j,w), j>=1: %m==1, /m==dec_u(j-1,w). Head onto temp's low one (a==1).
+        lemma_dec_u_step(j, w, m);   // dec_u(j,w)%m==1, /m==dec_u(j-1,w)
+        assert(c_peel.u == dec_u((j - 1) as nat, w, m));
+        assert(c_peel.a == 1);
+
+        // ── Step 2: walk-left over temp's ones (j steps) to the separator. ──
+        // dec_u(j-1,w) == repunit(j-1) + m^(j-1)·w (matches lemma_walk_left_prefix's shape).
+        lemma_walk_left_prefix(tm, c_peel, q_dw, (j - 1) as nat, w, i_one_l);
+        let c_sep = TmConfig { u: w / m, v: pile_ones(v1, j, m), a: w % m, q: q_dw };
+        assert(((j - 1) + 1) as nat == j);
+        assert(tm_run(tm, c_peel, j) == c_sep);
+        lemma_tm_run_split(tm, c0, 1, j);
+        assert(tm_run(tm, c0, (1 + j) as nat) == c_sep);
+
+        // ── Step 3: INSERT-turnaround at the separator (a == w%m == 0). ──
+        assert(c_sep.a == 0);   // w % m == 0
+        lemma_tm_step_picks(tm, c_sep, i_ins);
+        let c_ins = apply_quint(tm.quints[i_ins], c_sep, m);
+        assert(tm_step(tm, c_sep) == Some(c_ins));
+        lemma_pile_ones_div_mod(v1, j, m);   // pile_ones(v1,j)%m==1, /m==pile_ones(v1,j-1)
+        // R-move, a2 == 1: u = (w/m)·m + 1 == w + 1, v = pile_ones(v1,j)/m, a = pile_ones(v1,j)%m == 1.
+        assert((w / m) * m == w) by(nonlinear_arith) requires m * (w / m) == w;
+        assert(c_ins.u == w + 1);
+        assert(c_ins.v == pile_ones(v1, (j - 1) as nat, m));
+        assert(c_ins.a == 1);
+        assert(c_ins.q == q_bk);
+        assert(tm_run(tm, c_ins, 0) == c_ins);
+        assert(tm_run(tm, c_sep, 1) == c_ins);
+        lemma_tm_run_split(tm, c0, (1 + j) as nat, 1);
+        assert(tm_run(tm, c0, (1 + j + 1) as nat) == c_ins);
+
+        // ── Step 4: walk-back (j steps): k0=0, rem0=j-1, w_hi = w+1. u == w+1 == repunit(0)+m^0·(w+1). ──
+        assert(pow_nat(m, 0) == 1);
+        lemma_repunit_zero(m);
+        assert(c_ins.u == repunit_m(0, m) + pow_nat(m, 0) * (w + 1)) by(nonlinear_arith)
+            requires c_ins.u == w + 1, repunit_m(0, m) == 0, pow_nat(m, 0) == 1;
+        lemma_walk_back_prefix(tm, c_ins, q_bk, 0, (j - 1) as nat, v1, (w + 1) as nat, i_one_r);
+        let c_final = TmConfig {
+            u: repunit_m(j, m) + pow_nat(m, j) * (w + 1),
+            v: v1 / m, a: v1 % m, q: q_bk };
+        assert((0 + (j - 1) + 1) as nat == j);
+        assert(tm_run(tm, c_ins, j) == c_final);
+        // c_final.u == repunit(j) + m^j·(w+1) == dec_u(j,w) + m^j.
+        assert(c_final.u == (dec_u(j, w, m) + pow_nat(m, j)) as nat) by(nonlinear_arith)
+            requires
+                c_final.u == repunit_m(j, m) + pow_nat(m, j) * (w + 1),
+                dec_u(j, w, m) == repunit_m(j, m) + pow_nat(m, j) * w;
+        assert(c_final.v == out);   // v1 / m
+        assert(c_final.a == 0);     // v1 % m
+        assert(c_final == (TmConfig { u: (dec_u(j, w, m) + pow_nat(m, j)) as nat, v: out, a: 0,
+            q: q_bk }));
+        lemma_tm_run_split(tm, c0, (1 + j + 1) as nat, j);
+        assert((1 + j + 1 + j) as nat == (2 * j + 2) as nat);
+        assert(tm_run(tm, c0, (2 * j + 2) as nat) == c_final);
     }
 }
 
