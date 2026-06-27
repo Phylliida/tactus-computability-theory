@@ -676,3 +676,48 @@ becomes `assemble5` (a linear `n`-bump of `tm_assemble4`); ignition/α-read surv
 
 ⚠ Use the CRATE-LOCAL `./check.sh` from inside `tactus-computability-theory/` (`cd` there first — the
 top-level `verus-cad/check.sh` is the verus-dev one and prints usage / fails the Lean-backend dep).*
+
+---
+
+## SESSION UPDATE 2026-06-26 (N+5) — copy-refresh SEEK walks DONE; marked-copy core = design gate + ⚠ resource question
+
+**✅ Seek primitives built + verified (`tm_copy_refresh.rs`, 12/0, committed `57354ea`).** The blank-gap
+analogs of `tm_dwalk` (which walk over nonzero digit blocks and stop at a blank): here the head walks over a
+run of blanks and stops at the first NONZERO cell.
+- `lemma_seek_left_blanks`: from `{u: m^g·r, a:0, q}` with `r%m≠0`, the quint `(q,0,0,q,L)` fires `g+1` times,
+  piling `g+1` blanks onto `v` (×`m^(g+1)`), landing the head on the master's low digit `{u: r/m, v: c.v·m^(g+1),
+  a: r%m, q}`. Induction on `g`. (Locates the master across the post-`block_loop` blank gap.)
+- `lemma_seek_right_blanks`: the exact `u↔v`, `L↔R` un-seek mirror (`(q,0,0,q,R)`), for walking back home.
+Both are robust to the master's exact representation (only need `r%m≠0` at the target), so they are low-regret.
+
+**⚠ MARKED-COPY CORE = the genuine difficulty, and TWO open questions before the big build:**
+
+1. **The unfindable resource.** Danielle's 06-26 message (`MESSAGES_FROM_USER.md`): *"I put computability of
+   recursive functions in tactus-computability-theory, use nix-shell to read it."* Exhaustively searched — NO
+   such file/dir/Lean-project is on disk (no `.lean`, no lakefile, no new module; the crate's shell.nix only
+   provides lean4+elan). The marked-copy is precisely the "reinvent a computability primitive" pattern her
+   standing rule warns against ("wasted 13000 lines"). **Must locate/read her resource before grinding the
+   marked-copy** — it may give a higher-level path (or at least a textbook to follow for the copy).
+
+2. **The copy must use a MARK (companion-confirmed).** The "two-places problem" — duplicate one M-one block
+   (master, high in `u`) into TWO M-one blocks (preserved master + fresh `temp` at the pivot) — is intrinsic:
+   a single `v`-pile cannot duplicate (popping reconstructs ONE run), and the distance between the temp-site
+   and master-site is the cost, not the copy mechanism. So the `5`-mark is necessary. Companion's refinement:
+   **block-displacement** (pile-relocate the master down adjacent to the pivot → local marked copy at gap≈0 →
+   pile-relocate back) turns `O(M·gap)` into `O(M+gap)` and keeps each copy-iteration's invariant LOCAL
+   (contiguous region, no big-gap arithmetic). Cleanest VERUS decomposition (proposed, NOT yet built):
+   - **(a) relocate master down to pivot** via `lemma_walk_left_prefix` (pile master onto `v`) + `walk_back_prefix`
+     (write it back at the low end) — reuses existing lemmas; positions need care.
+   - **(b) local marked copy** (gap≈0): induction `j: 0→M` on the home invariant
+     `u = [temp: j ones][sep][master: (M−j) ones][j fives][above]`, each step = mark the lowest unmarked master
+     `1`→`5`, deposit a `1` in temp (an R-move `u←u·m+1` family), restore — the delicate part, the new
+     inductive lemma. Needs `(q,1,5,q',·)` mark quint.
+   - **(c) un-mark** master `5→1` (a dwalk-style pass) + **un-seek** (`lemma_seek_right_blanks`) home. Output
+     `{u: dec_u(M, w_master_preserved), v: dpack(output), a:0, q}`, ready for the next `block_loop`.
+   The plan's earlier roaming-mark sketch (§NEXT.1) is the `O(M·gap)` version; block-displacement is preferred
+   for cleaner invariants. **EXACT pre/post `u` bookkeeping** (master's drifted position, gap growth across the
+   4 blocks of a phase, where `M`=exponent is read from) is the remaining design pin — co-design before building.
+
+**NEXT:** resolve (1) [locate Danielle's recursive-functions resource — may reshape the approach], then build
+the marked-copy per (2) bottom-up (relocate → local marked copy → un-mark/un-seek), then `copy_refresh`
+assembly, then 16-block sequencing, then `psc_act` window + `ceer_realizes` wiring.
