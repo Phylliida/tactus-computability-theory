@@ -1874,8 +1874,11 @@ boundary (α intact, `5` gone), wipe `u` to `0`s (the clear-output the `skip0`/w
 **Revised brick breakdown (supersedes the B-cmp.1/.2 split in §N+19):**
   - **B-cmp.0 `skip-blank` loops** — DONE (`tm_skip_blank.rs`, crate 1725/0). Gap-crossing in `u`
     (skip consumed-output `0`s) and the symmetric `v` skip.
-  - **B-cmp.1 balanced α-traverse** — `dwalk_right`-to-`5` then `dwalk_left`-back as a config-level
-    net-identity-on-`v` round-trip (reuses existing `dwalk` + `drev`-involution; the "probe").
+  - **B-cmp.1 balanced α-traverse** — FOUNDATION DONE (`tm_cmp_traverse.rs`, crate 1731/0):
+    `lemma_dwalk_right_gen`/`left_gen` generalize `dwalk` to a `1..4` block followed by an arbitrary tail
+    `W`, landing scanning `W % m` (`W=0` = old `dwalk`; `W%m==5` = stop at the frontier mark). REMAINING:
+    compose right-gen→turnaround-at-`5`→left-gen into the config-level net-identity-on-`v` round-trip (the
+    turnaround couples with B-cmp.2's marker work).
   - **B-cmp.2 marker advance** — at the `5`: restore `V_k`, step to `k-1`, load `V_{k-1}`, write `5`.
   - **B-cmp.3 output read+consume** — non-destructive read of the `u` frontier, write `0`, record `d_o`.
   - **B-cmp.4 round step** — compose B-cmp.1–.3 + the digit compare; fuel lemma, decreasing on |α|−k.
@@ -1884,6 +1887,8 @@ boundary (α intact, `5` gone), wipe `u` to `0`s (the clear-output the `skip0`/w
   - **B-cmp.7 park-time sentinels + relocation** — far-end `5` below α (and the output-side end marker);
     the Finding-1 relocation; touches `tm_rp`/emit — done LAST to avoid perturbing verified lemmas.
 
-**NEXT:** B-cmp.1 (balanced α-traverse) — the cleanest next verified brick, reusing `dwalk` + the
-`drev`-involution; then B-cmp.2/.3, then the B-cmp.4 round step. The design is now fully pinned and
-confirmed against the reading — no further design gate before the build.
+**NEXT:** the B-cmp.1 round-trip turnaround (compose right-gen→at-`5`→left-gen, net-identity on `v`),
+which folds in B-cmp.2's marker work (restore `V_k`, step to `k-1`, load `V_{k-1}`, write `5`); then
+B-cmp.3 output read+consume, then the B-cmp.4 round step. The design is fully pinned and confirmed against
+the reading — no further design gate before the build. (B-cmp.0 skip-blank + B-cmp.1 foundation DONE,
+crate 1731/0.)
