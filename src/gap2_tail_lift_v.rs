@@ -31,7 +31,7 @@ use crate::tm::{
 };
 use crate::tm_gadget::lemma_tm_step_picks;
 use crate::tm_dstring::{pow_nat, lemma_pow_nat_unfold};
-use crate::gap2_tail_lift::lemma_match_is;
+use crate::gap2_tail_lift::{lemma_match_is, add_hi, tail_safe, tail_end_h, lemma_tail_unfold, lemma_run_tail};
 use verus_group_theory::word_numbering::lemma_div_mod_step;
 
 verus! {
@@ -296,6 +296,92 @@ pub proof fn lemma_tail_v_chain(tm: Tm, c0: TmConfig, f: nat, sf: nat, h0: nat, 
         tail_end_h_v(tm, c0, (f + sf) as nat, h0) == hk2,
 {
     lemma_tail_safe_v_split(tm, c0, f, sf, h0);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// the COMBINED u+v lift — carry BOTH tails through one run
+// ────────────────────────────────────────────────────────────────────────────
+
+/// **The `u`-side `tail_safe` is invariant under adding a `v`-side tail** (provided the `v`-side run is
+/// itself tail-safe at `hv`). On the concrete `psc_tm` the uinv phase runs from a config holding the `u`-side
+/// `a+1` backup AND the `v`-side α-block at once; the `u`-side `tail_safe` is proven in the LOCAL frame
+/// (`gap2_emit_seq::lemma_uinv_phase_tail_safe`, no α-tail). It survives the α-tail because `add_hi_v` leaves
+/// `(q, a)` and — under `tail_safe_v` (head never reaches the v-tail) — the whole head trajectory untouched,
+/// so the SAME quints fire and the `u`-offset evolves identically. Induction on `fuel`, the per-step
+/// `v`-commute from [`lemma_apply_add_hi_v_l`]/[`lemma_apply_add_hi_v_r`].
+proof fn lemma_tail_safe_under_add_hi_v(tm: Tm, c: TmConfig, fuel: nat, hu: nat, hv: nat, a_tail: nat)
+    requires
+        tm_wf(tm),
+        tail_safe(tm, c, fuel, hu),
+        tail_safe_v(tm, c, fuel, hv),
+    ensures
+        tail_safe(tm, add_hi_v(c, hv, a_tail, tm.m), fuel, hu),
+        tail_end_h(tm, add_hi_v(c, hv, a_tail, tm.m), fuel, hu) == tail_end_h(tm, c, fuel, hu),
+    decreases fuel,
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    let cv = add_hi_v(c, hv, a_tail, m);
+    if fuel == 0 {
+        // tail_safe(_, 0, hu) == true; tail_end_h(_, 0, hu) == hu for both.
+    } else if tm_terminal(tm, c) {
+        // cv shares (q, a) ⟹ matches the same quints ⟹ also terminal ⟹ both idle.
+        assert(forall|i: int| #![trigger tm.quints[i]]
+            quint_matches(tm.quints[i], cv) == quint_matches(tm.quints[i], c));
+        assert(tm_terminal(tm, cv));
+    } else {
+        let mi = matching_index(tm, c);
+        lemma_matching_index_ok(tm, c);
+        let qt = tm.quints[mi];
+        assert(quint_matches(qt, cv));   // shared (q, a)
+        let next = apply_quint(qt, c, m);
+        // unfold tail_safe(c)/tail_safe_v(c) and tail_safe(cv) at the firing quint mi.
+        lemma_tail_unfold(tm, c, fuel, hu, mi);
+        lemma_tail_unfold_v(tm, c, fuel, hv, mi);
+        lemma_tail_unfold(tm, cv, fuel, hu, mi);
+        match qt.dir {
+            Dir::R => {
+                assert(hv >= 1);   // tail_safe_v(c) on R
+                lemma_apply_add_hi_v_r(qt, c, hv, a_tail, m);
+                assert(apply_quint(qt, cv, m) == add_hi_v(next, (hv - 1) as nat, a_tail, m));
+                lemma_tail_safe_under_add_hi_v(tm, next, (fuel - 1) as nat, (hu + 1) as nat, (hv - 1) as nat, a_tail);
+            },
+            Dir::L => {
+                assert(hu >= 1);   // tail_safe(c) on L
+                lemma_apply_add_hi_v_l(qt, c, hv, a_tail, m);
+                assert(apply_quint(qt, cv, m) == add_hi_v(next, (hv + 1) as nat, a_tail, m));
+                lemma_tail_safe_under_add_hi_v(tm, next, (fuel - 1) as nat, (hu - 1) as nat, (hv + 1) as nat, a_tail);
+            },
+        }
+    }
+}
+
+/// **The combined u+v high-tail lift.** Running the SAME machine from a config holding BOTH a `u`-side tail
+/// (`add_hi` at `hu`) and a `v`-side tail (`add_hi_v` at `hv`) equals the tailed run-result, with each tail
+/// re-deposited at its advanced offset — provided the LOCAL run is tail-safe on each side. This is the
+/// substrate the concrete uinv phase needs: the `a+1` backup (`u`) and the α-block (`v`) ride through the
+/// whole phase at once. The two lifts touch DISJOINT `TmConfig` fields and neither perturbs the head
+/// trajectory, so the carry is a clean composition: [`lemma_run_tail`] (u-tail over the v-tailed config, via
+/// the bridge [`lemma_tail_safe_under_add_hi_v`]) ∘ [`lemma_run_tail_v`] (v-tail over the local config).
+pub proof fn lemma_run_tail_uv(tm: Tm, c: TmConfig, fuel: nat, hu: nat, hv: nat, t: nat, a_tail: nat)
+    requires
+        tm_wf(tm),
+        tail_safe(tm, c, fuel, hu),
+        tail_safe_v(tm, c, fuel, hv),
+    ensures
+        tm_run(tm, add_hi(add_hi_v(c, hv, a_tail, tm.m), hu, t, tm.m), fuel)
+            == add_hi(
+                add_hi_v(tm_run(tm, c, fuel), tail_end_h_v(tm, c, fuel, hv), a_tail, tm.m),
+                tail_end_h(tm, c, fuel, hu), t, tm.m),
+{
+    let m = tm.m;
+    let cv = add_hi_v(c, hv, a_tail, m);
+    // (1) the u-side tail_safe survives the v-tail; the u-offset evolves identically.
+    lemma_tail_safe_under_add_hi_v(tm, c, fuel, hu, hv, a_tail);
+    // (2) lift the u-tail over cv: tm_run(add_hi(cv, hu, t)) == add_hi(tm_run(cv), tail_end_h(cv, fuel, hu), t).
+    lemma_run_tail(tm, cv, fuel, hu, t);
+    // (3) lift the v-tail over c: tm_run(cv) == add_hi_v(tm_run(c), tail_end_h_v(c, fuel, hv), a_tail).
+    lemma_run_tail_v(tm, c, fuel, hv, a_tail);
 }
 
 } // verus!

@@ -1620,15 +1620,19 @@ phase's 3-segment structure (`seg_a` blocks 0–2, `seg_b` 3–4, `half_b` 5–7
 `a+1` backup floats down to become phase-2's master at gap `g' = g+b+2` and is the TOPMOST block — nothing
 above it in `u` to preserve. So the u phase's only carried tail is the v-side α-block.
 
-**✅ THE COMBINED u+v CARRY (uinv phase) COMPOSES — not a new deep obligation.** On the concrete machine
-the uinv phase runs from `add_hi(add_hi_v(c_local, H_v, A), H_u, T_backup)` — BOTH tails present at once.
-`add_hi` (u) and `add_hi_v` (v) touch DISJOINT `TmConfig` fields, and the SOLE subtlety is that the u-side
-`tail_safe` predicate is invariant under `add_hi_v` (and vice-versa) **given the other side's `tail_safe`
-holds** — because each lift leaves `(q,a)` and the head trajectory untouched, so the same quints fire. Thus
-`tm_run(add_hi(add_hi_v(c))) == add_hi(add_hi_v(tm_run(c)))` follows by applying `lemma_run_tail_v` to
-`add_hi(c)` then `lemma_run_tail` to `c`. ⚠ The one bridging fact to package when wiring R-S: a
-`tail_safe`-is-invariant-under-`add_hi_v` lemma (the two single-side `tail_safe`/`tail_safe_v` capstones
-each prove only their own side). For the u phase this is moot (no u-tail).
+**✅ THE COMBINED u+v CARRY (uinv phase) — GENERIC LIFT BUILT (`gap2_tail_lift_v.rs`, +2, first-try).** On
+the concrete machine the uinv phase runs from `add_hi(add_hi_v(c_local, H_v, A), H_u, T_backup)` — BOTH tails
+present at once. `add_hi` (u) and `add_hi_v` (v) touch DISJOINT `TmConfig` fields, and neither perturbs the
+head trajectory, so the carry composes. Built the generic substrate:
+- `lemma_tail_safe_under_add_hi_v` (the bridge — the one non-trivial fact): the u-side `tail_safe(c, fuel,
+  H_u)` is invariant under `add_hi_v(c, H_v, A)` *given* `tail_safe_v(c, fuel, H_v)`. Induction on `fuel`,
+  per-step `v`-commute from `lemma_apply_add_hi_v_{l,r}`; the same quints fire because `add_hi_v` leaves
+  `(q,a)` and (under `tail_safe_v`) the whole trajectory untouched.
+- `lemma_run_tail_uv`: `tm_run(add_hi(add_hi_v(c, H_v, A), H_u, t)) == add_hi(add_hi_v(tm_run(c), …), …)` —
+  a 3-line composition of `lemma_run_tail` (u-tail over the v-tailed config, via the bridge) ∘
+  `lemma_run_tail_v` (v-tail over the local config). The reusable carry for any run, parametric in
+  `(H_u, H_v, T_backup, A)`; the uinv-phase capstone instantiates it at wiring time with the concrete
+  offsets. For the u phase this is moot (no u-tail — `lemma_u_phase_tail_v` alone suffices).
 
 **NEXT (the R-S proper arc, unchanged order):** pre-shift glue — (P1) lay `init_block(a,b)` in `u` from the
 parked dovetail counters, (P2) lay the `g`-one gap-counter in `v` (`g = a+b+3`), and an α-tail-parametric
