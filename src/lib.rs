@@ -306,3 +306,10 @@
 // u==w/m, a==w%m) instead of assuming a bare counter (u==0). Foundation for dec_master + home_config.
 // See tm_dec_master.rs / docs/gap2-input-loader-plan.md §5 (STEP 2 model B).
 #[cfg(verus_keep_ghost)] pub mod tm_dec_master;
+
+// GAP-2 G2-F Route (i) brick R-relnum-gen (STEP 2, model B): the prefix digit-walk-left + reverse algebra.
+// lemma_dwalk_left_prefix -- the digit analog of lemma_walk_left_prefix: walk left over a block of digit
+// symbols 1..4 leaving a high tail w (the masters) intact. Plus the drev (low-first digit reverse) bridges
+// (dpile(0,s)==dpack(drev(s)), drev involution) the per-block return walk uses to cancel the surge's
+// reversal. See tm_dwalk_prefix.rs / docs/gap2-input-loader-plan.md §5 (STEP 2 model B).
+#[cfg(verus_keep_ghost)] pub mod tm_dwalk_prefix;
