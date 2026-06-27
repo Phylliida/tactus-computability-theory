@@ -1068,3 +1068,56 @@ dispatch) → `psc_act` window → R-cmp/R-S/R-C/R-MC/B-W → discharge `ceer_re
 ⚠ Recurring proof idiom for these edges (learned this session): split apply_quint conjunctions with mixed
 div/mod into a raw-form assert + per-field `nonlinear_arith`; establish `pow_nat(m,1)==m` etc. via
 `lemma_pow_nat_unfold` + `nonlinear_arith requires` (NOT a bare `by{}` block — it drops the `m·1` step).
+
+---
+
+## SESSION UPDATE 2026-06-27 (N+10) — GAP-GROWTH QUESTION RESOLVED + the per-power-block PERIODIC step (all 4 variants) DONE (crate 1162→1178/0)
+
+**✅ THE `G = k·i` GAP-GROWTH ASSUMPTION IS WRONG — the master is STATIONARY; fix `g = M + 2`.** The
+N+9 scoping note (and `copy_u`'s doc comment, lines 62–76) assumed the gap grows `G = k·i` across a phase's
+refreshes (master "migrates up by M per `block_loop`"). **Traced the full `copy_refresh → block_loop` cycle
+arithmetically (local-model-confirmed, port 8051) and it does NOT migrate:**
+
+```
+  copy_u(0,M,g) = m^g·R(M)                        [master R(M) at gap g, no temp]
+    ──[copy_refresh]──▶  dec_u(M, m^(g−M)·R(M))    [fresh temp R(M) + master still at g]
+    ──[block_loop ]──▶  dec_u(0, m^M·w) = m^M·m^(g−M)·R(M) = m^g·R(M) = copy_u(0,M,g)
+```
+
+`block_loop` multiplies the master content by `m^M`, but that EXACTLY compensates the `m^M` the consumed
+`M`-cell temp occupied — net absolute position unchanged. So **the gap is CONSTANT for every power-block in
+a phase**, and one fixed `g` works throughout.
+
+**The magic uniform choice is `g = M + 2`:**
+- `block_loop` needs a `0`-separator below the master (`w % m == 0`, so the dec-walk stops). With `g = M+2`,
+  `w = m^(g−M)·R(M) = m²·R(M)`, `w % m == 0`. ✓ (needs `g ≥ M+1`.)
+- `copy_refresh` (`M ≥ 2`) needs `g ≥ M+2` ✓ exactly; `copy_refresh_m1` needs `g ≥ 3 = M+2` ✓.
+- So **only `M ∈ {1, ≥2}` dispatch is needed** — the no-gap (`g=M`) and `g=M+1`-edge refreshes (`_nogap`,
+  `_m2_nogap`, `_m1_g2`, `_m1_nogap`) are all UNUSED by the sequencer. (They stay in the crate as verified
+  robustness; the N+9 per-`(M,g)` dispatch table collapses to per-`M`.)
+
+**✅ THE PERIODIC STEP — all 4 variants DONE (`tm_power_block.rs` 8/0 + `tm_power_block_m1.rs` 8/0).**
+`lemma_power_block_step_block{1,3}` (`M ≥ 2`, `g ≥ M+2`) + `_block{1,3}_m1` (`M = 1`, `g ≥ 3`). Each composes
+`copy_refresh ∘ block_loop` into ONE deterministic run:
+`copy_u(0,M,g) @ q_dh0  →  copy_u(0,M,g) @ q_exit`, appending `seq_pow(blk, M)` to the output `v`, master
+unchanged. **The bridge is FREE**: `copy_refresh`'s end config equals `block_loop`'s start config except for
+the state, so identifying `q_urt := q_loop` splices them with no glue steps. For `M ≥ 2` the shared quint
+`(q_urt,1,1,q_urt,R)` is passed as BOTH `i_urtemp` (copy_refresh) and `i_one_r` (block_loop) — one quint, no
+determinism conflict. For `M = 1` the copy lands directly on the pivot (no temp-walk-right), so `i_one_r` is
+a fresh block_loop quint. The two stacks' states are otherwise disjoint (only `q_home` names collide → the
+loop's is `q_bhome`). `w % m == 0` is established in-body (`g−M ≥ 2 ⟹ m | m^(g−M) | w`), and `dec_u(0, m^M·w)
+== copy_u(0,M,g)` via `lemma_pow_nat_add` + `lemma_copy_u_start`. All verified first/second try, additive.
+
+**NEXT (the phase-level assembly, multi-session):**
+1. **Singleton emits** — the 8 inter-power-block singletons (`[4]`,`[3]`,`[2]`,`[1]`,`[4,1,2]`,`[4,3,2]`)
+   emit with NO counter (one `surge_emit_return_block1/3`, master inert at gap `g`, head returns to pivot).
+   A `lemma_singleton_step_block{1,3}` mirroring the power-block step but skipping copy_refresh/dec.
+2. **Phase chaining** — chain the 4 power-blocks + 4 singletons of `uinv_digits(b)` (then `u_digits(a)`) in
+   the right low-first order (see `gap2_fam_digits`: `u_digits` = `(1)ⁱ·[4,3,2]·(3)ⁱ·[4]·(4,1,2)ⁱ·[1]·
+   (4,3,2)ⁱ·[2]`; `uinv_digits` = `[4]·(4,1,2)ⁱ·[3]·(4,3,2)ⁱ·[2]·(1)ⁱ·[4,1,2]·(3)ⁱ`). One master alive per
+   phase (`M = i_b = b+1`, then `i_a = a+1`); re-init the master between phases (load from the preserved
+   `a`/`b` counters — a NEW load gadget).
+3. **fam_digits assembly** — prove the produced output `== fam_digits(a,b)` (compose `lemma_dds_fam_relator`
+   / `lemma_relnum_is_fam_digits`); its `dpack` value is `relnum(a,b)`.
+4. **Concrete `tm`/`tm_wf`** (assemble5) — instantiate the threaded indices via `lemma_slot_index`; the
+   `psc_act` window. Then R-cmp / R-S / R-C / R-MC / B-W → discharge `ceer_realizes` → drop the axiom.
