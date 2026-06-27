@@ -281,3 +281,8 @@
 // inverse_word(u_b) (apply_embedding bridge); the 3-letter b/b⁻¹ inverses; inverse_word(u_b) as 8
 // explicit primitive pieces. See gap2_fam_split.rs / docs/gap2-input-loader-plan.md §5.
 #[cfg(verus_keep_ghost)] pub mod gap2_fam_split;
+
+// GAP-2 G2-F Route (i) brick R-relnum-gen: the explicit decode_digit_seq(fam_relator) pattern (the
+// emitter's target). dds(0,2,fam_relator(a,b)) == fam_digits(a,b) = uinv_digits(b) ++ u_digits(a), an
+// explicit seq_pow/singleton block concatenation. See gap2_fam_digits.rs.
+#[cfg(verus_keep_ghost)] pub mod gap2_fam_digits;
