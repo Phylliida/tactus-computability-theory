@@ -3177,4 +3177,188 @@ pub proof fn lemma_terminate_fwd(
     assert(tm_run(tm, c0, (g + big_m + 1) as nat) == c6);
 }
 
+/// **The full self-terminating bounce (`M ≥ 2`, `g ≥ M + 2`): `copy_u(M)` at `q_home → copy_u(M)` at
+/// `q_ret`.** Detect the all-fives master ([`lemma_terminate_fwd`], lands above the master in `q_b`), TURN
+/// down (`(q_b, 0, 0, q_turn, R)`), then walk NON-destructively back to the pivot reconstructing
+/// `copy_u(M)` — master fives (`q_turn`), gap, temp — landing in `q_ret`. The config is UNCHANGED (the
+/// whole sweep is non-destructive); only the state advances `q_home → q_ret`, which is [`lemma_unmark`]'s
+/// home state, so the verified un-mark sweep runs next. `2·g + 2·M + 2` steps; six NEW walk-back quints
+/// (`q_turn`/`q_turng`/`q_ret` are fresh; the forward quints are shared with the loop).
+pub proof fn lemma_mark_terminate(
+    tm: Tm, big_m: nat, g: nat, out: nat,
+    q_home: nat, q_t: nat, q_a: nat, q_b: nat, q_turn: nat, q_turng: nat, q_ret: nat,
+    i_peel: int, i_temp: int, i_t2g: int, i_gap: int, i_a2b: int, i_fives: int,
+    i_turn: int, i_master: int, i_m2g: int, i_rgap: int, i_g2t: int, i_rtemp: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        2 <= big_m,
+        g >= big_m + 2,
+        0 <= i_peel < tm.quints.len(),
+        0 <= i_temp < tm.quints.len(),
+        0 <= i_t2g < tm.quints.len(),
+        0 <= i_gap < tm.quints.len(),
+        0 <= i_a2b < tm.quints.len(),
+        0 <= i_fives < tm.quints.len(),
+        0 <= i_turn < tm.quints.len(),
+        0 <= i_master < tm.quints.len(),
+        0 <= i_m2g < tm.quints.len(),
+        0 <= i_rgap < tm.quints.len(),
+        0 <= i_g2t < tm.quints.len(),
+        0 <= i_rtemp < tm.quints.len(),
+        tm.quints[i_peel] == mk_quint(q_home, 0, 0, q_t, Dir::L),
+        tm.quints[i_temp] == mk_quint(q_t, 1, 1, q_t, Dir::L),
+        tm.quints[i_t2g] == mk_quint(q_t, 0, 0, q_a, Dir::L),
+        tm.quints[i_gap] == mk_quint(q_a, 0, 0, q_a, Dir::L),
+        tm.quints[i_a2b] == mk_quint(q_a, 5, 5, q_b, Dir::L),
+        tm.quints[i_fives] == mk_quint(q_b, 5, 5, q_b, Dir::L),
+        tm.quints[i_turn] == mk_quint(q_b, 0, 0, q_turn, Dir::R),
+        tm.quints[i_master] == mk_quint(q_turn, 5, 5, q_turn, Dir::R),
+        tm.quints[i_m2g] == mk_quint(q_turn, 0, 0, q_turng, Dir::R),
+        tm.quints[i_rgap] == mk_quint(q_turng, 0, 0, q_turng, Dir::R),
+        tm.quints[i_g2t] == mk_quint(q_turng, 1, 1, q_ret, Dir::R),
+        tm.quints[i_rtemp] == mk_quint(q_ret, 1, 1, q_ret, Dir::R),
+    ensures
+        tm_run(tm,
+            TmConfig { u: copy_u(big_m, big_m, g, tm.m), v: out, a: 0, q: q_home },
+            (2 * g + 2 * big_m + 2) as nat)
+            == (TmConfig { u: copy_u(big_m, big_m, g, tm.m), v: out, a: 0, q: q_ret }),
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 5);
+    let rm = repunit_m(big_m, m);                     // R(M)
+    let fives5 = (5 * rm) as nat;                      // 5·R(M), the master block
+    let p_t = pile_sym(out * m, 1, big_m, m);
+    let p_g = (p_t * pow_nat(m, (g - big_m) as nat)) as nat;
+    let big_pile = pile_sym(p_g, 5, big_m, m);
+    let c0 = TmConfig { u: copy_u(big_m, big_m, g, m), v: out, a: 0, q: q_home };
+
+    // ── FORWARD: c0 → c6 (blank above the all-fives master), g+M+1 steps. ──
+    lemma_terminate_fwd(tm, big_m, g, out, q_home, q_t, q_a, q_b,
+        i_peel, i_temp, i_t2g, i_gap, i_a2b, i_fives);
+    let c6 = TmConfig { u: 0, v: big_pile, a: 0, q: q_b };
+    assert(tm_run(tm, c0, (g + big_m + 1) as nat) == c6);
+
+    // ── S7: TURN (q_b, 0, 0, q_turn, R) onto the master's high five. ──
+    lemma_pile_sym_div_mod(p_g, 5, big_m, m);   // big_pile%m==5, /m==pile_sym(p_g,5,M-1)
+    assert(c6.v == big_pile);
+    assert(c6.v % m == 5);
+    assert(c6.v / m == pile_sym(p_g, 5, (big_m - 1) as nat, m));
+    assert(c6.u * m == 0) by(nonlinear_arith) requires c6.u == 0;   // c7.u == c6.u·m + 0 == 0
+    lemma_tm_step_picks(tm, c6, i_turn);
+    let c7 = apply_quint(tm.quints[i_turn], c6, m);
+    assert(tm_step(tm, c6) == Some(c7));
+    assert(c7.q == q_turn);
+    assert(c7.u == 0);
+    assert(c7.a == 5);
+    assert(c7.v == pile_sym(p_g, 5, (big_m - 1) as nat, m));
+    assert(tm_run(tm, c7, 0) == c7);
+    assert(tm_run(tm, c6, 1) == c7);
+    lemma_tm_run_split(tm, c0, (g + big_m + 1) as nat, 1);
+    assert(tm_run(tm, c0, (g + big_m + 2) as nat) == c7);
+
+    // ── S8: master-walk-right (M steps), PRESERVING 5s. c7.u == 5·R(0)+m^0·0 == 0. ──
+    lemma_repunit_zero(m);
+    assert(pow_nat(m, 0) == 1);
+    assert(c7.u == 5 * repunit_m(0, m) + pow_nat(m, 0) * 0) by(nonlinear_arith)
+        requires c7.u == 0, repunit_m(0, m) == 0, pow_nat(m, 0) == 1;
+    lemma_run_walk_right(tm, c7, q_turn, 5, 0, (big_m - 1) as nat, p_g, 0, i_master);
+    assert((0 + (big_m - 1) + 1) as nat == big_m);
+    // run_walk_right output u == 5·R(M) + m^M·0 == 5R(M) == fives5.
+    assert(5 * repunit_m(big_m, m) + pow_nat(m, big_m) * 0 == fives5) by(nonlinear_arith)
+        requires fives5 == 5 * rm, rm == repunit_m(big_m, m);
+    // p_g % m == 0 (g-M ≥ 2), / m == p_t·m^(g-M-1).
+    lemma_pow_nat_unfold(m, (g - big_m) as nat);   // m^(g-M) == m·m^(g-M-1)
+    assert(p_g == (p_t * pow_nat(m, (g - big_m - 1) as nat)) * m) by(nonlinear_arith)
+        requires p_g == p_t * pow_nat(m, (g - big_m) as nat),
+            pow_nat(m, (g - big_m) as nat) == m * pow_nat(m, (g - big_m - 1) as nat);
+    lemma_div_mod_step(p_t * pow_nat(m, (g - big_m - 1) as nat), m, 0);
+    let c8 = TmConfig { u: fives5, v: p_t * pow_nat(m, (g - big_m - 1) as nat), a: 0, q: q_turn };
+    assert(tm_run(tm, c7, big_m) == c8);
+    lemma_tm_run_split(tm, c0, (g + big_m + 2) as nat, big_m);
+    assert((g + big_m + 2 + big_m) as nat == (g + 2 * big_m + 2) as nat);
+    assert(tm_run(tm, c0, (g + 2 * big_m + 2) as nat) == c8);
+
+    // ── S9: m2g transition (q_turn, 0, 0, q_turng, R). c8.v%m==0 (g-M-1≥1). ──
+    lemma_pow_nat_unfold(m, (g - big_m - 1) as nat);   // m^(g-M-1) == m·m^(g-M-2)
+    assert(c8.v == (p_t * pow_nat(m, (g - big_m - 2) as nat)) * m) by(nonlinear_arith)
+        requires c8.v == p_t * pow_nat(m, (g - big_m - 1) as nat),
+            pow_nat(m, (g - big_m - 1) as nat) == m * pow_nat(m, (g - big_m - 2) as nat);
+    lemma_div_mod_step(p_t * pow_nat(m, (g - big_m - 2) as nat), m, 0);
+    lemma_tm_step_picks(tm, c8, i_m2g);
+    let c9 = apply_quint(tm.quints[i_m2g], c8, m);
+    assert(tm_step(tm, c8) == Some(c9));
+    assert(c9.u == fives5 * m && c9.v == p_t * pow_nat(m, (g - big_m - 2) as nat) && c9.a == 0
+        && c9.q == q_turng);
+    assert(tm_run(tm, c9, 0) == c9);
+    assert(tm_run(tm, c8, 1) == c9);
+    lemma_tm_run_split(tm, c0, (g + 2 * big_m + 2) as nat, 1);
+    assert(tm_run(tm, c0, (g + 2 * big_m + 3) as nat) == c9);
+
+    // ── S10: gap-seek-right (g-M-1 steps). rv = p_t, p_t%m == 1. ──
+    lemma_pile_sym_div_mod(out * m, 1, big_m, m);   // p_t%m==1, /m==pile_sym(out·m,1,M-1)
+    assert(c9.v == pow_nat(m, (g - big_m - 2) as nat) * p_t) by(nonlinear_arith)
+        requires c9.v == p_t * pow_nat(m, (g - big_m - 2) as nat);
+    lemma_seek_right_blanks(tm, c9, q_turng, (g - big_m - 2) as nat, p_t, i_rgap);
+    let c10 = TmConfig { u: c9.u * pow_nat(m, (g - big_m - 1) as nat),
+        v: pile_sym(out * m, 1, (big_m - 1) as nat, m), a: 1, q: q_turng };
+    assert(((g - big_m - 2) + 1) as nat == (g - big_m - 1) as nat);
+    assert(tm_run(tm, c9, (g - big_m - 1) as nat) == c10);
+    lemma_tm_run_split(tm, c0, (g + 2 * big_m + 3) as nat, (g - big_m - 1) as nat);
+    assert((g + 2 * big_m + 3 + (g - big_m - 1)) as nat == (2 * g + big_m + 2) as nat);
+    assert(tm_run(tm, c0, (2 * g + big_m + 2) as nat) == c10);
+    // c10.u == fives5·m^(g-M).
+    assert(c10.u == fives5 * pow_nat(m, (g - big_m) as nat)) by(nonlinear_arith)
+        requires c10.u == (fives5 * m) * pow_nat(m, (g - big_m - 1) as nat),
+            pow_nat(m, (g - big_m) as nat) == m * pow_nat(m, (g - big_m - 1) as nat);
+
+    // ── S11: g2t transition (q_turng, 1, 1, q_ret, R). M≥2 ⟹ pile_sym(out·m,1,M-1)%m==1. ──
+    lemma_pile_sym_div_mod(out * m, 1, (big_m - 1) as nat, m);
+    lemma_tm_step_picks(tm, c10, i_g2t);
+    let c11 = apply_quint(tm.quints[i_g2t], c10, m);
+    assert(tm_step(tm, c10) == Some(c11));
+    assert(c11.u == c10.u * m + 1 && c11.v == pile_sym(out * m, 1, (big_m - 2) as nat, m) && c11.a == 1
+        && c11.q == q_ret);
+    assert(tm_run(tm, c11, 0) == c11);
+    assert(tm_run(tm, c10, 1) == c11);
+    lemma_tm_run_split(tm, c0, (2 * g + big_m + 2) as nat, 1);
+    assert(tm_run(tm, c0, (2 * g + big_m + 3) as nat) == c11);
+
+    // ── S12: temp-walk-right (M-1 steps). c11.u == 1·R(1)+m·(fives5·m^(g-M)). ──
+    assert(pow_nat(m, 1) == m) by { lemma_pow_nat_unfold(m, 1); assert(pow_nat(m, 0) == 1); }
+    assert(repunit_m(1, m) == 1) by { lemma_repunit_step(0, m); lemma_repunit_zero(m); }
+    assert(c11.u == 1 * repunit_m(1, m) + pow_nat(m, 1) * (fives5 * pow_nat(m, (g - big_m) as nat)))
+        by(nonlinear_arith)
+        requires c11.u == (fives5 * pow_nat(m, (g - big_m) as nat)) * m + 1, repunit_m(1, m) == 1,
+            pow_nat(m, 1) == m;
+    lemma_run_walk_right(tm, c11, q_ret, 1, 1, (big_m - 2) as nat, out * m,
+        (fives5 * pow_nat(m, (g - big_m) as nat)) as nat, i_rtemp);
+    assert((1 + (big_m - 2) + 1) as nat == big_m);
+    lemma_div_mod_step(out, m, 0);   // (out·m)/m==out, %m==0
+    let c12 = TmConfig {
+        u: repunit_m(big_m, m) + pow_nat(m, big_m) * (fives5 * pow_nat(m, (g - big_m) as nat)),
+        v: out, a: 0, q: q_ret };
+    assert(tm_run(tm, c11, (big_m - 1) as nat) == c12);
+    lemma_tm_run_split(tm, c0, (2 * g + big_m + 3) as nat, (big_m - 1) as nat);
+    assert((2 * g + big_m + 3 + (big_m - 1)) as nat == (2 * g + 2 * big_m + 2) as nat);
+    assert(tm_run(tm, c0, (2 * g + 2 * big_m + 2) as nat) == c12);
+
+    // ── c12.u == R(M) + m^g·5R(M) == copy_u(M). ──
+    lemma_pow_nat_add(m, big_m, (g - big_m) as nat);   // m^M·m^(g-M) == m^g
+    assert((big_m + (g - big_m)) as nat == g);
+    lemma_copy_u_end(big_m, g, m);   // copy_u(M,M,g) == R(M) + m^g·5R(M)
+    assert(c12.u == rm + pow_nat(m, g) * fives5) by(nonlinear_arith)
+        requires
+            c12.u == repunit_m(big_m, m) + pow_nat(m, big_m) * (fives5 * pow_nat(m, (g - big_m) as nat)),
+            repunit_m(big_m, m) == rm,
+            pow_nat(m, g) == pow_nat(m, big_m) * pow_nat(m, (g - big_m) as nat);
+    assert(c12.u == copy_u(big_m, big_m, g, m)) by(nonlinear_arith)
+        requires
+            c12.u == rm + pow_nat(m, g) * fives5,
+            fives5 == 5 * rm,
+            copy_u(big_m, big_m, g, m) == rm + pow_nat(m, g) * (5 * rm);
+}
+
 } // verus!
