@@ -757,4 +757,107 @@ pub proof fn lemma_cmp_match_round(
     assert(tm_run(tm, c, (2 * k + g + 4) as nat) == c3);
 }
 
+/// **B-cmp.5 (the induction STEP) — one matched round `INV(k) → INV(k+1)`.** Composes the gap-cross
+/// ([`lemma_cmp_gap_cross`], B-cmp.3) and the match round ([`lemma_cmp_match_round`], B-cmp.4) into a single
+/// config-level move over the loop invariant. This is exactly the step the full compare loop (B-cmp.5)
+/// iterates; isolating it keeps the loop induction (still to come) a clean `decreases n` over this brick.
+///
+/// Entry `c == INV(k)`: head one cell into `u` scanning the top gap-`0` (`a == 0`), output stack
+/// `U == pile_zeros(d_o + m·out_rest, g, m)` (gap `g ≥ 1`, then output frontier `d_o`, then `out_rest`),
+/// α stack `v == dpack(blk) + m^{|blk|}·w` (restored prefix `blk`, marker `w == m·whi + 5` hiding the
+/// current α digit, `whi == m·suf + s` so `s` is the next α digit), state `q_walk`. **`d_o == vk`** is the
+/// MATCH (the output frontier equals the marker value carried in state). One round runs:
+/// B-cmp.3 (cross the gap into `q_cmp`) then B-cmp.4 (compare-match → return → marker-advance), landing at
+/// `INV(k+1)`: α prefix grown by `vk`, marker slid one deeper, gap grown by one (`d_o` consumed to `0`),
+/// head back one cell into `u` scanning `0` in `q_walk` holding the next value `s`. Fuel `2·|blk| + 2·g + 4`
+/// (`g + (2·|blk| + g + 4)`; in the loop `g == |blk| == k` so this is `4k + 4`). Requires `n ≥ 5`.
+pub proof fn lemma_cmp_round(
+    tm: Tm, c: TmConfig,
+    q_walk: nat, q_cmp: nat, q_back: nat, q_read: nat,
+    blk: Seq<nat>, w: nat, whi: nat, suf: nat, vk: nat, s: nat, g: nat, d_o: nat, out_rest: nat,
+    ib: int, ic: int, jc: int, js: int,
+    r1: int, r2: int, r3: int, r4: int, jm: int, jr: int,
+    l1: int, l2: int, l3: int, l4: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        blk.len() >= 1,
+        forall|k: int| 0 <= k < blk.len() ==> 1 <= #[trigger] blk[k] <= 4,
+        1 <= vk <= 4,
+        1 <= s <= 4,
+        d_o == vk,                 // the MATCH
+        g >= 1,
+        w == tm.m * whi + 5,
+        whi == tm.m * suf + s,
+        c.a == pile_zeros(d_o + tm.m * out_rest, g, tm.m) % tm.m,
+        c.u == pile_zeros(d_o + tm.m * out_rest, g, tm.m) / tm.m,
+        c.v == dpack(blk, tm.m) + pow_nat(tm.m, blk.len()) * w,
+        c.q == q_walk,
+        0 <= ib < tm.quints.len(),
+        0 <= ic < tm.quints.len(),
+        0 <= jc < tm.quints.len(),
+        0 <= js < tm.quints.len(),
+        0 <= r1 < tm.quints.len(),
+        0 <= r2 < tm.quints.len(),
+        0 <= r3 < tm.quints.len(),
+        0 <= r4 < tm.quints.len(),
+        0 <= jm < tm.quints.len(),
+        0 <= jr < tm.quints.len(),
+        0 <= l1 < tm.quints.len(),
+        0 <= l2 < tm.quints.len(),
+        0 <= l3 < tm.quints.len(),
+        0 <= l4 < tm.quints.len(),
+        tm.quints[ib] == mk_quint(q_walk, 0, 0, q_cmp, Dir::L),    // B-cmp.3 boundary transition
+        tm.quints[ic] == mk_quint(q_cmp, 0, 0, q_cmp, Dir::L),     // B-cmp.3 gap skip
+        tm.quints[jc] == mk_quint(q_cmp, vk, 0, q_back, Dir::R),   // B-cmp.4 compare match
+        tm.quints[js] == mk_quint(q_back, 0, 0, q_back, Dir::R),   // B-cmp.4 return skip
+        tm.quints[r1] == mk_quint(q_back, 1, 1, q_back, Dir::R),
+        tm.quints[r2] == mk_quint(q_back, 2, 2, q_back, Dir::R),
+        tm.quints[r3] == mk_quint(q_back, 3, 3, q_back, Dir::R),
+        tm.quints[r4] == mk_quint(q_back, 4, 4, q_back, Dir::R),
+        tm.quints[jm] == mk_quint(q_back, 5, vk, q_read, Dir::R),
+        tm.quints[jr] == mk_quint(q_read, s, 5, q_walk, Dir::L),
+        tm.quints[l1] == mk_quint(q_walk, 1, 1, q_walk, Dir::L),
+        tm.quints[l2] == mk_quint(q_walk, 2, 2, q_walk, Dir::L),
+        tm.quints[l3] == mk_quint(q_walk, 3, 3, q_walk, Dir::L),
+        tm.quints[l4] == mk_quint(q_walk, 4, 4, q_walk, Dir::L),
+    ensures
+        tm_run(tm, c, (2 * blk.len() + 2 * g + 4) as nat)
+            == (TmConfig {
+                    u: pile_zeros(out_rest, g, tm.m),
+                    v: dpack(blk + seq![vk], tm.m)
+                        + pow_nat(tm.m, (blk.len() + 1) as nat) * (tm.m * suf + 5),
+                    a: 0,
+                    q: q_walk,
+               }),
+{
+    let m = tm.m;
+    let k = blk.len();
+    let alpha = dpack(blk, m) + pow_nat(m, k) * w;
+
+    // ── B-cmp.3: cross the gap, land scanning d_o in q_cmp.
+    lemma_cmp_gap_cross(tm, c, q_walk, q_cmp, g, d_o, out_rest, ib, ic);
+    let c_cmp = TmConfig { u: out_rest, v: pile_zeros(c.v, g, m), a: d_o, q: q_cmp };
+    assert(tm_run(tm, c, g) == c_cmp);
+    // c_cmp matches B-cmp.4's compare-config entry: c.v == alpha ⟹ c_cmp.v == pile_zeros(alpha, g).
+    assert(c_cmp.v == pile_zeros(alpha, g, m));
+
+    // ── B-cmp.4: compare-match (d_o == vk) → return → marker-advance, landing at INV(k+1).
+    lemma_cmp_match_round(tm, c_cmp, q_cmp, q_back, q_read, q_walk, blk, w, whi, suf, vk, s, g, out_rest,
+        jc, js, r1, r2, r3, r4, jm, jr, l1, l2, l3, l4);
+    let c_next = TmConfig {
+        u: pile_zeros(out_rest, g, m),
+        v: dpack(blk + seq![vk], m) + pow_nat(m, (k + 1) as nat) * (m * suf + 5),
+        a: 0,
+        q: q_walk,
+    };
+    assert(tm_run(tm, c_cmp, (2 * k + g + 4) as nat) == c_next);
+
+    // ── Compose: total = g + (2k + g + 4) = 2k + 2g + 4.
+    lemma_tm_run_split(tm, c, g, (2 * k + g + 4) as nat);
+    assert((2 * k + 2 * g + 4) as nat == (g + (2 * k + g + 4)) as nat);
+    assert(tm_run(tm, c, (2 * k + 2 * g + 4) as nat) == c_next);
+}
+
 } // verus!
