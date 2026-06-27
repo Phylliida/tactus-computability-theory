@@ -1463,13 +1463,18 @@ so `tail_end_h == H_0` between gadgets — no cross-gadget offset bookkeeping). 
 gadget; the deepest excursion (terminate) is the tight one and is already done.
 
 **Revised NEXT (the mechanical grind, then setup + wiring):**
-1. **Finish copy_refresh `tail_safe`** by mirror-and-chain, bottom-up: `mark_terminate` (= terminate_fwd done +
-   the all-R return, trivial) → `unmark_fwd`/`unmark` → `deposit` (uses `tm_walk`/`tm_dec_master` ones-walks —
-   needs their tail_safe companions too, but they're shallow: offset never near 0) → `mark_fwd`/`mark` →
-   `copy_iter` (mark∘deposit) → `copy_prefix` + `copy_loop_general` + `copy_loop` (induction over `j`, each iter
-   net-disp-0 at entry `H_0`) → **`lemma_copy_refresh_tail_safe`** (3-phase split: copy_loop ∘ mark_terminate ∘
-   unmark, each entering at `H_0`). Then the **M=1 path** (`copy_refresh_m1` + its sub-gadgets) — same recipe,
-   shallower. (`g ≥ M+2` ⟹ the *nogap* `g==M` variants are NOT on the phase path, skip them.)
+1. **Finish copy_refresh `tail_safe`** by mirror-and-chain, bottom-up. **✅ PHASES 2 & 3 DONE (gap2_tail_phases.rs,
+   38/0, crate 1343/0):** `lemma_terminate_fwd_tail_safe` + `lemma_mark_terminate_tail_safe` (phase 2) and
+   `lemma_unmark_fwd_tail_safe` + `lemma_unmark_tail_safe` (phase 3) — the tight `h=0` margin is in both and
+   verifies. **REMAINING for copy_refresh = phase 1 + assembly:** `deposit` (uses `tm_walk`/`tm_dec_master`
+   ones-walks — needs their tail_safe companions first, but shallow: offset never near 0) → `mark_fwd`/`mark`
+   (same 6-segment shape as terminate_fwd, but the mark reaches the master's lowest-UNMARKED one at depth `g+j`,
+   so the fives-walk is shorter — entry offset `M-j ≥ 1`, NOT tight) → `copy_iter` (mark∘deposit, net-disp-0) →
+   `copy_prefix` + `copy_loop_general` + `copy_loop` (induction over `j`, each iter net-disp-0 at entry `H_0`) →
+   **`lemma_copy_refresh_tail_safe`** (3-phase split: copy_loop ∘ mark_terminate ∘ unmark, each entering at
+   `H_0`, via `lemma_tail_chain` — phases 2&3 companions already in hand). Then the **M=1 path**
+   (`copy_refresh_m1` + its sub-gadgets) — same recipe, shallower. (`g ≥ M+2` ⟹ the *nogap* `g==M` variants are
+   NOT on the phase path, skip them.)
 2. **Power-block + phase-block tail_safe** — `power_block_b1`/`b3` (+ `_m1`) wrap `copy_refresh`; then
    `pbb1x_phase`/`pbb3x_phase`/`pbb*_phase_any` and the `seret1x`/`seret3x` singletons (shallow reach, easy).
    Each enters at `H_0`, net-disp-0.
