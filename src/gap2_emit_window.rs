@@ -275,4 +275,125 @@ pub proof fn lemma_seret1_emit(len: nat, pc: nat, big_u: nat, od: Seq<nat>, s: n
     lemma_seret1_phase(tm, len, pc, big_u, od, s);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// EXIT-PARAMETRIC singleton window — the 16-block SEQUENCER building block (§N+11).
+//
+// Unlike the power-block (whose `q_exit` is a pure label), the singleton's end-state `q_home` is a
+// WALK-BACK state: it loops `(q_home, sym, sym, q_home, L)` for `sym ∈ 1..4` and the run terminates ON the
+// pivot (reading 0) WITHOUT firing `(q_home, 0)`. KEY COINCIDENCE: that walk-back self-loop is
+// BYTE-IDENTICAL to ANY next block's inert off-0 self-loop (both power-block `q_dh0` and singleton
+// `q_iter` do `(sym, stay-at-off-0, L)` on reads 1..4). So setting `q_home := qexit = entry5(pc+1)` (the
+// next block's start) makes the 4 walk-back quints COINCIDE with the next window's off-0 self-loops —
+// zero-glue, uniform, same splice as the power-block. The walk-back quints live AT `qexit` (window pc+1),
+// supplied to this phase lemma as the 4 `jl` hypotheses (discharged in the sequencer from the next window).
+// For the FINAL block the target is `q_cmp`, which must be made walk-back-compatible (carry the same 4
+// self-loops). (Danielle co-designed, port 8051.)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The exit-parametric singleton-emit generator: identical to [`seret1_gen`] EXCEPT the q_eret landing slot
+/// `(off 2, sym 0)` targets the EXTERNAL state `qexit` (the next block's off-0 state) rather than the
+/// in-window `q_home = entry5(pc)+3`. The walk-back self-loops are NOT carried in window pc — they live at
+/// `qexit` and are supplied to [`lemma_seret1x_phase`] as the 4 `jl` quints.
+pub open spec fn seret1x_gen(s: nat, qexit: nat, idx: nat) -> Quintuple {
+    let pc = idx / 288;
+    let off = (idx % 288) / 6;
+    let sym = (idx % 288) % 6;
+    if off == 2 && sym == 0 {
+        mk_quint(entry5(pc) + 2, 0, 0, qexit, Dir::L)      // q_eret → q_home := qexit (cross-window)
+    } else {
+        let a = seret1_act(off, sym, s);
+        mk_quint(entry5(pc) + off, sym, a.0, entry5(pc) + a.1, a.2)
+    }
+}
+
+/// **Exit-parametric singleton-emit phase (one window).** As [`lemma_seret1_phase`] but the return walk
+/// lands on the EXTERNAL state `qexit` (the next block's off-0 state). The 7 surge/emit/turn quints live in
+/// window `pc`; the 4 walk-back self-loops `(qexit, 1..4, qexit, L)` are supplied as `jl1..jl4` (the next
+/// window's inert off-0 self-loops, which coincide). From `{u: big_u, v: dpack(od), a: 0, q: entry5(pc)}`
+/// after `2·|od| + 4` steps: `{u: big_u, v: dpack(od ++ [s]), a: 0, q: qexit}`.
+pub proof fn lemma_seret1x_phase(tm: Tm, len: nat, pc: nat, big_u: nat, od: Seq<nat>, s: nat,
+    qexit: nat, jl1: int, jl2: int, jl3: int, jl4: int)
+    requires
+        tm_wf(tm),
+        tm.n == 5,
+        tm.m == tm_mod5(len),
+        pc <= len,
+        tm.quints.len() == 288 * (len + 1),
+        forall|i: int| pc * 288 <= i < pc * 288 + 288 ==> #[trigger] tm.quints[i] == seret1x_gen(s, qexit, i as nat),
+        1 <= s <= 4,
+        forall|k: int| 0 <= k < od.len() ==> 1 <= #[trigger] od[k] <= 4,
+        // the 4 walk-back self-loops AT qexit (the next window's inert off-0 self-loops).
+        0 <= jl1 < tm.quints.len(),
+        0 <= jl2 < tm.quints.len(),
+        0 <= jl3 < tm.quints.len(),
+        0 <= jl4 < tm.quints.len(),
+        tm.quints[jl1] == mk_quint(qexit, 1, 1, qexit, Dir::L),
+        tm.quints[jl2] == mk_quint(qexit, 2, 2, qexit, Dir::L),
+        tm.quints[jl3] == mk_quint(qexit, 3, 3, qexit, Dir::L),
+        tm.quints[jl4] == mk_quint(qexit, 4, 4, qexit, Dir::L),
+    ensures
+        tm_run(tm, TmConfig { u: big_u, v: dpack(od, tm.m), a: 0, q: entry5(pc) },
+            (2 * od.len() + 4) as nat)
+            == (TmConfig { u: big_u, v: dpack(od + seq![s], tm.m), a: 0, q: qexit }),
+{
+    assert(pc * 288 + 288 <= 288 * (len + 1)) by(nonlinear_arith) requires pc <= len;
+    let base = (pc * 288) as int;
+
+    let q_iter = entry5(pc);
+    let q_surge = (entry5(pc) + 1) as nat;
+    let q_eret = (entry5(pc) + 2) as nat;
+
+    // ── locate the 7 window-pc quints (q_iter, q_surge, q_eret); off_l targets qexit. ──
+    let i_pivot_r = (pc * 288 + 0 * 6 + 0) as int;
+    let ir1 = (pc * 288 + 1 * 6 + 1) as int;
+    let ir2 = (pc * 288 + 1 * 6 + 2) as int;
+    let ir3 = (pc * 288 + 1 * 6 + 3) as int;
+    let ir4 = (pc * 288 + 1 * 6 + 4) as int;
+    let i_emit = (pc * 288 + 1 * 6 + 0) as int;
+    let i_off_l = (pc * 288 + 2 * 6 + 0) as int;
+
+    assert(base <= i_pivot_r < base + 288);
+    assert(base <= ir1 < base + 288);
+    assert(base <= ir2 < base + 288);
+    assert(base <= ir3 < base + 288);
+    assert(base <= ir4 < base + 288);
+    assert(base <= i_emit < base + 288);
+    assert(base <= i_off_l < base + 288);
+
+    assert(tm.quints[i_pivot_r] == mk_quint(q_iter, 0, 0, q_surge, Dir::R)) by {
+        lemma_slot_index5(pc, 0, 0);
+        assert(tm.quints[i_pivot_r] == seret1x_gen(s, qexit, i_pivot_r as nat));
+    }
+    assert(tm.quints[ir1] == mk_quint(q_surge, 1, 1, q_surge, Dir::R)) by {
+        lemma_slot_index5(pc, 1, 1);
+        assert(tm.quints[ir1] == seret1x_gen(s, qexit, ir1 as nat));
+    }
+    assert(tm.quints[ir2] == mk_quint(q_surge, 2, 2, q_surge, Dir::R)) by {
+        lemma_slot_index5(pc, 1, 2);
+        assert(tm.quints[ir2] == seret1x_gen(s, qexit, ir2 as nat));
+    }
+    assert(tm.quints[ir3] == mk_quint(q_surge, 3, 3, q_surge, Dir::R)) by {
+        lemma_slot_index5(pc, 1, 3);
+        assert(tm.quints[ir3] == seret1x_gen(s, qexit, ir3 as nat));
+    }
+    assert(tm.quints[ir4] == mk_quint(q_surge, 4, 4, q_surge, Dir::R)) by {
+        lemma_slot_index5(pc, 1, 4);
+        assert(tm.quints[ir4] == seret1x_gen(s, qexit, ir4 as nat));
+    }
+    assert(tm.quints[i_emit] == mk_quint(q_surge, 0, s, q_eret, Dir::R)) by {
+        lemma_slot_index5(pc, 1, 0);
+        assert(tm.quints[i_emit] == seret1x_gen(s, qexit, i_emit as nat));
+    }
+    assert(tm.quints[i_off_l] == mk_quint(q_eret, 0, 0, qexit, Dir::L)) by {
+        lemma_slot_index5(pc, 2, 0);
+        assert(tm.quints[i_off_l] == seret1x_gen(s, qexit, i_off_l as nat));
+    }
+
+    // ── invoke the verified singleton step with q_home = qexit, walk-back quints jl1..jl4. ──
+    lemma_surge_emit_return_block1(tm, big_u, od, s,
+        q_iter, q_surge, q_eret, qexit,
+        i_pivot_r, ir1, ir2, ir3, ir4,
+        i_emit, i_off_l, jl1, jl2, jl3, jl4);
+}
+
 } // verus!
