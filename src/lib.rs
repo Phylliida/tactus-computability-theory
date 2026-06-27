@@ -330,3 +330,8 @@
 // walks (left to the master, right back to the pivot) that bracket the marked unary copy rebuilding a fresh
 // temp counter from the preserved master. See tm_copy_refresh.rs / docs/gap2-input-loader-plan.md §5.
 #[cfg(verus_keep_ghost)] pub mod tm_copy_refresh;
+
+// GAP-2 G2-F Route (i) brick R-relnum-gen (STEP 2, model B): the per-power-block PERIODIC step. Composes
+// lemma_copy_refresh ∘ lemma_block_loop into one run emitting (blk)^M, master stationary (gap g=M+2 fixed).
+// See tm_power_block.rs / docs/gap2-input-loader-plan.md §5, §N+10.
+#[cfg(verus_keep_ghost)] pub mod tm_power_block;
