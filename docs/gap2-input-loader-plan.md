@@ -599,3 +599,57 @@ R-MC/B-W.
 
 ⚠ Use the CRATE-LOCAL `./check.sh` (Lean backend + group-theory export), NOT the top-level `verus-cad/check.sh`
 (verus-dev, fails to compile the Lean-backend group-theory dep) and NOT the verus MCP `check`.*
+
+---
+
+*Status (2026-06-26, session N+4): R-relnum-gen STEP 2 — PER-BLOCK ITERATION + PER-BLOCK LOOP COMPLETE
+(both block sizes); crate 833/0.*
+
+**THIS SESSION (N+3 783/0 → N+4 833/0) BUILT:**
+- **`tm_dwalk_prefix.rs` (802/0)** — the prefix digit-walk-left + the `drev` (low-first digit reverse)
+  algebra. `lemma_dwalk_left_prefix` is the digit (`1..4`) analog of `lemma_walk_left_prefix`: walk left over
+  a block leaving a high tail `w` (the masters) intact. The reversal bookkeeping — "a left-walk peels `u`
+  low-first then re-piles onto `v`, reversing the order" — is NAMED via `drev` (Danielle's call, port 8051):
+  `dpile(0,s)==dpack(drev(s))` (`lemma_dpile_zero_drev`), the `v≠0` split `lemma_dpile_is_dpack_drev`,
+  `drev` involution/concat/digit-bound, and `lemma_dpile_concat`. So "there-and-back is identity" is one
+  clean fact, not inline reasoning.
+- **`tm_block_iter.rs` (815/0)** — ONE iteration. `lemma_surge` (move-R off pivot + `dwalk_right` → frontier,
+  handles empty/nonempty output uniformly), `lemma_return_walk` (move-L + `dwalk_left_prefix` home, the two
+  walks cancel ⟹ output comes out `dpack(output++blk)` clean, masters intact), then the composites
+  `lemma_surge_emit_return_block1/_block3` and `lemma_block_iter_block1/_block3` (splice on `dec_temp`):
+  home→home, `output ↦ output ++ blk`, `temp ↦ temp−1`. **Masters `U` kept GENERIC** (instantiated to
+  `dec_u(temp,w)` only at the `dec_temp` splice) — emitter correctness is a structural prefix-preserve.
+  KEY RESOLUTION: net per-iteration effect is `od ↦ od ++ blk` (low-first, NO net reverse — the surge and
+  return walks cancel); the block lands at the high/frontier end.
+- **`tm_block_loop.rs` (833/0)** — the per-block LOOP. A 2-step non-destructive **guard** (`lemma_guard_continue`
+  / `lemma_guard_exit`) peeks the counter at the home pivot (peel pivot left → peek inner cell → move back
+  right, restoring) and branches: inner `1` ⟹ continue (fall into `q_iter`), inner `0` (separator) ⟹ exit.
+  `dec_u` arithmetic helpers (`lemma_dec_u_step`/`_zero`). `lemma_block_loop_block1/_block3` (induct on
+  `temp`, body lands back in `q_loop` since `q_back==q_loop`): `(s)^temp` / `(s0,s1,s2)^temp` emitted onto the
+  output, counter consumed, master shifted `w ↦ m^temp·w`. Fuel via `loop_fuel_b1/_b3` spec fns. Output:
+  `{u: dec_u(0, m^temp·w), v: dpack(od ++ seq_pow(blk, temp)), q: q_exit}`.
+
+**STATE GRAPH (one phase, settled this session):** `q_loop`(guard peek L / dec walk-back R, `q_back==q_loop`)
+→ `q_guard`(cont→`q_iter` / exit→`q_exit`) → `q_iter`(move-R off pivot) → `q_surge`(`dwalk_right` j=1..4 /
+emit 0) → `q_e1/q_e2`(triple emit) → `q_eret`(move-L) → `q_home`(`dwalk_left` j=1..4 / dec pivot-peel 0) →
+`q_dwalk`(dec walk / erase) → `q_disc`(discard→`q_loop`). All `a=0` roles disambiguated by STATE; tm_wf
+determinism holds (distinct (state,scanned) pairs).
+
+**NEXT (remaining STEP-2 work):**
+1. **copy-refresh gadget** — before each of a phase's 4 power-blocks, rebuild `temp` (a fresh decrementing
+   copy) from the PRESERVED master. The loop leaves `u = dec_u(0, m^temp·w) = m^temp·w` (counter consumed,
+   master `w` shifted up); the master must survive to seed the next power-block's `temp`. Design: a copy
+   loop walking the master's ones onto a fresh adjacent `temp` region + restore (mirror the dwalk shuttles).
+   ⚠ The singletons between power-blocks emit with NO counter (one surge_emit_return_block1, no loop, no
+   dec) — and the master sits inert in `u` (untouched by surge/return since they only move output v↔u and
+   pivot). Confirm the master's absolute position is consistent across the singleton-then-power-block
+   alternation.
+2. **16-block sequencing** — chain the 8 blocks of `uinv_digits(b)` then the 8 of `u_digits(a)` (masters
+   `i_b=b+1`, `iₐ=a+1`; ONE master alive per phase, re-init between phases). Prove output `== fam_digits(a,b)`
+   (compose `lemma_dds_fam_relator` / `lemma_relnum_is_fam_digits`). The block structure (from
+   `gap2_fam_digits`): `u_digits(j) = (1)ⁱ·[4,3,2]·(3)ⁱ·[4]·(4,1,2)ⁱ·[1]·(4,3,2)ⁱ·[2]`,
+   `uinv_digits(b) = [4]·(4,1,2)ⁱ·[3]·(4,3,2)ⁱ·[2]·(1)ⁱ·[4,1,2]·(3)ⁱ` (i=exp+1, low-first).
+3. Then `psc_act` window assembly (template `gap2_psc_rp.rs`), R-cmp / R-S / R-C / R-MC / B-W wiring.
+
+⚠ Use the CRATE-LOCAL `./check.sh` from inside `tactus-computability-theory/` (`cd` there first — the
+top-level `verus-cad/check.sh` is the verus-dev one and prints usage / fails the Lean-backend dep).*
