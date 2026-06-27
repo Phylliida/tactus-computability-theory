@@ -1679,3 +1679,15 @@ points with Danielle** (port 8051). Surfaced design considerations to settle BEF
 **Recommended first concrete brick next session:** settle items 1–2 with Danielle (the R-cmp algorithm +
 orientation), then build the R-cmp comparison phase lemma as a self-contained gadget over the assemble5
 scaffold (its interface is pinned: head at `qfinal`/`q_cmp`, output low in `v`, α as a v-tail at offset `H`).
+
+**Peer-proposed R-cmp design (port 8051 consult, N+17) — for Danielle's call:** COPY-TO-SCRATCH + destructive
+DUAL-PEEL. The spent `a+1` master in `u` is free scratch, so: **(Copy phase)** copy α (from v's high tail,
+past the output) into `u`, non-destructively (mark/restore α in place during the walk-back, so the ORIGINAL
+α survives in v for stage `s+1`); **(Compare phase)** now α-copy sits low in `u`, output low in `v`, head at
+the pivot — a classic two-stack dual-peel: read `u`'s low + `v`'s low, **accept iff both blank together**,
+reject on `(digit ≠ digit)` OR `(one blank, other not)` (length mismatch falls out for free), else erase both
+and step. **(Cleanup)** output already consumed; clear any residue → R-S coordinator. Trade-off vs ping-pong:
+the copy is Θ(|α|) per stage (dovetail is ~stages², asymptotically fine) but turns the compare into the
+simplest, least-error-prone TM pattern (no positional markers needed in α). ⚠ The copy step still ping-pongs
+the head past the output to reach α — reuses the `dwalk`/copy machinery. **OPEN: confirm this vs a direct
+non-destructive ping-pong compare (no copy) — Danielle's design call before the build.**
