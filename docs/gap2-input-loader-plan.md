@@ -1834,3 +1834,56 @@ its low digit = `output[L-1]` nearest the head, then a far-end sentinel `5`, the
 
 **NEXT:** B-cmp.1 (mark/restore single-cell ops), then B-cmp.2 round step. Then R-S (dovetail) →
 R-C/R-MC/B-W → discharge `ceer_realizes` → drop `axiom_ceer_fp_embedding`.
+
+### N+20 — R-cmp round design CORRECTED + CONFIRMED (the side-separation/pollution pitfall). Caught a soundness flaw at config-trace time, before writing the round.
+
+**The pitfall (found by config-level tracing of a candidate round, NOT in code — no lines wasted).** The
+"obvious" M1 round — *mark α-frontier `5`, walk left to output frontier, compare, consume output→`0`, walk
+right to the `5`, restore α-digit, move R to the next α-frontier* — is **UNSOUND**. Tracing the configs:
+the final "restore + move R" pushes the restored α digit onto `u` (the output side). After one round
+`u = [restored-α-digit][gap 0s][consumed-output 0][output rest]`, so the **next** round's leftward
+output-scan (`skip0_left`, which stops at the first nonblank) immediately hits the migrated α digit — a
+`1..4` — and mistakes it for the output frontier. **Because output and α share the `1..4` alphabet, ANY
+scheme that lets compared-α digits migrate into `u` is unsound**: the walk/skip primitives cannot tell an
+α digit from an output digit. (n=5 affords only ONE spare mark, `5`; there is no second symbol to tag
+migrated α.)
+
+**The fix — STRICT SIDE-SEPARATION (confirmed by port-8051 consult against the reading; this is the
+Minsky / Aanderaa–Cohen "two-stack tape simulation" probe pattern — `To read a cell at distance k from
+the boundary without shifting the boundary, do k pushes then k pops`):**
+- **α lives entirely in `v`, output entirely in `u`.** The head only OSCILLATES through the boundary.
+- **Every excursion into `v` is BALANCED (there-and-back):** `dwalk_right` peels the already-compared
+  α digits onto `u`, then `dwalk_left` peels them back onto `v` — net change to `v` is ZERO (the
+  "there-and-back is identity" fact, already available via the `drev`-involution lemmas in
+  `tm_dwalk_prefix.rs`). **No digit ever permanently crosses the boundary** ⟹ no pollution.
+- **The α frontier is a single `5`-mark living IN `v` at the current position `k`; the marked digit's
+  VALUE is carried in the finite control** (so α is value-preserved — exactly one cell shows `5`, its
+  value in state, restored on exit). Reading α[k] reads the STATE, never the cell. Moving the value via
+  the tape would need a *third* mark symbol, which n=5 does not afford — value-in-state is forced and is
+  the standard mechanism. `dwalk_right` naturally stops at the `5` (5 ∉ 1..4), so "dwalk-to-5" is free.
+- **The first comparison (k = α-low, nearest the boundary) needs NO traverse;** the traverse grows as the
+  marker moves deeper into `v`, giving O(|α|) per round, O(|α|²) total — fine (dovetail is already ~stages²).
+
+**Confirmed ACCEPT path:** output frontier consumed AND marker has traversed all of α ⟹ restore the last
+`V_last` into the marked cell (replace `5`), drive head left to the blank boundary, → `q_accept` → drive
+to `tm_origin`. Tape clean: `u` empty, `v` = original α.
+**Confirmed REJECT path** (`d_o ≠ V_k`, head at the `5`): write `V_k` back, balanced-traverse left to the
+boundary (α intact, `5` gone), wipe `u` to `0`s (the clear-output the `skip0`/write-0 primitives give),
+`INC s`, drive to origin, re-enter the dovetail. α survives every reject ⟹ ready for stage `s+1`.
+
+**Revised brick breakdown (supersedes the B-cmp.1/.2 split in §N+19):**
+  - **B-cmp.0 `skip-blank` loops** — DONE (`tm_skip_blank.rs`, crate 1725/0). Gap-crossing in `u`
+    (skip consumed-output `0`s) and the symmetric `v` skip.
+  - **B-cmp.1 balanced α-traverse** — `dwalk_right`-to-`5` then `dwalk_left`-back as a config-level
+    net-identity-on-`v` round-trip (reuses existing `dwalk` + `drev`-involution; the "probe").
+  - **B-cmp.2 marker advance** — at the `5`: restore `V_k`, step to `k-1`, load `V_{k-1}`, write `5`.
+  - **B-cmp.3 output read+consume** — non-destructive read of the `u` frontier, write `0`, record `d_o`.
+  - **B-cmp.4 round step** — compose B-cmp.1–.3 + the digit compare; fuel lemma, decreasing on |α|−k.
+  - **B-cmp.5 compare loop** — iterate B-cmp.4 over all positions; threads the gap size.
+  - **B-cmp.6 accept/reject dispatch** — the two paths above (drive-to-origin / clear+rewind+INC).
+  - **B-cmp.7 park-time sentinels + relocation** — far-end `5` below α (and the output-side end marker);
+    the Finding-1 relocation; touches `tm_rp`/emit — done LAST to avoid perturbing verified lemmas.
+
+**NEXT:** B-cmp.1 (balanced α-traverse) — the cleanest next verified brick, reusing `dwalk` + the
+`drev`-involution; then B-cmp.2/.3, then the B-cmp.4 round step. The design is now fully pinned and
+confirmed against the reading — no further design gate before the build.
