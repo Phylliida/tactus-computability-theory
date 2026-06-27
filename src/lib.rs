@@ -378,6 +378,8 @@
 // v-side (α-block) mirror of gap2_tail_phases: terminate/unmark stay left of pivot, so UNCONDITIONAL.
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_phases_v;
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_phase1;
+// v-side (α-block) mirror of gap2_tail_phase1: phase-1 stays left of pivot, so UNCONDITIONAL.
+#[cfg(verus_keep_ghost)] pub mod gap2_tail_phase1_v;
 // The M=1 path of copy_refresh tail-safety (mark_terminate_m1 / unmark_m1 / copy_refresh_m1).
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_phase1_m1;
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_emit;
