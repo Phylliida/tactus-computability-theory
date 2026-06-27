@@ -320,17 +320,33 @@ chained through ignition to `mm_in_H0(mm, α, 0) ⟺ α declared word-number`.
       compare prove against.** `fam_relator(a,b) = u_a · inverse_word(u_b)`, `u_j =
       miller_collapse_word(j,0,1)`, digits over `{a=Gen0→1, t=Gen1→2, a⁻¹→3, t⁻¹→4}` = `letter_digit(0,2,·)`.
 
-  **NEXT for R-relnum-gen (the explicit digit pattern, then the emitter):**
-    1. **Characterize `decode_digit_seq(0,2, fam_relator(a,b))` (or `decode_word(0,2,m,·)`) as the
-       explicit structured pattern.** Use `lemma_decode_word_concat` to split `fam_relator = u_a · u_b⁻¹`,
-       then split each `u_j`'s 8 pieces (`t`, `word_power(binv_sub,i)`, `a`, `word_power(b_sub,i)`, `t⁻¹`,
-       `symbol_power(Inv0,i)`, `binv_sub`, `symbol_power(Gen0,i)`, `i=j+1`). Needed sub-lemmas:
-       `decode_word` of `word_power(w,k)` (a geometric-series-in-`m^|w|` formula) and of `symbol_power`
-       and of `inverse_word` (digit transform `1↔3, 2↔4` + reverse). Forward digit pattern (confirmed):
-       `digits(u_j) = [2]·(234)ⁱ·[1]·(214)ⁱ·[4]·(3)ⁱ·[2 3 4]·(1)ⁱ`; `decode_digit_seq` REVERSES it.
-    2. **The two-counter emitter** (counters `iₐ=a+1`, `i_b=b+1`; nested loops emitting the fixed blocks),
-       proved against the pattern from step 1 — over the n=4 assemble4 scaffold (template:
-       `gap2_psc_rp.rs` / `tm_assemble4::lemma_assemble4_peek_demo`).
+  **✅ STEP 1 — THE EXPLICIT DIGIT PATTERN — DONE (crate 759/0).** `decode_digit_seq(0,2, fam_relator(a,b))`
+  is now an explicit `seq_pow`/singleton block concatenation. Design fork RESOLVED with Danielle: **(B)
+  digit-seq framing** (decouple the eventual emitter's Production proof `tape == digit blocks` from the
+  Evaluation proof `dpack == value`) + **structural 8-piece rewrite** of `inverse_word(u_b)` (not a general
+  `decode_word∘inverse_word` lemma). The bricks:
+    - **`gap2_relnum_digits.rs`** (added) — `lemma_decode_word_word_power`: the geometric closed form
+      `decode_word(word_power(w,k)) == decode_word(w)·repunit_m(k, m^|w|)` (the `(234)ⁱ`/`(214)ⁱ` block
+      value), via `lemma_word_power_snoc` onto the low-end repunit recurrence (no power-of-power lemma).
+    - **`gap2_relnum_dds.rs`** (new) — the digit-seq structural algebra (Production side): `seq_pow<A>`,
+      `lemma_dds_concat` (the REVERSAL law `dds(w1++w2)=dds(w2)++dds(w1)`), `lemma_dds_singleton`,
+      `lemma_dds_word_power` (`=seq_pow(dds(w),k)`), `lemma_dds_symbol_power`.
+    - **`gap2_inverse.rs`** (new) — `inverse_word` block laws: `inverse_word(symbol_power(s,k))=
+      symbol_power(s⁻¹,k)`, `inverse_word(word_power(w,k))=word_power(inverse_word(w),k)`.
+    - **`gap2_fam_split.rs`** (new) — `lemma_fam_relator_split` (`fam_relator = u_a ++ inverse_word(u_b)`
+      via apply_embedding peel) + the 3-letter b/b⁻¹ inverses + `lemma_inverse_collapse_word`
+      (`inverse_word(u_b) = a⁻ⁱ·b·aⁱ·t·binv^i·a⁻¹·b^i·t⁻¹`, the explicit 8 pieces).
+    - **`gap2_fam_digits.rs`** (new) — the headline `lemma_dds_fam_relator`:
+      `decode_digit_seq(0,2,fam_relator(a,b)) == fam_digits(a,b) = uinv_digits(b) ++ u_digits(a)`, with
+      `u_digits(j) = (1)ⁱ·[4,3,2]·(3)ⁱ·[4]·(412)ⁱ·[1]·(432)ⁱ·[2]` (i=j+1, low-first/reversed) and
+      `uinv_digits(b) = [4]·(412)ⁱ·[3]·(432)ⁱ·[2]·(1)ⁱ·[4,1,2]·(3)ⁱ`. **These `seq_pow` blocks are the
+      exact tape sequence the emitter lays down, one loop iteration per block.**
+
+  **NEXT for R-relnum-gen — STEP 2, the two-counter emitter** (counters `iₐ=a+1`, `i_b=b+1`; nested loops
+  emitting the `fam_digits` blocks), proved to produce `fam_digits(a,b)` on tape — over the n=4 assemble4
+  scaffold (template: `gap2_psc_rp.rs` / `tm_assemble4::lemma_assemble4_peek_demo`). The spec target is now
+  PINNED (`fam_digits`/`lemma_dds_fam_relator`); the Evaluation side reuses `lemma_relnum_is_decode_digit_seq`
+  + `lemma_dpack_*` to turn the produced digits into the `relnum` value.
 - **R-cmp — digit-by-digit base-m compare** of the generated relnum digits against α's stored digits.
 - **R-S — the dovetail search.** Enumerate stages `s`, `(a,b)=declared_pair(e,s)`, run R-relnum-gen +
   R-cmp, halt iff match. Mirror the `search_rm(e)` dovetail STRUCTURE (re-expressed as n≥4 TM gadgets).
@@ -423,22 +439,25 @@ ORDER (low-first vs high-first) and `inverse_word`'s exact digit transform befor
 
 ---
 
-*Status (2026-06-26, session N+1): SPEC BACKBONE + IGNITION + R-AL + R-P PRIMITIVE LAYER + **R-P
-ASSEMBLY** + **R-relnum-gen SPEC FOUNDATION** BUILT; crate 732/0.
-B-FR/B-IG (ignition, `gap2_ignition.rs`) + B-relnum-spec/B-W-assembly (`gap2_relnum.rs`) + R-AL
-(`tm_assemble4.rs`) + R-P primitives (`tm_dstring.rs`/`tm_dwalk.rs`/`tm_rp.rs`) DONE [prior sessions].
-**THIS SESSION:** + **R-P psc_act window assembly (`gap2_psc_rp.rs`, 11/0)** — `rp_act`/`lemma_rp_phase`,
-pins ignition `start(d0)=entry4(d0)` — + **R-relnum-gen spec foundation (`gap2_relnum_digits.rs` +
-`gap2_rho_unshift.rs`)**: `relnum(a,b) == dpack(decode_digit_seq(0,2, fam_relator(a,b)), m)` (CAPSTONE
-`lemma_relnum_is_decode_digit_seq`), with ρ eliminated (`lemma_decode_rho_unshift`), the digit-order
-linchpin (`lemma_decode_word_is_dpack`), and the Horner split (`lemma_decode_word_concat`).
+*Status (2026-06-26, session N+2): SPEC BACKBONE + IGNITION + R-AL + R-P PRIMITIVE LAYER + R-P ASSEMBLY +
+R-relnum-gen SPEC FOUNDATION + **R-relnum-gen STEP 1 (THE EXPLICIT DIGIT PATTERN)** BUILT; crate 759/0.
+B-FR/B-IG (`gap2_ignition.rs`) + B-relnum-spec/B-W-assembly (`gap2_relnum.rs`) + R-AL (`tm_assemble4.rs`)
++ R-P primitives (`tm_dstring.rs`/`tm_dwalk.rs`/`tm_rp.rs`) + R-P assembly (`gap2_psc_rp.rs`) + R-relnum
+spec foundation (`gap2_relnum_digits.rs`/`gap2_rho_unshift.rs`) DONE [prior sessions].
 
-The whole remaining obligation is ONE spec: a machine satisfying `mm_decides_relnum`, built as Route (i)
-— a bespoke n=4 `tm_wf` TM `psc_tm(e)` over the assemble4 scaffold. The emitter's spec target is now
-PINNED (capstone above). NEXT (deep brick, multi-session): (1) characterize
-`decode_digit_seq(0,2, fam_relator(a,b))` as the explicit `[2]·(234)ⁱ·[1]·(214)ⁱ·[4]·(3)ⁱ·[234]·(1)ⁱ`
-pattern (reversed) via `lemma_decode_word_concat` + new `decode_word`-of-`word_power`/`symbol_power`/
-`inverse_word` lemmas; (2) the two-counter emitter (R-relnum-gen) proved against it; (3) R-cmp / R-S /
-R-C / R-MC. Also TODO on R-P assembly: retarget the `(q_walk,0)` turnaround to R-S entry, thread
-`tm_config_wf`, the single-digit-α divergence branch. The conditional chain already stands; this brick
-removes the last axiom.*
+**THIS SESSION — R-relnum-gen STEP 1 COMPLETE (the explicit digit pattern):** design fork RESOLVED with
+Danielle = **(B) digit-seq framing** (decouple Production `tape==blocks` from Evaluation `dpack==value`) +
+**8-piece inverse rewrite**. Bricks: `lemma_decode_word_word_power` (geometric closed form, in
+`gap2_relnum_digits.rs`); `gap2_relnum_dds.rs` (the dds REVERSAL algebra `dds(w1++w2)=dds(w2)++dds(w1)`,
+`seq_pow`, dds-of-word_power/symbol_power/singleton); `gap2_inverse.rs` (inverse_word block laws);
+`gap2_fam_split.rs` (`fam_relator = u_a ++ inverse_word(u_b)` + the explicit `inverse_word(u_b)` 8-piece);
+`gap2_fam_digits.rs` (**headline `lemma_dds_fam_relator`**: `decode_digit_seq(0,2,fam_relator(a,b)) ==
+fam_digits(a,b) = uinv_digits(b) ++ u_digits(a)`, an explicit `seq_pow`/singleton block concatenation).
+
+The whole remaining obligation is ONE spec: a machine satisfying `mm_decides_relnum`, built as Route (i) —
+a bespoke n=4 `tm_wf` TM `psc_tm(e)` over the assemble4 scaffold. The emitter's spec target is now FULLY
+EXPLICIT (`fam_digits`). NEXT (deep brick, multi-session): (2) **the two-counter emitter** (R-relnum-gen)
+proved to PRODUCE `fam_digits(a,b)` on tape, one loop iteration per `seq_pow` block, over the assemble4
+scaffold (template `gap2_psc_rp.rs`); then (3) R-cmp / R-S / R-C / R-MC. Also TODO on R-P assembly:
+retarget the `(q_walk,0)` turnaround to R-S entry, thread `tm_config_wf`, the single-digit-α divergence
+branch. The conditional chain already stands; this brick removes the last axiom.*
