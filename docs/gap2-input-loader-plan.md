@@ -2016,3 +2016,51 @@ boundary), B-cmp.4 ✅ (match round). NEXT = **B-cmp.5 compare loop** (induction
 `g==k`, accumulating the matched prefix) then **B-cmp.6 accept/reject dispatch** (the `q_verify_end`
 exhaustion variant of marker-advance + drive-to-origin / clear+rewind+INC) + **B-cmp.7 park-time sentinels**.
 After R-cmp: R-S dovetail → R-C/R-MC/B-W → discharge `ceer_realizes` → drop `axiom_ceer_fp_embedding`.
+
+### N+24 — R-cmp B-cmp.5 STEP done (`lemma_cmp_round`); full loop threading + value-in-state family structure WORKED OUT (handoff for the loop induction).
+
+**Built this session (crate 1753 → 1754/0):** `lemma_cmp_round` in `src/tm_cmp_traverse.rs` — the **induction
+STEP** of the compare loop: one matched round `INV(k) → INV(k+1)`, composing B-cmp.3 (`lemma_cmp_gap_cross`)
+∘ B-cmp.4 (`lemma_cmp_match_round`) via `lemma_tm_run_split`. Fuel `2·|blk| + 2·g + 4` (`= 4k+4` when
+`g==|blk|==k`). Entry/exit are the same INV shape, so it iterates cleanly. Verified, additive, no escape hatches.
+
+**The INV(k) shape (PINNED, verified by `lemma_cmp_round`'s entry/exit matching):**
+  - `v = dpack(blk, m) + m^{|blk|}·w`, `w = m·whi + 5`, `whi = m·suf + s` — restored prefix `blk = α[0..k-1]`,
+    marker `5` at position `k` HIDING `α[k] = vk` (value in state), `s = α[k+1]` the next α digit, `suf = α[k+2..]`.
+  - `u = pile_zeros(out_rest, k-1, m)`, `a = 0` — head one cell into `u`; full output stack
+    `= pile_zeros(α[k]+m·out_rest, k, m)` (gap `k`, i.e. `k` consumed-output `0`s, then output frontier `α[k]`).
+  - `q = q_walk(α[k])`.
+  Round `k` matches `output[k]` vs `α[k]=vk`; MATCH requires `output[k]==α[k]`. The round also reads `α[k+1]=s`
+  (needs `s ∈ 1..4`); when `α[k+1]` is the far `5` sentinel (α exhausted) the round can't fire → B-cmp.6.
+
+**THE LOOP THREADING (worked out, ready to grind — induct on a digit list `ds`).** Carry
+`ds = [α[k0], α[k0+1], …, α[k0+n]]` (length `n+1`, all `∈ 1..4`): `ds[0..n-1]` are the `n` matched digits
+(`output[k0+i] == ds[i]`), `ds[n] = α[k0+n]` the final lookahead (the hidden value at `INV(k0+n)`). Plus
+`pre = α[0..k0-1]` (|pre|=k0), `suf = α[k0+n+1..]`, `out_above = output[k0+n..]`, `g` (gap, `==k0`).
+Express INV via:
+  - α-above-marker `= dpack(ds.drop_first(), m) + m^{ds.len()-1}·suf`;  `v = dpack(pre) + m^{|pre|}·(5 + m·(α-above))`.
+  - output pre-gap `= dpack(ds.take(ds.len()-1), m) + m^{ds.len()-1}·out_above`;  full output stack
+    `= pile_zeros(output-pregap, g, m)`, INV `a = ·%m`, `u = ·/m`.
+**Recursion** (`ds → ds.drop_first()`, decreases `ds.len()`, base `ds.len()==1` = 0 rounds): one
+`lemma_cmp_round` then recurse with `pre ++ [ds[0]]`, `g+1`, `suf`/`out_above` unchanged. **The algebra LINES
+UP** (verified by hand): `lemma_cmp_round`'s exit `v = dpack(pre++[ds[0]]) + m^{k0+1}·(m·suf_r + 5)` equals the
+recursive INV's `v` because the round's `suf_r` (= α-above the new marker = `α[k0+2..]`) IS the recursive
+`whi'`; exit `u = pile_zeros(out_rest, g)` feeds the recursive entry as `pile_zeros(·, g+1)/m` (gap grows by 1);
+key Seq lemma = `lemma_dpack_append` (`dpack(a++b) = dpack(a) + m^{|a|}·dpack(b)`). Exact fuel:
+`spec fn cmp_loop_fuel(k0, g, n) decreases n { if n==0 {0} else { (2·k0 + 2·g + 4) + cmp_loop_fuel(k0+1, g+1, n-1) } }`.
+
+**⚠ STRUCTURAL COMPLICATION for the loop (the real work):** the compare/marker quintuples depend on the
+per-round value `vk = ds[i]`, which VARIES. So the loop lemma's states must be **value-indexed functions**
+(`q_walk, q_cmp, q_back: spec_fn(nat)->nat`; `q_read: nat` SHARED) and the quintuple hypotheses
+**quantified over `V ∈ 1..4`** (∃-index or a finder), with per-round index extraction. The pinned family
+(N+23) instantiated: `(q_walk(V),0,0,q_cmp(V),L)`, `(q_cmp(V),0,0,q_cmp(V),L)`, `(q_cmp(V),V,0,q_back(V),R)`,
+`(q_back(V),0,0,q_back(V),R)`, `(q_back(V),d,d,q_back(V),R)` ∀d∈1..4, `(q_back(V),5,V,q_read,R)`,
+`(q_read,V,5,q_walk(V),L)` [q_read dispatches by scanned digit], `(q_walk(V),d,d,q_walk(V),L)` ∀d∈1..4.
+
+**Brick queue:** B-cmp.0..B-cmp.4 ✅, B-cmp.5 STEP ✅ (`lemma_cmp_round`). NEXT = **B-cmp.5 loop induction**
+(value-indexed families + quantified quintuples + `ds` induction, threading above) → **B-cmp.6 accept/reject**
+(consult 3 Q3: ACCEPT must WIPE both tapes to literal `tm_origin()=(0,0,0,0)` — α "restore" is a proof
+invariant, NOT the final state; clean-up = wipe `v`, wipe `u`, home; REJECT = clear output + rewind + INC + re-dovetail)
+→ **B-cmp.7 dual far-`5` sentinels** (consult 3 Q2: far `5` on `u` = output end, far `5` on `v` = α end;
+ACCEPT iff both hit same round; output-`5`-while-α-digit → REJECT too-short, α-`5`-while-output-digit → REJECT
+too-long). After R-cmp: R-S dovetail → R-C/R-MC/B-W → discharge `ceer_realizes` → drop `axiom_ceer_fp_embedding`.
