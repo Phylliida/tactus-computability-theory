@@ -364,3 +364,4 @@
 #[cfg(verus_keep_ghost)] pub mod gap2_master_mgmt;
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_lift;
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_walks;
+#[cfg(verus_keep_ghost)] pub mod gap2_tail_phases;

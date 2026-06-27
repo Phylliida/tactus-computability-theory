@@ -240,6 +240,24 @@ pub proof fn lemma_tail_unfold(tm: Tm, c: TmConfig, fuel: nat, h: nat, i: int)
     // with matching_index == i pinned, the spec fns evaluate their else-branch directly.
 }
 
+/// **tail_safe for a SINGLE step** firing quint `i`. An R-step is unconditional and bumps the offset to
+/// `h+1`; an L-step needs `h ≥ 1` and drops it to `h-1`. The atom for the peel/mark/deposit/turn single
+/// steps the mid gadgets interleave between walks.
+pub proof fn lemma_step_tail_safe(tm: Tm, c: TmConfig, i: int, h: nat)
+    requires
+        tm_wf(tm),
+        0 <= i < tm.quints.len(),
+        quint_matches(tm.quints[i], c),
+        tm.quints[i].dir == Dir::L ==> h >= 1,
+    ensures
+        tail_safe(tm, c, 1, h),
+        tm.quints[i].dir == Dir::R ==> tail_end_h(tm, c, 1, h) == (h + 1) as nat,
+        tm.quints[i].dir == Dir::L ==> tail_end_h(tm, c, 1, h) == (h - 1) as nat,
+{
+    lemma_tail_unfold(tm, c, 1, h, i);
+    // tail_safe(next, 0, _) == true; the unfold gives the rest.
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // composition: tail_safe / tail_end_h split across a run boundary
 // ────────────────────────────────────────────────────────────────────────────
@@ -286,6 +304,25 @@ pub proof fn lemma_tail_safe_split(tm: Tm, c: TmConfig, f1: nat, f2: nat, h: nat
             },
         }
     }
+}
+
+/// **Extend an accumulated `tail_safe` by one segment.** Given `tail_safe(c0, f, h0)` reaching offset
+/// `hk` (`tail_end_h(c0, f, h0) == hk`), and a next segment `tail_safe(c_k, sf, hk)` (where `c_k =
+/// tm_run(c0, f)`) reaching `hk2`, conclude `tail_safe(c0, f+sf, h0)` reaching `hk2`. The clean stepping
+/// stone for the phase companions: chain segment after segment without re-stating the split's offset
+/// plumbing. A thin specialization of [`lemma_tail_safe_split`] with the entry offset substituted.
+pub proof fn lemma_tail_chain(tm: Tm, c0: TmConfig, f: nat, sf: nat, h0: nat, hk: nat, hk2: nat)
+    requires
+        tm_wf(tm),
+        tail_safe(tm, c0, f, h0),
+        tail_end_h(tm, c0, f, h0) == hk,
+        tail_safe(tm, tm_run(tm, c0, f), sf, hk),
+        tail_end_h(tm, tm_run(tm, c0, f), sf, hk) == hk2,
+    ensures
+        tail_safe(tm, c0, (f + sf) as nat, h0),
+        tail_end_h(tm, c0, (f + sf) as nat, h0) == hk2,
+{
+    lemma_tail_safe_split(tm, c0, f, sf, h0);
 }
 
 } // verus!
