@@ -217,3 +217,9 @@
 // (beta%m != 0), so the (alpha,0)->running input transition can be spliced onto the existing
 // tm_to_modmachine H0 reduction. See gap2_ignition.rs / docs/gap2-input-loader-plan.md.
 #[cfg(verus_keep_ghost)] pub mod gap2_ignition;
+
+// GAP-2 G2-F brick B-relnum (spec) + B-W bridge §4.4: the family-relator <-> declared-pair
+// correspondence. Proves the set-equality { r : r != eps && dbar_union_pred(ceer_decls_fam(e),r) }
+// = { fam_relator(a,b) : declared_pair(e,s)=Some((a,b)) }, the spec backbone the generate-and-compare
+// relator-decider targets. Machine-architecture-independent. See gap2_relnum.rs.
+#[cfg(verus_keep_ghost)] pub mod gap2_relnum;
