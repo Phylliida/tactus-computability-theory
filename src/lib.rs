@@ -286,3 +286,10 @@
 // emitter's target). dds(0,2,fam_relator(a,b)) == fam_digits(a,b) = uinv_digits(b) ++ u_digits(a), an
 // explicit seq_pow/singleton block concatenation. See gap2_fam_digits.rs.
 #[cfg(verus_keep_ghost)] pub mod gap2_fam_digits;
+
+// GAP-2 G2-F Route (i) brick R-relnum-gen (STEP 2, foundation): the symbol-power emit loop. The loop
+// quintuple (q_emit,1,s,q_emit,L) consumes a repunit(i) counter in u and piles i copies of digit s onto
+// v -- the symbol-agnostic twin of tm_walk::lemma_walk_left_inner, producing the seq_pow([s],i) blocks of
+// fam_digits one iteration at a time. lemma_pile_sym_is_dpile bridges the accumulator to the digit-seq
+// algebra. See tm_emit.rs / docs/gap2-input-loader-plan.md §5 (R-relnum-gen STEP 2).
+#[cfg(verus_keep_ghost)] pub mod tm_emit;
