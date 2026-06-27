@@ -984,11 +984,62 @@ PRE-EXISTING asserts elsewhere in the module (`lemma_unmark` S7 turn `0*m==0`; `
 
 ### REMAINING (the edge cases + the higher-level wiring)
 
-2. **`g=M` no-gap UNMARK** (`k=1` refresh) — still TODO. Mirror `lemma_unmark`/`lemma_mark_terminate`
-   dropping the gap legs (cf. `lemma_mark_gj1` dropping S4/S8). Then a `g==M` dispatch in a `copy_refresh`
-   variant.
-3. **small-M whole-copy** (`M∈{1,2}`) — still TODO (`lemma_copy_loop` requires `M≥3`).
+2. **`g=M` no-gap copy_refresh** — ✅ **DONE (N+9, see below).**
+3. **small-M whole-copy** (`M∈{1,2}`) — PARTIAL (M=2 general DONE N+9; M=2 no-gap + M=1 remain).
 5. **16-block sequencing** + `psc_act` window + R-cmp/R-S/R-C/R-MC/B-W → discharge `ceer_realizes`. This is
    where a CONCRETE `tm` is built (distinct quints at distinct indices, `tm_wf` proven) and fed to
    `lemma_copy_refresh`; the parametric `q_b`/turn determinism (5/1/0 distinct) is already discharged by
    construction there.
+
+## SESSION UPDATE 2026-06-27 (N+9) — g=M NO-GAP copy_refresh DONE + M=2 GENERAL DONE (module tm_copy_refresh 165→194, crate 998→1027)
+
+**Item 2 (`g=M` no-gap) CLOSED, and item 3 partially advanced (M=2 general).** All additive, 0 errors,
+no assume/admit/external_body. Two commits (`f44ba13` no-gap, `bb22eab` M=2-general).
+
+### What got BUILT and VERIFIED
+
+- **Two arithmetic helpers:** `lemma_repunit_add` (`R(a+b)=R(a)+m^a·R(b)`, the repunit analog of
+  `lemma_pow_nat_add`; identifies the no-gap unmark's `2M` contiguous ones as `R(2M)=dec_u(M,R(M))`) +
+  `lemma_pile_sym_concat` (`pile_sym(pile_sym(v,s,a),s,b)=pile_sym(v,s,a+b)`, folds the temp+master ones-runs).
+- **`g=M` no-gap machine lemmas** (`M ≥ 2`; the gap legs collapse — there is NO blank between temp and
+  master, and after the unmark temp+master become ONE `2M`-contiguous-ones block):
+  - `lemma_terminate_nogap_fwd` — forward of the self-terminating bounce; the `t2g`/gap/`a2b` legs collapse
+    into ONE direct quint `(q_t,5,5,q_b,L)` (temp lands directly on the master five). `2M+1` steps.
+  - `lemma_mark_terminate_nogap` — full bounce `copy_u(M,M,M)@q_home → @q_ret`; walk-back `m2g`/gap/`g2t`
+    collapse into `(q_turn,1,1,q_ret,R)`. `4M+2` steps (`= 2g+2M+2` at `g=M`).
+  - `lemma_unmark_nogap` — `copy_u(M,M,M) → dec_u(M,R(M))@q_uw`; convert via `(q_ut,5,1,q_uf,L)` +
+    `(q_uf,5,1,q_uf,L)`, then TURN and walk ALL `2M` ones down to the pivot in ONE state `(q_uw,1,1,q_uw,R)`
+    (no gap landmark — `lemma_run_walk_right` over the contiguous block). `4M+2` steps.
+  - `lemma_copy_refresh_nogap` (`M ≥ 3` capstone) — `lemma_copy_loop` (g==M branch) ∘ `mark_terminate_nogap`
+    ∘ `unmark_nogap`; fuel `copy_refresh_fuel(M,M)`.
+- **M=2 general (`g ≥ M+2 = 4`):** LOWERED `lemma_copy_refresh` precond `3≤big_m` → `2≤big_m` and branched
+  PHASE 1: for `M=2` the loop IS `lemma_copy_prefix` (`copy_u(0)→copy_u(2)==copy_u(M)`, the general middle
+  `copy_loop_fuel(2,2,g)==0`), for `M≥3` the full `lemma_copy_loop`. So M=2 at `g≥4` (the `k≥2` refreshes of
+  an exponent-2 phase) is covered with NO new edge lemmas. `terminate`/`unmark` already require only `M≥2`.
+
+### KEY SCOPING ANALYSIS (the gap regimes per M — worked out this session, ⚠ for Danielle to sanity-check)
+
+The fixed emitter TM processes the exponent `M=i` as RUNTIME data, so the SAME quints must drive the copy
+for every `M≥1`; per-M correctness is proven by separate lemmas the 16-block sequencer case-splits over.
+The refresh gap is `G = k·M` (master migrates up by `M` per power-block via the inter-block shift; the
+local model confirmed this is by-design, NOT a forced consequence — *if* the emitter is later changed to
+keep the master stationary, every refresh would be `g=M` and the general `g≥M+2` path becomes dead code.
+Worth a Danielle confirmation before building M=1, since it changes the needed gap range). Under `G=k·M`:
+- **M≥3:** `g=M` (no-gap, k=1) ✅ + `g=kM≥2M≥M+2` (general, k≥2) ✅ — BOTH DONE.
+- **M=2:** `g=2` (no-gap, k=1) ❌ TODO + `g=2k≥4` (general, k≥2) ✅ DONE. (No `gap=1` since `G` even.)
+- **M=1:** `g=k` for k=1,2,3,… → `g=1` (no-gap), `g=2` (**gap=1**, the `g=M+1` regime — a THIRD edge, neither
+  no-gap nor general), `g≥3` (general). ALL ❌ TODO.
+
+### REMAINING small-M (the new degenerate edge machines needed)
+
+- **M=2 no-gap (`g=2`):** needs a 2-iteration loop `copy_u(0,2,2)→copy_u(2,2,2)` = a NEW `j=0`-at-`g=2` edge
+  (deposit-first; the mark's gap-seek `S4`/`S8` vanish, `g-3<0`) + a NEW `j=1`-`gj1` edge (`lemma_mark_fwd_gj1`
+  requires `2≤j`: at `j=1` the `a2b` crosses the lone five and lands DIRECTLY on the unmarked one — NO
+  fives-walk, `j-2<0`; ENSURES of the existing gj1 lemmas are already correct for `j=1`, only the BODY needs
+  the `j==1` branch, cf. how `lemma_mark_fwd` was lowered to `1≤j` with a `j==1` vs `j≥2` split). Then
+  `lemma_copy_loop_m2_nogap` (j0∘j1gj1) ∘ existing `terminate_nogap`/`unmark_nogap` (both already `M≥2`).
+- **M=1 (all gaps):** the single-master-one copy. `g=1` (no-gap), `g=2` (gap=1), `g≥3` (general). Most
+  degenerate; each a bespoke short machine. Build last.
+
+After small-M: **16-block sequencing** (build the CONCRETE `tm`, `tm_wf`, feed the per-(M,g) copy_refresh
+lemmas) + `psc_act` window + R-cmp/R-S/R-C/R-MC/B-W → discharge `ceer_realizes` → drop `axiom_ceer_fp_embedding`.
