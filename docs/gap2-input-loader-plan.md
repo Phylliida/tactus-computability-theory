@@ -286,20 +286,51 @@ chained through ignition to `mm_in_H0(mm, α, 0) ⟺ α declared word-number`.
   them via `lemma_slot_index`. This PINS `start(d0) := the start-handshake state` (the abstract param in
   B-IG `ignition_quads(ndig, start)`).
 
-  **NEXT (psc_act wiring + the single-digit branch):** (1) build the concrete `psc_act` window dispatch
-  placing the start/deposit/walk quintuples (one start+deposit pair per digit `d0 ∈ 1..4`), discharge
-  `lemma_assemble4_wf`, and locate the quintuples with `lemma_slot_index` to feed `lemma_rp_copy_park`;
-  (2) thread `tm_config_wf` (via `lemma_dpack_digits_le`) for the eventual `lemma_tm_h0_iff`. **Design Q
-  still open:** the walk runs `blk.len()` steps and stops at the natural blank, so the length L need not
-  be known in advance (✓ matches unknown-length α). But the start step assumed a scanned digit `d1` —
-  the BWD-exactness must also handle/diverge on **single-digit α** (`u==0` after the start R-move, scan
-  `0`): make `deposit(d0)`'s `(deposit, 0, d0, q_walk, L)` land a config whose subsequent walk sees an
-  empty block and proceeds, OR add a length-≥2 guard. (A 1-digit word-number is never a `relnum` — the
-  collapse relator is long — so divergence/non-accept is correct there.)
+  **✅ R-P PSC_ACT WINDOW ASSEMBLY DONE (`gap2_psc_rp.rs`, 11/0; crate 717/0).** `rp_act` = the R-P
+  action table over windows `0..=4` (window 0 = walk, `q_walk=entry4(0)=5`; windows `1..=4` = per-digit,
+  `q_start(d0)=entry4(d0)`, `q_deposit(d0)=entry4(d0)+1`). `lemma_rp_phase(tm, len, tail, d0, d1)` is the
+  reusable splice: any `tm_wf` n=4 assemble4 machine whose first five windows carry `rp_gen` (`i<400`)
+  parks α via `lemma_rp_copy_park`. **PINS the ignition handoff: `rp_start(d0) = entry4(d0)`** — verified
+  to match `rep1(c1)=(α/m, entry4(d0))` (the modular ignition output). Concrete validation
+  `psc_rp_tm(len)` + `lemma_psc_rp_wf` + `lemma_psc_rp_copy_park`. **Still TODO for the full machine:**
+  retarget the `(q_walk,0)` blank-turnaround (placeholder `→0`) to the R-S entry; thread `tm_config_wf`
+  (via `lemma_dpack_digits_le`) for `lemma_tm_h0_iff`; the **single-digit-α** divergence branch
+  (`d1==0` after the start R-move — a 1-digit word-number is never a `relnum`, so non-accept is correct).
 - **R-relnum-gen — generate relnum(a,b)'s base-m digits.** For an enumerated declared `(a,b)`, emit the
   digits of `relnum(a,b)` = the symbols of the collapsed Miller relator `ρ(collapse(g_a g_b⁻¹))`
   (length Θ(a+b); `t·(b⁻¹)ⁱ·a·(b)ⁱ·t⁻¹·a⁻ⁱ·b⁻¹·aⁱ`, `i=j+1`, `b=tat⁻¹`). Loop control via counters
   (symbols 1,2). Follow the collapse definition exactly — do not reinvent.
+
+  **✅ R-relnum-gen SPEC FOUNDATION DONE (`gap2_relnum_digits.rs` + `gap2_rho_unshift.rs`; crate 732/0).**
+  The emitter's target is now an explicit `dpack` of digits, with ρ eliminated:
+    - **`gap2_relnum_digits.rs`** — `decode_digit_seq(c,n,w)` = the low-first digit block of a word's
+      word-number (= the REVERSED letter-digits, since `decode_word` folds the LAST symbol as the LOWEST
+      digit). `lemma_decode_word_is_dpack`: `decode_word(c,n,m,w) == dpack(decode_digit_seq(c,n,w), m)`
+      (the digit-ORDER linchpin — resolves the plan's ⚠). `lemma_decode_word_concat`:
+      `decode_word(w1+w2) == decode_word(w1)·m^|w2| + decode_word(w2)` (Horner split — the tool to break
+      `fam_relator` into `u_a · u_b⁻¹` and each `u_j` into its 8 pieces). `_len`/`_bound` (digits `1..2n`,
+      fit the n=4 tape).
+    - **`gap2_rho_unshift.rs`** — `lemma_decode_rho_unshift`: `decode_word(off,n,m, ρ(w)) ==
+      decode_word(0,n,m, w)` for `word_valid(w, p1.num_generators)` — **ρ (the c-block relabel) is
+      invisible to the word-number** because `letter_digit(cb,2,·)` un-shifts the `+cb`.
+      `lemma_fam_relator_word_valid` (`word_valid(fam_relator(a,b), 2)`). `lemma_relnum_no_rho`:
+      `relnum == decode_word(0,2,m, fam_relator(a,b))`.
+    - **CAPSTONE `lemma_relnum_is_decode_digit_seq`:** `relnum(e,mm,m,a,b) ==
+      dpack(decode_digit_seq(0, 2, fam_relator(a,b)), m)`. **This is the single fact the emitter and the
+      compare prove against.** `fam_relator(a,b) = u_a · inverse_word(u_b)`, `u_j =
+      miller_collapse_word(j,0,1)`, digits over `{a=Gen0→1, t=Gen1→2, a⁻¹→3, t⁻¹→4}` = `letter_digit(0,2,·)`.
+
+  **NEXT for R-relnum-gen (the explicit digit pattern, then the emitter):**
+    1. **Characterize `decode_digit_seq(0,2, fam_relator(a,b))` (or `decode_word(0,2,m,·)`) as the
+       explicit structured pattern.** Use `lemma_decode_word_concat` to split `fam_relator = u_a · u_b⁻¹`,
+       then split each `u_j`'s 8 pieces (`t`, `word_power(binv_sub,i)`, `a`, `word_power(b_sub,i)`, `t⁻¹`,
+       `symbol_power(Inv0,i)`, `binv_sub`, `symbol_power(Gen0,i)`, `i=j+1`). Needed sub-lemmas:
+       `decode_word` of `word_power(w,k)` (a geometric-series-in-`m^|w|` formula) and of `symbol_power`
+       and of `inverse_word` (digit transform `1↔3, 2↔4` + reverse). Forward digit pattern (confirmed):
+       `digits(u_j) = [2]·(234)ⁱ·[1]·(214)ⁱ·[4]·(3)ⁱ·[2 3 4]·(1)ⁱ`; `decode_digit_seq` REVERSES it.
+    2. **The two-counter emitter** (counters `iₐ=a+1`, `i_b=b+1`; nested loops emitting the fixed blocks),
+       proved against the pattern from step 1 — over the n=4 assemble4 scaffold (template:
+       `gap2_psc_rp.rs` / `tm_assemble4::lemma_assemble4_peek_demo`).
 - **R-cmp — digit-by-digit base-m compare** of the generated relnum digits against α's stored digits.
 - **R-S — the dovetail search.** Enumerate stages `s`, `(a,b)=declared_pair(e,s)`, run R-relnum-gen +
   R-cmp, halt iff match. Mirror the `search_rm(e)` dovetail STRUCTURE (re-expressed as n≥4 TM gadgets).
@@ -392,13 +423,22 @@ ORDER (low-first vs high-first) and `inverse_word`'s exact digit transform befor
 
 ---
 
-*Status (2026-06-26): SPEC BACKBONE + IGNITION + R-AL + the full R-P PRIMITIVE LAYER BUILT.
-B-FR/B-IG (ignition, `gap2_ignition.rs`) + B-relnum-spec/B-W-assembly (`gap2_relnum.rs`) + **R-AL
-(`tm_assemble4.rs` 17/0)** + **R-P digit-string algebra (`tm_dstring.rs` 14/0)** + **R-P digit-walk
-gadgets (`tm_dwalk.rs` 6/0)** + **R-P copy-and-park core (`tm_rp.rs` 7/0)** DONE; crate 706/0. The whole
-remaining obligation is ONE spec: a machine satisfying `mm_decides_relnum`, built as Route (i) — a
-bespoke n=4 `tm_wf` TM `psc_tm(e)` over the assemble4 scaffold. Tape layout = Option (B) canonicalize,
-blank-delimited regions; α-digit algebra + walk gadgets + copy-park core all in hand (generic over the
-quintuple indices a `psc_act` window will supply). NEXT = wire the `psc_act` start/deposit/walk windows
-(pins ignition `start`) + thread `tm_config_wf` → R-relnum-gen (the deep brick) / R-cmp / R-S / R-C /
-R-MC. The conditional chain already stands; this brick removes the last axiom.*
+*Status (2026-06-26, session N+1): SPEC BACKBONE + IGNITION + R-AL + R-P PRIMITIVE LAYER + **R-P
+ASSEMBLY** + **R-relnum-gen SPEC FOUNDATION** BUILT; crate 732/0.
+B-FR/B-IG (ignition, `gap2_ignition.rs`) + B-relnum-spec/B-W-assembly (`gap2_relnum.rs`) + R-AL
+(`tm_assemble4.rs`) + R-P primitives (`tm_dstring.rs`/`tm_dwalk.rs`/`tm_rp.rs`) DONE [prior sessions].
+**THIS SESSION:** + **R-P psc_act window assembly (`gap2_psc_rp.rs`, 11/0)** — `rp_act`/`lemma_rp_phase`,
+pins ignition `start(d0)=entry4(d0)` — + **R-relnum-gen spec foundation (`gap2_relnum_digits.rs` +
+`gap2_rho_unshift.rs`)**: `relnum(a,b) == dpack(decode_digit_seq(0,2, fam_relator(a,b)), m)` (CAPSTONE
+`lemma_relnum_is_decode_digit_seq`), with ρ eliminated (`lemma_decode_rho_unshift`), the digit-order
+linchpin (`lemma_decode_word_is_dpack`), and the Horner split (`lemma_decode_word_concat`).
+
+The whole remaining obligation is ONE spec: a machine satisfying `mm_decides_relnum`, built as Route (i)
+— a bespoke n=4 `tm_wf` TM `psc_tm(e)` over the assemble4 scaffold. The emitter's spec target is now
+PINNED (capstone above). NEXT (deep brick, multi-session): (1) characterize
+`decode_digit_seq(0,2, fam_relator(a,b))` as the explicit `[2]·(234)ⁱ·[1]·(214)ⁱ·[4]·(3)ⁱ·[234]·(1)ⁱ`
+pattern (reversed) via `lemma_decode_word_concat` + new `decode_word`-of-`word_power`/`symbol_power`/
+`inverse_word` lemmas; (2) the two-counter emitter (R-relnum-gen) proved against it; (3) R-cmp / R-S /
+R-C / R-MC. Also TODO on R-P assembly: retarget the `(q_walk,0)` turnaround to R-S entry, thread
+`tm_config_wf`, the single-digit-α divergence branch. The conditional chain already stands; this brick
+removes the last axiom.*
