@@ -23,8 +23,12 @@ use verus_group_theory::word_numbering_decode::letter_digit;
 use crate::gap2_relnum_digits::decode_digit_seq;
 use crate::gap2_relnum_dds::{seq_pow, lemma_dds_concat, lemma_dds_singleton, lemma_dds_word_power,
     lemma_dds_symbol_power};
-use crate::gap2_relnum::fam_relator;
+use crate::gap2_relnum::{fam_relator, relnum};
+use crate::gap2_rho_unshift::lemma_relnum_is_decode_digit_seq;
 use crate::gap2_fam_split::{lemma_fam_relator_split, lemma_inverse_collapse_word};
+use crate::tm_dstring::dpack;
+use crate::ceer::CEER;
+use verus_group_theory::machine_group::ModMachine;
 
 verus! {
 
@@ -224,6 +228,19 @@ pub proof fn lemma_dds_fam_relator(a: nat, b: nat)
     lemma_dds_concat(0, 2, ua, inverse_word(ub));  // dds(ua + inv(ub)) =~= dds(inv(ub)) + dds(ua)
     lemma_dds_collapse_word(a);                    // dds(ua) =~= u_digits(a)
     lemma_dds_inverse_collapse_word(b);            // dds(inv(ub)) =~= uinv_digits(b)
+}
+
+/// **The Evaluation-side spec target (`relnum` as the `fam_digits` block value).** `relnum(e,mm,m,a,b) ==
+/// dpack(fam_digits(a,b), m)` — composes the capstone [`lemma_relnum_is_decode_digit_seq`]
+/// (`relnum == dpack(decode_digit_seq(0,2,fam_relator),m)`) with the headline [`lemma_dds_fam_relator`].
+/// This is the single fact the R-relnum-gen emitter's Evaluation proof closes against: once the emitter is
+/// shown to produce the digit block `fam_digits(a,b)` on tape, its `dpack` value is exactly `relnum`.
+pub proof fn lemma_relnum_is_fam_digits(e: CEER, mm: ModMachine, m: nat, a: nat, b: nat)
+    ensures
+        relnum(e, mm, m, a, b) == dpack(fam_digits(a, b), m),
+{
+    lemma_relnum_is_decode_digit_seq(e, mm, m, a, b);   // relnum == dpack(dds(0,2,fam_relator), m)
+    lemma_dds_fam_relator(a, b);                        // dds(0,2,fam_relator) == fam_digits
 }
 
 } // verus!
