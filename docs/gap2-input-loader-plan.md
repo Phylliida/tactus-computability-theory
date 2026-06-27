@@ -2088,3 +2088,41 @@ options, each with a real tradeoff (pick before building B-cmp.5 loop; candidate
     per round is mechanical but adds proof bulk.
   Recommendation: try (a) with a recursive-predicate hypothesis (avoids the bare-forall trigger issue) before
   falling back to (b). The digit-list/dpack/fuel threading (N+24 body) is encoding-independent and ready.
+
+### N+25 — R-cmp B-cmp.5 LOOP induction COMPLETE (`lemma_cmp_loop`). The whole matched-rounds compare loop is machine-checked.
+
+**Built (crate 1754 → 1764/0, additive, no escape hatches):** new module `src/tm_cmp_loop.rs`. The encoding
+decision resolved to **a hybrid of (a)+(c)** that dodges the trigger trap cleanly: value-indexed spec-fn states
+`qw, qc, qb: spec_fn(nat)->nat` (+ shared `qr: nat`), but the 14 per-value quintuples are bundled behind a
+**named** `open spec fn cmp_quints_present(tm, qw, qc, qb, qr, V)` whose body holds the `has_quint(…)`
+existentials. The availability hypothesis is `forall|V| #![trigger cmp_quints_present(…,V)] 1≤V≤4 ==>
+cmp_quints_present(…,V)` — the trigger is the named predicate, so the bare `qw(V)` spec-fn apps stay HIDDEN in
+its body (never a forall trigger). Per round, `assert(cmp_quints_present(…,vk))` + `assert(…,s)` instantiate it,
+and `extract_quint` (`choose` wrapper) pulls the concrete indices for `lemma_cmp_round`.
+
+**Pieces (all verified):**
+  - Spec helpers `cmp_above` (α digits above marker), `cmp_marker` (`= m·cmp_above + 5`), `cmp_out_pregap`
+    (the `n` matched output digits `ds[0..n-1]` + `out_above`), `cmp_inv_config` (the `INV(k)` TmConfig over
+    `(pre, ds, suf, g, out_above)`), `cmp_loop_fuel(k0, g, n)` (recursive sum of the per-round step fuels).
+  - `lemma_cmp_above_step` / `lemma_cmp_out_pregap_step` — peel `ds[0]` (the marked / frontier digit) so the
+    `cmp_inv_config` entry matches `lemma_cmp_round`'s spelled-out preconds (`whi == s + m·suf_param`,
+    `cmp_out_pregap(ds) == vk + m·out_rest`). The one Seq subtlety: `ds.subrange(0,n-1).drop_first() =~=
+    ds.drop_first().subrange(0,n-2)` (both `= ds.subrange(1,n-1)`), discharged by `=~=` extensionality.
+  - `lemma_cmp_round_packaged` — one round in `cmp_inv_config` form (`INV → INV'` for `pre++[ds[0]]`,
+    `ds.drop_first()`, `g+1`), fuel `2|pre|+2g+4`; extracts indices, matches entry/exit to `lemma_cmp_round`.
+  - `lemma_cmp_loop` — `decreases ds.len()`, base `ds.len()==1` (0 rounds), step = packaged round ∘ recurse,
+    fuel composed by `lemma_tm_run_split`. **Ensures**: `tm_run(c, cmp_loop_fuel(|pre|, g, ds.len()-1)) ==
+    cmp_inv_config(qw, pre ++ ds.subrange(0,n), ds.subrange(n,len), suf, g+n, out_above, m)` — i.e. land at
+    `INV(k0+n)` with the marker on the lookahead `ds[n]`. Recursion seq-arg equalities (`pre2 ++ ds2.sub(0,..)
+    =~= pre ++ ds.sub(0,..)`, `ds2.sub(end) =~= ds.sub(end)`) by `=~=`; the `=~=`→`==` lift makes the two
+    `cmp_inv_config` calls congruent.
+
+**Brick queue:** B-cmp.0..B-cmp.5 ✅ (STEP `lemma_cmp_round` + LOOP `lemma_cmp_loop`). **NEXT = B-cmp.6
+accept/reject** — the EXHAUSTION transitions out of the steady-state loop. The loop's marker-advance reads the
+NEXT α digit `s∈1..4`; when α is exhausted it reads the far-`5` sentinel instead (a DIFFERENT step than
+`lemma_cmp_marker_advance`, whose precond is `1≤s≤4`). Design (consult 3 Q2/Q3, settled at high level):
+α-exhaust → `q_verify_end`; then output frontier `0` ⟹ ACCEPT, output `1..4` ⟹ REJECT (output too long);
+output-exhaust (skip0_left hits the output far-`5` while expecting a digit) ⟹ REJECT (too short). ACCEPT then
+WIPES both tapes to literal `tm_origin()=(0,0,0,0)` (the α "restore" is only a proof invariant); REJECT =
+clear output + rewind + INC + re-dovetail. → **B-cmp.7 dual far-`5` sentinels** (u=output-end, v=α-end). After
+R-cmp: R-S dovetail → R-C/R-MC/B-W → discharge `ceer_realizes` → drop `axiom_ceer_fp_embedding`.
