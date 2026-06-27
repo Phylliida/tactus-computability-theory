@@ -31,8 +31,8 @@
 //! Fully constructive — no verifier escape hatches.
 
 use vstd::prelude::*;
-use verus_group_theory::machine_group::{ModMachine, Quad, mm_yields, mm_reaches,
-    mm_terminal, quad_matches, quad_step, mod_machine_wf};
+use verus_group_theory::machine_group::{ModMachine, Quad, Dir, mm_yields, mm_reaches,
+    mm_terminal, quad_matches, quad_step, quad_wf, mod_machine_wf};
 
 verus! {
 
@@ -274,6 +274,139 @@ pub proof fn lemma_frame_reaches(base: ModMachine, extra: Seq<Quad>, a: nat, b: 
             assert(mm_reaches(base, a, b, 0, 0, k)) by {
                 assert(mm_yields(base, a, b, am, bm) && mm_reaches(base, am, bm, 0, 0, (k - 1) as nat));
             }
+        }
+    }
+}
+
+// ============================================================================
+// B-IG — the concrete ignition quads (the (α,0) → running handoff)
+// ============================================================================
+//
+// One ignition quad per relator-word digit `i ∈ 1..=ndig` (ndig = 2·n_word = 4 for the {a,t}
+// alphabet). On input config `(α,0)` with low digit `α%m = i`, the L-direction quad
+// `{a:i, b:0, c:start(i), dir:L}` steps to `(α/m, start(i))` — exactly `rep1(c1)` of the running
+// config `c1 = { u:α/m², v:0, a:(α/m)%m, q:start(i) }` (the parser's per-digit entry state). This is
+// the only raw `b=0` step; everything after runs as a `tm_wf` TM (see the plan, §2.1).
+
+/// The ignition quad for digit `i` handing off to running state `qs`.
+pub open spec fn ignition_quad(i: nat, qs: nat) -> Quad {
+    Quad { a: i, b: 0, c: qs, dir: Dir::L }
+}
+
+/// The ignition block: `ndig` quads, the `k`-th for digit `k+1` handing off to `start(k+1)`.
+pub open spec fn ignition_quads(ndig: nat, start: spec_fn(nat) -> nat) -> Seq<Quad> {
+    Seq::new(ndig, |k: int| ignition_quad((k + 1) as nat, start((k + 1) as nat)))
+}
+
+/// Every ignition quad has `b == 0` and `a != 0` — the B-FR frame hypotheses.
+pub proof fn lemma_ignition_quads_shape(ndig: nat, start: spec_fn(nat) -> nat)
+    ensures
+        ignition_quads(ndig, start).len() == ndig,
+        forall|k: int| 0 <= k < ndig ==> (#[trigger] ignition_quads(ndig, start)[k]).b == 0,
+        forall|k: int| 0 <= k < ndig ==> (#[trigger] ignition_quads(ndig, start)[k]).a != 0,
+{
+    let igs = ignition_quads(ndig, start);
+    assert forall|k: int| 0 <= k < ndig implies
+        (#[trigger] igs[k]).b == 0 && igs[k].a != 0 by {
+        assert(igs[k] == ignition_quad((k + 1) as nat, start((k + 1) as nat)));
+    }
+}
+
+/// **The ignition one-step yield.**  From `(α,0)` with low digit `i = α%m` in range, the extended
+/// machine steps (via the matching ignition quad) to `(α/m, start(i))`.
+pub proof fn lemma_ignition_yields(base: ModMachine, ndig: nat, start: spec_fn(nat) -> nat,
+    alpha: nat)
+    requires
+        base.m > 0,
+        1 <= alpha % base.m <= ndig,
+    ensures
+        mm_yields(mm_extend(base, ignition_quads(ndig, start)), alpha, 0,
+            alpha / base.m, start(alpha % base.m)),
+{
+    let m = base.m;
+    let i = alpha % m;
+    let igs = ignition_quads(ndig, start);
+    let mm = mm_extend(base, igs);
+    let idx = (i - 1) as int;
+    // The ignition quad at index i-1 is ignition_quad(i, start(i)).
+    assert(0 <= idx < ndig);
+    assert(igs[idx] == ignition_quad(i, start(i)));
+    lemma_extend_index(base, igs, idx);
+    assert(mm.quads[idx] == igs[idx]);
+    assert(0 <= idx < mm.quads.len());
+    // quad_matches: alpha % m == i (== igs[idx].a), 0 % m == 0 (== igs[idx].b).
+    vstd::arithmetic::div_mod::lemma_small_mod(0, m);   // 0 % m == 0
+    assert(quad_matches(mm.quads[idx], m, alpha, 0));
+    // quad_step (L): (alpha/m, (0/m)*(m*m) + start(i)) == (alpha/m, start(i)).
+    assert(0nat / m == 0) by { vstd::arithmetic::div_mod::lemma_small_mod(0, m); }
+    assert(quad_step(mm.quads[idx], m, alpha, 0) == (alpha / m, start(i)));
+}
+
+/// **The combined machine is well-formed.**  Given a `mod_machine_wf` base whose quads all carry a
+/// nonzero `b` (true for any `tm_to_modmachine`, whose `b` is the quintuple state `≥ n+1`), and
+/// ignition handoff states/digits within range, the extended machine is `mod_machine_wf`:
+/// determinism holds because ignition residues `(i,0)` are pairwise distinct and never collide with
+/// base residues `(·, b≠0)`.
+pub proof fn lemma_mm_extend_wf(base: ModMachine, ndig: nat, start: spec_fn(nat) -> nat)
+    requires
+        mod_machine_wf(base),
+        ndig < base.m,
+        forall|i: nat| 1 <= i <= ndig ==> #[trigger] start(i) < base.m,
+        forall|j: int| 0 <= j < base.quads.len() ==> (#[trigger] base.quads[j]).b != 0,
+    ensures
+        mod_machine_wf(mm_extend(base, ignition_quads(ndig, start))),
+{
+    let m = base.m;
+    let n = base.n;
+    let igs = ignition_quads(ndig, start);
+    let mm = mm_extend(base, igs);
+    lemma_ignition_quads_shape(ndig, start);
+    assert(mm.m > 1 && 0 < mm.n < mm.m);
+    // quad_wf for every combined quad.
+    assert forall|i: int| 0 <= i < mm.quads.len() implies quad_wf(#[trigger] mm.quads[i], m) by {
+        lemma_extend_index(base, igs, i);
+        if i < igs.len() {
+            let d = (i + 1) as nat;
+            assert(igs[i] == ignition_quad(d, start(d)));
+            assert(mm.quads[i] == igs[i]);
+            // a = d ≤ ndig < m ; b = 0 < m ; c = start(d) < m ≤ m*m.
+            assert(1 <= d <= ndig);
+            assert(start(d) < m);
+            assert(m <= m * m) by(nonlinear_arith) requires m > 1;
+        } else {
+            let j = i - igs.len();
+            assert(mm.quads[i] == base.quads[j]);
+            assert(quad_wf(base.quads[j], m));
+        }
+    }
+    // determinism.
+    assert forall|i: int, j: int|
+        0 <= i < mm.quads.len() && 0 <= j < mm.quads.len() && i != j
+        && (#[trigger] mm.quads[i]).a == (#[trigger] mm.quads[j]).a
+        && mm.quads[i].b == mm.quads[j].b implies i == j by {
+        lemma_extend_index(base, igs, i);
+        lemma_extend_index(base, igs, j);
+        let ng = igs.len();
+        if i < ng && j < ng {
+            // both ignition: a = i+1 = j+1 ⟹ i == j.
+            assert(igs[i] == ignition_quad((i + 1) as nat, start((i + 1) as nat)));
+            assert(igs[j] == ignition_quad((j + 1) as nat, start((j + 1) as nat)));
+            assert(mm.quads[i].a == (i + 1) as nat && mm.quads[j].a == (j + 1) as nat);
+        } else if i >= ng && j >= ng {
+            // both base: base determinism on shifted indices.
+            assert(mm.quads[i] == base.quads[i - ng] && mm.quads[j] == base.quads[j - ng]);
+            assert(base.quads[i - ng].a == base.quads[j - ng].a
+                && base.quads[i - ng].b == base.quads[j - ng].b);
+            assert(i - ng == j - ng);
+        } else if i < ng {
+            // ignition i (b=0) vs base j (b≠0): same b impossible.
+            assert(mm.quads[i] == igs[i] && igs[i].b == 0);
+            assert(mm.quads[j] == base.quads[j - ng] && base.quads[j - ng].b != 0);
+            assert(false);
+        } else {
+            assert(mm.quads[j] == igs[j] && igs[j].b == 0);
+            assert(mm.quads[i] == base.quads[i - ng] && base.quads[i - ng].b != 0);
+            assert(false);
         }
     }
 }
