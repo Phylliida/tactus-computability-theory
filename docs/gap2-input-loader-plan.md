@@ -1188,3 +1188,56 @@ triple power-block window needs 34 distinct states; STRIDE=48 gives 14 states he
 window as validation (instantiate `lemma_power_block_step_block1` via `lemma_slot_index5`, mirror
 `lemma_psc_rp_copy_park`) → 16-block sequencing (state-id splice) + master-mgmt → `psc_act` window
 + R-cmp/R-S/R-C/R-MC/B-W → discharge `ceer_realizes`.
+
+### ✅ N+11 BUILT (crate 1178 → 1211/0, additive) — assemble5 scaffold + two window shapes
+
+- **`tm_assemble5.rs` (17/0)** — the n=5 (marker `5`) STRIDE=48 scaffold. Mechanical bump of
+  `tm_assemble4`: `entry5`, `tm_mod5`, `lemma_idx5_decomp`, `lemma_slot_index5`, `lemma_idx5_recover`,
+  `lemma_tm_wf_n5`, peek demo. The pure index arithmetic, layout-independent.
+- **`gap2_emit_window.rs` (7/0)** — the **singleton-emit window** `lemma_seret1_phase`
+  (`lemma_surge_emit_return_block1`, 4 states→offsets 0..3): `od ↦ od ++ [s]`, master untouched. The
+  singletons `[1]`/`[2]`/`[3]`/`[4]` (8× in `fam_digits`).
+- **`gap2_emit_power.rs` (9/0)** — the **block1 power-block window** `lemma_pbb1_phase`
+  (`lemma_power_block_step_block1`, 32 states→offsets 0..31, 64 quints): one `copy_refresh ∘ block_loop`,
+  `od ↦ od ++ (s)^M`, master stationary. The `(1)ⁱ`/`(3)ⁱ` power-blocks. The fattest window — proves the
+  recipe at full width.
+- **THE RECIPE (reusable for every remaining window):** window-local action table `xxx_act(off, sym, …)`
+  returning `(write, next_off, dir)` → manifest generator `xxx_gen` (q-key `entry5(pc)+off`, next
+  `entry5(pc)+next_off`) → `lemma_tm_wf_n5` for wf → a generic per-slot locator `locate_…` (the heavy
+  `lemma_slot_index5` + gen-unfold, done ONCE) → N cheap `locate_…` calls in the phase lemma → invoke the
+  verified step. Concrete `xxx_tm` + `lemma_xxx_emit` validate end-to-end.
+- **⚠ RLIMIT PITFALL (SOLVED) — make the generator `#[verifier::opaque]`.** The window hypothesis
+  `forall i. tm.quints[i] == xxx_gen(s,i)` (trigger `tm.quints[i]`) was instantiated **1,137×**, each
+  dragging the 32-branch `pbb1_act` if-chain into Z3 (**79% of cost**, rlimit blow). Marking `pbb1_gen`
+  opaque + `reveal` only in `locate_pbb1`/`lemma_pbb1_tm_wf` kills the storm. **Every future block window
+  generator MUST be opaque.**
+
+### ⚠ N+11 DESIGN GATE FOUND — the 16-block state-id SPLICE over uniform windows (next-session crux)
+
+Worked through the N+10 "splice = state identification" for the concrete uniform windows and found a real
+encoding subtlety to settle before sequencing:
+
+- Each block's phase lemma starts at `q_dh0 = entry5(pc)` (head on pivot) and ends at `q_exit = entry5(pc)+31`
+  (head on pivot, `a:0`). To chain block `k → k+1` purely by state identification, block `k`'s `q_exit`
+  must BE block `k+1`'s `q_dh0`. But with uniform stride-48 windows, `q_exit_k = entry5(pc_k)+31 = 37+48·pc_k`
+  while `q_dh0_{k+1} = entry5(pc_k+1) = 54+48·pc_k` — a **17-state gap**; they are NOT equal. So "identify the
+  states" does not fall out of the layout for free.
+- **✅ RESOLUTION LOCKED (Danielle, port 8051): exit-target-parametric windows, cross-window exit edge.**
+  Make `q_exit` a PARAMETER of each block's phase lemma — it is a pure label (no outgoing quint required by
+  the step lemma), set by the block's exit quint `(q_guard, 0, 0, q_exit, R)`. The action table's exit
+  transition targets the NEXT block's window entry: **middle block → `q_exit = entry5(pc+1)`** (a
+  cross-window edge — sound, any `q2 < m`; in generator terms `next_off = 48`, i.e. `entry5(pc)+48 =
+  entry5(pc+1)`, bounded for `pc < len`); **last block → `q_exit = q_{R-cmp}`** (hand-off to compare).
+  Because the step's END config is `{a:0, q:q_exit, head on home pivot}` and block `k+1`'s lemma assumes
+  `{a:0, q:q_dh0_{k+1}=entry5(pc+1), head on home pivot}`, setting `q_exit_k = entry5(pc+1) = q_dh0_{k+1}`
+  makes `Config_term(k) ≡ Config_init(k+1)` IDENTICALLY — the sequencer chains `Lemma₁ ⟹ … ⟹ Lemma₁₆`
+  with NO bridge proofs (Danielle: threading exit-as-entry via a glue step would add 16 unnecessary step
+  obligations; the cross-window edge is the only zero-cost splice). **Window is a proof-engineering
+  construct, not a physical state boundary** — a quint in window `k` may freely target a state in window
+  `k+1`. Build: a `_mid`/`_last` action-table pair (or one table parametric in the exit-target state),
+  thread `q_exit` through the phase lemma. **DESIGN LOCKED — execute next session.**
+
+**NEXT:** settle the splice (exit-parametric windows) → remaining window variants (block3 triple
+power-block + `block1_m1`/`block3_m1` + triple singletons — all mechanical via the recipe + opaque rule) →
+16-block sequencing chaining `uinv_digits(b) ++ u_digits(a)` → master-mgmt (`load_master`, `q_clean`
+wipe-and-load per the locked global layout) → `psc_act` window + R-cmp/R-S/R-C/R-MC/B-W → `ceer_realizes`.
