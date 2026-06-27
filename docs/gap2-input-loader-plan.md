@@ -922,3 +922,24 @@ re-verification. **This is the next design piece (consider co-design w/ Danielle
 5. **16-block sequencing**, `psc_act` window, R-cmp/R-S/R-C/R-MC/B-W → discharge `ceer_realizes` (last GAP-2 piece).
 
 ⚠ `tm.n ≥ 5` is a precondition of all mark/copy/unmark lemmas. Use the CRATE-LOCAL `./check.sh`.
+
+### N+7 addendum — the self-terminating guard need NOT discard `lemma_unmark` (reuse option)
+
+Working through the guard design surfaced a subtlety: in the self-terminating machine the SHARED forward
+PRESERVES the fives (`(q_b,5,5,q_b,L)`) so it can detect the all-fives master at `j=M`. The un-mark, by
+contrast, CONVERTS fives (`5→1`). So a naive "fall-through + convert walking DOWN" would be a NEW un-mark
+structure that obsoletes the verified `lemma_unmark` (which converts walking UP from a pivot start). **Two
+options:**
+- **(efficient, new)** at the `j=M` fall-through (head ABOVE the all-fives master, `q_turn`), walk DOWN
+  converting `5→1` in one pass, then continue down through gap/temp to the pivot. One extra pass; a NEW
+  convert-down un-mark (reuses `lemma_unmark_fives_left`'s arithmetic but mirrored R-ward).
+- **(correctness-first, REUSES `lemma_unmark`)** at the `j=M` fall-through, just WALK BACK DOWN to the
+  pivot (cross the M fives + gap + M temp ones in a return state `q_ret`, landing on the pivot in
+  `lemma_unmark`'s home state `q_uh`), then run the VERIFIED `lemma_unmark` (which re-seeks up, converts,
+  returns). Costs ~2 extra O(g) traversals per refresh but reuses the whole verified un-mark. Since the
+  goal is CORRECTNESS (not speed), prefer this — only the `j=M` detection-forward + a plain walk-back are
+  new; `lemma_unmark` (and `lemma_copy_loop`) stay intact.
+
+So the minimal self-terminating rework = thread `q_b` through the forward/edges/loop (so `j=M` detection
+works) + a `lemma_mark_terminate` (the `j=M` forward → fall-through → walk-back-to-pivot) + the assembly
+`loop ∘ terminate ∘ lemma_unmark`. The g=M no-gap unmark and small-M remain as before.
