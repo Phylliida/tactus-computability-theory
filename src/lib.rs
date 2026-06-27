@@ -247,6 +247,13 @@
 // The engine of the copy-and-park relocation of alpha. See tm_dwalk.rs.
 #[cfg(verus_keep_ghost)] pub mod tm_dwalk;
 
+// GAP-2 G2-F Route (i) brick R-cmp (B-cmp.0): the skip-blank (skip-0) walk loops -- the blank analog of
+// tm_walk::lemma_walk_left_inner. Peel k blanks off the near stack onto the far stack, landing the head on
+// the first nonblank below them (the next frontier digit, or a sentinel 5). The gap-crossing primitive the
+// M1 compare uses to shuttle between the output block (u) and the parked alpha block (v). See
+// tm_skip_blank.rs and docs/gap2-input-loader-plan.md sec N+19.
+#[cfg(verus_keep_ghost)] pub mod tm_skip_blank;
+
 // GAP-2 G2-F Route (i) brick R-P: the copy-and-park core. lemma_rp_entry (2-step handshake depositing
 // the ignition-held low digit d0 onto v) + lemma_rp_copy_park (entry o dwalk_left) park alpha's digit
 // sequence reversed in v, freeing u as workspace -- the canonical layout R-cmp reads. See tm_rp.rs.
