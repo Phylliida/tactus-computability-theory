@@ -30,6 +30,8 @@ use crate::tm::{Tm, TmConfig, tm_wf, tm_step, tm_run};
 use crate::tm_gadget::{mk_quint, lemma_tm_step_picks};
 use crate::tm_two_counter::{repunit_m, lemma_repunit_zero};
 use crate::tm_dstring::{pow_nat, lemma_pow_nat_unfold};
+use crate::tm_copy_refresh::{copy_u, lemma_copy_u_start, lemma_pow_nat_add};
+use crate::gap2_tail_lift::add_hi;
 
 verus! {
 
@@ -104,6 +106,85 @@ pub proof fn lemma_shift_right_ones(tm: Tm, c: TmConfig, q: nat, len: nat, rv: n
             requires c_next.u == c.u * m + 0, pow_nat(m, (len + 1) as nat) == m * pow_nat(m, len);
         assert(tm_run(tm, c, (len + 1) as nat) == tm_run(tm, c_next, len));
     }
+}
+
+/// **The initial two-counter block `D = R(b+1) + m^(b+2)·R(a+1)`** — the natural blank-separated dovetail
+/// layout (`b+1` ones, one separator blank, `a+1` ones), read low→high from the home pivot. Floating it up
+/// by a gap `g` yields the phase-1 emitter start (`m^g·D == copy_u(0,b+1,g) + m^(g+b+2)·R(a+1)`,
+/// [`lemma_init_double_repunit_value`]).
+pub open spec fn init_block(a: nat, b: nat, m: nat) -> nat {
+    repunit_m((b + 1) as nat, m) + pow_nat(m, (b + 2) as nat) * repunit_m((a + 1) as nat, m)
+}
+
+/// **`m^g · D` is the phase-1 emitter start tape.** `D = init_block(a,b)`, so floating it up by the gap `g`
+/// gives `copy_u(0, b+1, g) + m^(g+b+2)·R(a+1)` — exactly the `u` field of the `add_hi`-tailed config that
+/// [`crate::gap2_emit_seq::lemma_uinv_phase_tail`] consumes (master `R(b+1)` at gap `g`, separator blank,
+/// high-tail backup `R(a+1)` at gap `g+b+2`). Pure place-value arithmetic: `copy_u(0,b+1,g) = m^g·R(b+1)`
+/// ([`lemma_copy_u_start`]) and `m^g·m^(b+2) = m^(g+b+2)` ([`lemma_pow_nat_add`]).
+pub proof fn lemma_init_double_repunit_value(a: nat, b: nat, g: nat, m: nat)
+    ensures
+        pow_nat(m, g) * init_block(a, b, m)
+            == (copy_u(0, (b + 1) as nat, g, m)
+                + pow_nat(m, (g + b + 2) as nat) * repunit_m((a + 1) as nat, m)) as nat,
+{
+    lemma_copy_u_start((b + 1) as nat, g, m);            // copy_u(0,b+1,g) == m^g·R(b+1)
+    lemma_pow_nat_add(m, g, (b + 2) as nat);             // m^(g+(b+2)) == m^g·m^(b+2)
+    assert((g + (b + 2)) as nat == (g + b + 2) as nat);
+    // m^g·(R(b+1) + m^(b+2)·R(a+1)) = m^g·R(b+1) + (m^g·m^(b+2))·R(a+1).
+    assert(pow_nat(m, g) * init_block(a, b, m)
+        == copy_u(0, (b + 1) as nat, g, m)
+            + pow_nat(m, (g + b + 2) as nat) * repunit_m((a + 1) as nat, m)) by(nonlinear_arith)
+        requires
+            init_block(a, b, m)
+                == repunit_m((b + 1) as nat, m)
+                    + pow_nat(m, (b + 2) as nat) * repunit_m((a + 1) as nat, m),
+            copy_u(0, (b + 1) as nat, g, m) == pow_nat(m, g) * repunit_m((b + 1) as nat, m),
+            pow_nat(m, (g + b + 2) as nat) == pow_nat(m, g) * pow_nat(m, (b + 2) as nat);
+}
+
+/// **Item 4 (local frame): lay the initial double-repunit `u` by floating `D` up the gap.** From the
+/// pre-shift layout `{ u: D, v: R(g−1) [the gap-counter above the scanned one], a: 1, q }` — the dovetail
+/// block `D` in `u`, a gap-counter of `g` ones at the head (`1` scanned + `g−1` in `v`) bounded by the empty
+/// output region (`rv = 0`) — running the `(q,1,0,q,R)` shift-up `g` steps consumes the gap-counter and
+/// floats `D` up by `m^g`, landing on the home pivot in the **exact** start config
+/// [`crate::gap2_emit_seq::lemma_uinv_phase_tail`] consumes:
+///   `add_hi({ u: copy_u(0,b+1,g), v: 0, a: 0, q }, g+b+2, R(a+1), m)`.
+/// `q` splices to `entry5(pc)` at the concrete `psc_act` instantiation. The α-block (parked to the right of
+/// the output) is a separate `v`-side high tail, handled like the `u`-side `add_hi` lift — out of scope here.
+pub proof fn lemma_lay_init(tm: Tm, a: nat, b: nat, g: nat, q: nat, i1: int)
+    requires
+        tm_wf(tm),
+        tm.n >= 1,
+        g >= 1,
+        0 <= i1 < tm.quints.len(),
+        tm.quints[i1] == mk_quint(q, 1, 0, q, Dir::R),
+    ensures
+        tm_run(tm,
+            TmConfig { u: init_block(a, b, tm.m), v: repunit_m((g - 1) as nat, tm.m), a: 1, q: q },
+            g)
+            == add_hi(
+                TmConfig { u: copy_u(0, (b + 1) as nat, g, tm.m), v: 0, a: 0, q: q },
+                (g + b + 2) as nat, repunit_m((a + 1) as nat, tm.m), tm.m),
+{
+    let m = tm.m;
+    reveal(tm_wf);
+    assert(m > 1);
+    let c = TmConfig { u: init_block(a, b, m), v: repunit_m((g - 1) as nat, m), a: 1, q: q };
+
+    // The gap-counter `v == R(g−1) == R(g−1) + m^(g−1)·0`, separator `rv = 0` (rv % m == 0 ≠ 1).
+    assert(pow_nat(m, (g - 1) as nat) * 0 == 0) by(nonlinear_arith);
+    assert(c.v == repunit_m((g - 1) as nat, m) + pow_nat(m, (g - 1) as nat) * 0);
+    assert((0nat) % m == 0) by(nonlinear_arith) requires m > 1;
+
+    lemma_shift_right_ones(tm, c, q, (g - 1) as nat, 0, i1);
+    // tm_run(c, (g−1)+1) == { u: D·m^g, v: 0/m, a: 0%m, q }; (g−1)+1 == g, 0/m == 0, 0%m == 0.
+    assert(((g - 1) + 1) as nat == g);
+    assert((0nat) / m == 0) by(nonlinear_arith) requires m > 1;
+
+    // D·m^g == m^g·D == copy_u(0,b+1,g) + m^(g+b+2)·R(a+1) == add_hi(...).u.
+    lemma_init_double_repunit_value(a, b, g, m);
+    assert(init_block(a, b, m) * pow_nat(m, g) == pow_nat(m, g) * init_block(a, b, m))
+        by(nonlinear_arith);
 }
 
 } // verus!
