@@ -846,3 +846,79 @@ That is a re-derivation of the mark/iteration. **DECISION FORK for next session 
 variant; or (b) switch to deposit∘mark + generalize `lemma_mark` to `(t,f)` counts so only `f=0` and `g−j=1`
 remain. (b) is cleaner for the loop but reworks the verified `lemma_mark`. The general `2≤j<M, g−j≥2` core is
 verified and reused either way.
+
+---
+
+## SESSION UPDATE 2026-06-27 (N+7) — ALL marked-copy EDGES + the full j:0→M LOOP + the general UNMARK sweep DONE (module tm_copy_refresh 63→137, crate 947/0)
+
+**The DECISION FORK above (N+6 (a) vs (b)) was resolved to (a)-refined: mark-first, with `j=0` the one
+deposit-first exception.** The key correction to the N+6 note: the local model initially favoured (b)
+(uniform deposit-first), but working through the gap geometry showed **deposit-first makes the `g−j=1`
+(`G=M`) case WORSE** — growing temp first eats the lone gap blank, destroying the separator the mark's
+`t2g`/seek need; whereas **mark-first handles `g−j=1` cleanly** (the `t2g` consumes the single gap blank,
+the deposit refills it afterward). So mark-first is the base. Only `j=0` (no return landmark) must
+deposit-first. The decisive geometric fact: at `g−j=1`, mark-first keeps the separator FOR the mark and
+fills it AFTER; deposit-first removes it BEFORE. (See the commit log for the full reasoning.)
+
+### What got BUILT and VERIFIED this session (all additive, no assume/admit/external_body)
+
+- **`g−j=1` edge** (commit `4d12060`): `lemma_mark_fwd_gj1` + `lemma_mark_gj1` + `lemma_copy_iter_gj1`.
+  The first intra-phase refresh has `G=M`, so the last iteration `j=M−1` has gap 1. `t2g` consumes it
+  and the forward lands DIRECTLY on the master five (no gap-seek; S4/S8 dropped). **Same 11 quints as the
+  general `lemma_mark`** — one TM/quint-set drives both; the loop dispatches on `g==j+1`.
+- **`j=1` edge** (commit `fda4c40`): `lemma_mark_j1` + `lemma_copy_iter_j1`. The forward already works via
+  `lemma_mark_fwd` (precondition LOWERED `2≤j` → `1≤j`, re-verified). The return drops the trailing temp
+  walk-back (S10): the single temp one is consumed by `rg2t`, landing the head on the pivot directly. Exit
+  IDENTICAL to general `lemma_mark` with `j=1` (`q_rt`, pivot, `copy_u(1)+4m^(g+1)`), so it fits the home
+  cycle. Used for `j=1` when `M≥3` (`g=G≥M≥3`, gap `g−1≥2`).
+- **`j=0` edge** (commit `fee5935`): `lemma_mark_j0` + `lemma_copy_iter_j0`, DEPOSIT-FIRST. Grow temp to
+  one (via `lemma_deposit`'s `j=0` branch — the landmark), then a `(temp=1, fives=0)` mark flips the
+  master's single low one → `copy_u(1)`. Own deposit/mark states, exits in `q_rt0` (wired to the loop
+  home). `G≥3` (the `M≥3` regime).
+- **the full loop** (commit `af7d063`): `copy_loop_fuel` + `lemma_copy_loop_general` (the general-iteration
+  middle induction `copy_u(lo)→copy_u(hi)` over the home cycle, `2≤lo≤hi≤M`, `hi≤g−1`); `lemma_copy_prefix`
+  (`copy_u(0)→copy_u(2)` = j0∘j1, verifies the j0→home wiring); `full_copy_fuel` + **`lemma_copy_loop`**
+  (`copy_u(0)→copy_u(M)`, `M≥3`, `g≥M`, dispatching `g==M` → trailing gj1 vs `g>M` → pure general middle).
+  Also strengthened `lemma_repunit_high`'s two hint-free asserts (cache-invalidation re-verified it in the
+  new, polluted trigger env).
+- **the general UNMARK** (commit `b03edf3`): `lemma_unmark_fives_left` (a `run_walk` that READS 5 / WRITES
+  1 — the only genuinely new primitive) + `lemma_unmark_fwd` (forward + convert the M fives to ones,
+  landing above the master) + **`lemma_unmark`** (`copy_u(M) → dec_u(M, m^(g−M)·R(M))` in one sweep:
+  forward, TURN onto the master high one, walk back). General case `M≥2, g≥M+2` (the `k≥2` refreshes).
+
+### ⚠ KEY DESIGN FINDING (the next blocker) — the loop→unmark wiring needs a SELF-TERMINATING guard
+
+The arithmetic core is DONE, but composing `lemma_copy_loop` (ends `copy_u(M)` at `q_home`) with
+`lemma_unmark` (starts at `q_uh`) into a REAL machine is blocked by state wiring:
+
+- `q_home` on the pivot fires the MARK peel `(q_home,0,0,q_t,L)` — i.e. it would start ANOTHER mark
+  iteration. To switch to unmark we need a DIFFERENT behaviour, but the pivot is just a `0`.
+- Making the last iteration exit at a distinct `q_uh` does NOT work: the deposit insert `(q_dw,0,1,q_bk,R)`
+  and peel `(q_rt,0,0,q_dw,L)` are SHARED across all iterations, so a different `q_bk`/`q_dw` for the last
+  one CONFLICTS (same source+symbol, two targets ⟹ non-deterministic, `tm_wf`-illegal).
+- Setting `q_uh = q_home` is illegal for the same reason (two `(q_home,0,0,·)` quints).
+
+**The right fix = make the marked-copy SELF-TERMINATING.** Currently the forward seek does the gap-seek AND
+the fives-walk BOTH in `q_a` (`(q_a,0,0,q_a,L)` gap, `(q_a,5,5,q_a,L)` fives), so the "blank above the
+all-fives master" (reached only at `j=M`, when there is NO unmarked one) is indistinguishable from a gap
+blank and `(q_a,0,0,q_a,L)` would walk up into the void. **SEPARATE the fives-walk into its own state
+`q_b`**: `(q_a,5,5,q_b,L)` enters `q_b` on the first five, `(q_b,5,5,q_b,L)` crosses the rest, then
+`(q_b,1,5,q_rf,R)` marks an unmarked one (copy continues) OR `(q_b,0,0,q_turn,R)` fires on the blank above
+the all-fives master → the machine NATURALLY switches to the unmark turn. This makes the loop
+self-terminating (no external count) and the unmark its natural continuation. It reworks `lemma_mark_fwd`
+(+ `lemma_mark`, + the gj1/j1/j0 variants, + the loop) to thread `q_b` — a real but mechanical
+re-verification. **This is the next design piece (consider co-design w/ Danielle).**
+
+### REMAINING (after the self-terminating rework)
+
+1. **Self-terminating guard** — separate fives-state `q_b`; rework mark forward + edges + loop to thread it.
+2. **`g=M` no-gap UNMARK** — the `k=1` refresh (temp flush against master, no gap-seek). Mirror `lemma_unmark`
+   without the gap legs (cf. `lemma_mark_gj1`'s drop of S4/S8).
+3. **small-M whole-copy lemmas** (`M∈{1,2}`) — exponents `M=a+1, b+1` can be 1 or 2. `lemma_copy_loop`
+   requires `M≥3`. `M=1` (j0 only, gaps `G∈{1,2}`) and `M=2` (j0∘j1, j1 gap edge `G=2`) are bespoke;
+   also j0's `G∈{1,2}` no-/tight-gap sub-cases (deposit shrinks the gap, so j0's edge is at `G=2`).
+4. **`copy_refresh` assembly** — loop ∘ (self-terminating guard) ∘ unmark → the next `block_loop` home
+   config (`dec_u(M, m^(G−M)·R(M))`). Dispatch `g==M` (no-gap unmark) vs `g>M` (general unmark).
+5. **16-block sequencing**, `psc_act` window, R-cmp/R-S/R-C/R-MC/B-W → discharge `ceer_realizes` (last GAP-2 piece).
+
+⚠ `tm.n ≥ 5` is a precondition of all mark/copy/unmark lemmas. Use the CRATE-LOCAL `./check.sh`.
