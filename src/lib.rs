@@ -235,3 +235,9 @@
 // analog of repunit_m, the foundation the copy-and-park (R-P) + ping-pong compare (R-cmp) digit-walk
 // loops read. See tm_dstring.rs.
 #[cfg(verus_keep_ghost)] pub mod tm_dstring;
+
+// GAP-2 G2-F Route (i) brick R-P: the digit-walk-left gadget. The symbol-agnostic analog of
+// tm_walk::lemma_walk_left_inner -- one loop quintuple (q_walk,s,s,q_walk,L) per digit symbol s in
+// 1..4 walks the head over a dpack block of nonzero digits onto v, landing on the blank turnaround.
+// The engine of the copy-and-park relocation of alpha. See tm_dwalk.rs.
+#[cfg(verus_keep_ghost)] pub mod tm_dwalk;
