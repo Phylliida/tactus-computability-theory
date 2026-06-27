@@ -239,6 +239,35 @@ Build with Shepherdson–Sturgis (`ComputabilityOfRecursiveFunctions.pdf`, crate
 style; reuse `multi_output_machine`/`multi_output_primitives` for any RM-core. B-relnum-spec/B-W-assembly
 (`gap2_relnum.rs`) and the ignition layer (`gap2_ignition.rs`) STAND (machine-independent / done).
 
+### AC-grounded design (Aanderaa–Cohen, *Modular Machines I*, 1980, pp. 3–4)
+
+Read from the source PDF (`tactus-group-theory/[…] WORD -- Aanderaa, Stål […].pdf`, text-extractable
+via `nix-shell -p poppler-utils`). The paper pins the input/output/H₀ conventions — **follow them, do
+not reinvent**:
+
+- **Input function** `iM(r) = (Σ bᵢmⁱ, n+1)` where `r = Σ bᵢnⁱ`, digits `bᵢ ∈ 1..n` (**bijective
+  base-n**, no zero digit). So a number's bijective-base-n digits become α's base-m digits; the machine
+  **starts in state n+1** scanning the low digit `b₀`, higher digits on the left tape `u`, right tape
+  `v=0`. This is `rep1` of `{u: r's higher digits, v:0, a: b₀, q: n+1}`. (Our ignition lands one digit
+  further in — `c1` scans `b₁`, with `b₀` in `start(i)` — an equivalent running config.)
+- **It is a STANDARD single-tape TM** computing directly on the base-m input. The "two stacks" `u,v` are
+  just left/right of the head — there is no 2-stack-cramming puzzle, no register-fold, no unary/Gödel
+  expansion. Unbounded dovetail counters (`s,a,b,i`) are ordinary tape regions; finite control is `q`.
+- **Output/halt convention**: `fT(r)=s` if T started in state `n+1` on the input halts with output `s`;
+  "we may modify T so that whenever it halts the scanned square is blank." For a **decider** (char.
+  function of an r.e. set), T **halts-on-blank iff input ∈ S** — exactly our generate-and-compare.
+- **H₀ realization** (p.4): for any r.e. `S`, a TM `T` halting-on-blank iff input ∈ S gives
+  `H₀(tm_to_modmachine(T))` realizing `S`. Here `S = { relnum(a,b) : (a,b) declared }`; psc_tm is that
+  decider. Bridges to `mm_decides_relnum` via the generic `lemma_tm_h0_iff` + ignition `(α,0)→(α,n+1)`.
+
+**Consequence for the build**: psc_tm is a *standard TM program* (input on tape + scratch regions +
+finite control), so the existing gadget library (peek/inc/dec/walk/bounce, all `tm.n>=2`-monotone) and
+the `search_rm` dovetail TEMPLATE apply directly. The single deep brick is **R-relnum-gen**: emit the
+collapsed Miller relator `ρ(fam_relator(a,b))`'s symbols as base-m digits and prove they equal
+`decode_word(cb,2,m,ρ(fam_relator(a,b)))` — the group-theory↔machine bridge. Everything else
+(read/compare/dovetail/cleanup) is standard TM gadget work over the AC tape model. **Modulus/alphabet
+(§3)**: choose `n ≥ 4` (digits `1..4`) and `m = psc_tm`'s modulus `= the word-numbering modulus`.
+
 ## 6. Open sub-design questions (for Danielle before / during coding)
 
 1. **Ignition as raw quads — OK?** Your D1 "go" assumed a clean AC-convention TM, which `quint_wf`
