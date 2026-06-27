@@ -24,7 +24,7 @@ use crate::tm_dwalk_prefix::{drev, lemma_drev_len, lemma_drev_digit_bound, lemma
     lemma_dpile_is_dpack_drev, lemma_drev_concat, lemma_drev_singleton, lemma_dpack_singleton};
 use crate::tm_dstring::lemma_dpack_append;
 use crate::tm_run_lemmas::lemma_tm_run_split;
-use crate::tm_skip_blank::{pile_zeros, lemma_skip0_left};
+use crate::tm_skip_blank::{pile_zeros, lemma_skip0_left, lemma_pile_zeros_shift};
 
 verus! {
 
@@ -513,34 +513,41 @@ pub proof fn lemma_cmp_marker_advance(
     assert(tm_run(tm, c, (2 * k + 3) as nat) == c_final);
 }
 
-/// **B-cmp.3 — the gap-cross + frontier read** (`docs/gap2-input-loader-plan.md` §N+22, the bridge into
-/// B-cmp.4). After a [`lemma_cmp_marker_advance`] (or the base [`lemma_cmp_balanced_roundtrip`]) the head
-/// sits **one cell into `u`** scanning the output stack's low cell `U % m` (`u == U / m`), in state `q_walk`.
-/// The output stack `U` has shape `[g consumed-output `0`s][output frontier `d_o`][rest]` — i.e.
-/// `U == pile_zeros(d_o + m·out_rest, g, m)`, with `d_o ∈ 1..4` the next output digit to compare and `g`
-/// the gap of already-consumed `0`s. This brick crosses that gap with the skip-blank loop
-/// ([`crate::tm_skip_blank::lemma_skip0_left`]) and lands the head scanning `d_o`, still in `q_walk`
-/// (which carries the marker value `V_k`). The crossed `0`s migrate onto `v` (`v == pile_zeros(c.v, g, m)`)
-/// — they are popped back when the match-action walks right again (balanced, no pollution). Fuel `g`
-/// (the `g == 0` case is a no-op: the head already scans `d_o`). Requires `n ≥ 4` (so `d_o ≤ 4 < m`).
+/// **B-cmp.3 — the gap-cross + boundary transition** (`docs/gap2-input-loader-plan.md` §N+23, the bridge
+/// into the digit COMPARE B-cmp.4). After a [`lemma_cmp_marker_advance`] the head sits **one cell into `u`**
+/// scanning the output stack's low cell `U % m` (`u == U / m`), in the left-walk state `q_walk` (which
+/// carries the marker value `V_k`). The output stack `U` has shape `[g consumed-output `0`s][output frontier
+/// `d_o`][rest]` — i.e. `U == pile_zeros(d_o + m·out_rest, g, m)`, with `d_o ∈ 1..4` the next output digit
+/// and `g ≥ 1` the gap (every prior match consumed a digit to `0`, so the gap is nonempty in steady state).
 ///
-/// This leaves the head in exactly the position the digit COMPARE (B-cmp.4) reads: scanning `d_o ∈ 1..4`
-/// with `V_k` in state, ready to fire the compare quintuple `(q_walk, d_o, …)`.
+/// **The boundary transition (the determinism fix, see §N+23).** Output and α share the `1..4` alphabet, so
+/// the compare CANNOT live in `q_walk` — the compare quintuple `(q_walk, V, …)` would collide with the
+/// left-walk `(q_walk, V, V, q_walk, L)`. Instead the FIRST step over the gap-`0` switches to a fresh
+/// compare-mode state `q_cmp` (the gap-`0` is the *virtual boundary marker*): step `(q_walk, 0, 0, q_cmp, L)`,
+/// then skip the remaining gap with `(q_cmp, 0, 0, q_cmp, L)` ([`crate::tm_skip_blank::lemma_skip0_left`]),
+/// landing the head scanning `d_o` in `q_cmp`. The crossed `0`s migrate onto `v` (`v == pile_zeros(c.v, g, m)`)
+/// — popped back when the match-action walks right (balanced, no pollution). Fuel `g`. Requires `n ≥ 4`
+/// (so `d_o ≤ 4 < m`). Leaves the head exactly where the compare reads: scanning `d_o ∈ 1..4` in `q_cmp`
+/// (carrying `V_k`), ready for `(q_cmp, d_o, …)`.
 pub proof fn lemma_cmp_gap_cross(
-    tm: Tm, c: TmConfig, q_walk: nat, g: nat, d_o: nat, out_rest: nat, i0: int,
+    tm: Tm, c: TmConfig, q_walk: nat, q_cmp: nat, g: nat, d_o: nat, out_rest: nat,
+    ib: int, i0: int,
 )
     requires
         tm_wf(tm),
         tm.n >= 4,
         1 <= d_o <= 4,
+        g >= 1,
         c.a == pile_zeros(d_o + tm.m * out_rest, g, tm.m) % tm.m,
         c.u == pile_zeros(d_o + tm.m * out_rest, g, tm.m) / tm.m,
         c.q == q_walk,
+        0 <= ib < tm.quints.len(),
         0 <= i0 < tm.quints.len(),
-        tm.quints[i0] == mk_quint(q_walk, 0, 0, q_walk, Dir::L),
+        tm.quints[ib] == mk_quint(q_walk, 0, 0, q_cmp, Dir::L),   // boundary transition q_walk → q_cmp
+        tm.quints[i0] == mk_quint(q_cmp, 0, 0, q_cmp, Dir::L),    // gap skip in q_cmp
     ensures
         tm_run(tm, c, g)
-            == (TmConfig { u: out_rest, v: pile_zeros(c.v, g, tm.m), a: d_o, q: q_walk }),
+            == (TmConfig { u: out_rest, v: pile_zeros(c.v, g, tm.m), a: d_o, q: q_cmp }),
 {
     reveal(tm_wf);
     let m = tm.m;
@@ -549,24 +556,53 @@ pub proof fn lemma_cmp_gap_cross(
     assert(m * out_rest == out_rest * m) by(nonlinear_arith);
     assert(big_x == out_rest * m + d_o);
     lemma_div_mod_step(out_rest, m, d_o);   // big_x / m == out_rest, big_x % m == d_o (d_o < m)
-    if g == 0 {
-        assert(pile_zeros(big_x, 0, m) == big_x);
-        assert(c.a == d_o);
-        assert(c.u == out_rest);
+
+    // U = pile_zeros(big_x, g) = pile_zeros(big_x, g-1)·m ⟹ scanned low cell is a 0.
+    let u0 = pile_zeros(big_x, (g - 1) as nat, m);
+    assert(pile_zeros(big_x, g, m) == u0 * m);
+    assert((u0 * m) % m == 0) by(nonlinear_arith) requires m > 1;
+    assert((u0 * m) / m == u0) by(nonlinear_arith) requires m > 1;
+    assert(c.a == 0);
+    assert(c.u == u0);
+
+    // ── Step 1: boundary transition (q_walk, 0, 0, q_cmp, L) — step left into the gap, switch to q_cmp.
+    lemma_tm_step_picks(tm, c, ib);
+    let c1 = apply_quint(tm.quints[ib], c, m);
+    assert(tm_step(tm, c) == Some(c1));
+    assert(c1.u == c.u / m);   // L-move a2 == 0
+    assert(c1.v == c.v * m);
+    assert(c1.a == c.u % m);
+    assert(c1.q == q_cmp);
+
+    if g == 1 {
+        // u0 == pile_zeros(big_x, 0) == big_x ⟹ c1 already scans d_o.
+        assert(u0 == big_x);
+        assert(c1.a == big_x % m);   // == d_o
+        assert(c1.u == big_x / m);   // == out_rest
         assert(pile_zeros(c.v, 0, m) == c.v);
-        assert(tm_run(tm, c, 0) == c);
+        assert(pile_zeros(c.v, 1, m) == pile_zeros(c.v, 0, m) * m);   // pile_zeros unfold
+        assert(pile_zeros(c.v, 1, m) == c.v * m);
+        assert(c1 == (TmConfig { u: out_rest, v: pile_zeros(c.v, 1, m), a: d_o, q: q_cmp }));
+        assert(tm_run(tm, c1, 0) == c1);
+        assert(tm_run(tm, c, 1) == c1);
     } else {
-        // pile_zeros(big_x, g) == pile_zeros(big_x, g-1) * m ⟹ scanned low cell is a 0; peel it.
-        let lower = pile_zeros(big_x, (g - 1) as nat, m);
-        assert(pile_zeros(big_x, g, m) == lower * m);
-        assert((lower * m) % m == 0) by(nonlinear_arith) requires m > 1;
-        assert((lower * m) / m == lower) by(nonlinear_arith) requires m > 1;
-        assert(c.a == 0);
-        assert(c.u == lower);
-        lemma_skip0_left(tm, c, q_walk, (g - 1) as nat, big_x, i0);
-        assert(((g - 1) as nat + 1) as nat == g);
+        // g >= 2: u0 == pile_zeros(big_x, g-1) == pile_zeros(big_x, g-2)·m ⟹ c1 still scans a 0.
+        let u1 = pile_zeros(big_x, (g - 2) as nat, m);
+        assert(u0 == u1 * m);
+        assert((u1 * m) % m == 0) by(nonlinear_arith) requires m > 1;
+        assert((u1 * m) / m == u1) by(nonlinear_arith) requires m > 1;
+        assert(c1.a == 0);
+        assert(c1.u == u1);
+        lemma_skip0_left(tm, c1, q_cmp, (g - 2) as nat, big_x, i0);
+        // ensures tm_run(c1, g-1) == { u: big_x/m, v: pile_zeros(c1.v, g-1), a: big_x%m, q: q_cmp }
+        assert(((g - 2) as nat + 1) as nat == (g - 1) as nat);
+        lemma_pile_zeros_shift(c.v, (g - 1) as nat, m);   // pile_zeros(c.v·m, g-1) == pile_zeros(c.v, g)
+        assert(c1.v == c.v * m);
+        assert(pile_zeros(c1.v, (g - 1) as nat, m) == pile_zeros(c.v, g, m));
+        // compose: tm_run(c, g) == tm_run(c1, g-1).
+        assert(tm_run(tm, c, g) == tm_run(tm, c1, (g - 1) as nat));
         assert(tm_run(tm, c, g)
-            == (TmConfig { u: out_rest, v: pile_zeros(c.v, g, m), a: d_o, q: q_walk }));
+            == (TmConfig { u: out_rest, v: pile_zeros(c.v, g, m), a: d_o, q: q_cmp }));
     }
 }
 
