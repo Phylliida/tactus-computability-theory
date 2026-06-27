@@ -28,6 +28,7 @@ use crate::tm_walk::{pile_ones, lemma_pile_ones_div_mod};
 use crate::tm_run_lemmas::lemma_tm_run_split;
 use crate::tm_dec_master::{dec_u, lemma_walk_left_prefix, lemma_walk_back_prefix};
 use crate::tm_block_loop::lemma_dec_u_step;
+use crate::tm_emit::{pile_sym, lemma_pile_sym_shift};
 
 verus! {
 
@@ -271,6 +272,72 @@ pub proof fn lemma_seek_right_blanks(tm: Tm, c: TmConfig, q_seek: nat, g: nat, r
         assert(c_next.u * pow_nat(m, g) == c.u * pow_nat(m, (g + 1) as nat)) by(nonlinear_arith)
             requires c_next.u == c.u * m + 0, pow_nat(m, (g + 1) as nat) == m * pow_nat(m, g);
         assert(tm_run(tm, c, (g + 1) as nat) == tm_run(tm, c_next, g));
+    }
+}
+
+// ============================================================================
+// generic single-symbol run walks (the symbol-`s` analog of walk_left_prefix)
+// ============================================================================
+
+/// **Non-destructive walk-LEFT over a homogeneous run of symbol `s`.** The symbol-`s` generalization of
+/// [`crate::tm_dec_master::lemma_walk_left_prefix`] (`s = 1`): from a config in state `q_walk` scanning an
+/// `s`, with `len` further `s`s and then the tail `w` packed above them
+/// (`u == s·repunit(len) + m^len·w`), the loop quintuple `(q_walk, s, s, q_walk, L)` fires `len + 1` times
+/// — writing each `s` back and piling it onto `v` — and lands the head on `w`'s low cell
+/// (`a == w % m`, `u == w / m`), still in `q_walk`. The caller picks `w` so `w % m != s` (the next region's
+/// symbol) to stop the loop. Used by the MARK seek to cross the temp ones (`s = 1`) and the master fives
+/// (`s = 5`). Induction on `len`; the pile re-folds via [`crate::tm_emit::lemma_pile_sym_shift`].
+pub proof fn lemma_run_walk_left(tm: Tm, c: TmConfig, q_walk: nat, s: nat, len: nat, w: nat, i1: int)
+    requires
+        tm_wf(tm),
+        1 <= s <= tm.n,
+        0 <= i1 < tm.quints.len(),
+        tm.quints[i1] == mk_quint(q_walk, s, s, q_walk, Dir::L),
+        c.u == s * repunit_m(len, tm.m) + pow_nat(tm.m, len) * w,
+        c.a == s,
+        c.q == q_walk,
+    ensures
+        tm_run(tm, c, (len + 1) as nat)
+            == (TmConfig { u: w / tm.m, v: pile_sym(c.v, s, (len + 1) as nat, tm.m),
+                a: w % tm.m, q: q_walk }),
+    decreases len,
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 1 && s < m);   // tm_wf ⟹ 0 < n < m, and s ≤ n < m
+    lemma_tm_step_picks(tm, c, i1);
+    let c_next = TmConfig { u: c.u / m, v: c.v * m + s, a: c.u % m, q: q_walk };
+    assert(tm_step(tm, c) == Some(c_next));
+    if len == 0 {
+        // u == s·repunit(0) + m^0·w == 0 + 1·w == w.
+        assert(pow_nat(m, 0) == 1);
+        lemma_repunit_zero(m);
+        assert(c.u == w) by(nonlinear_arith)
+            requires c.u == s * repunit_m(0, m) + pow_nat(m, 0) * w, repunit_m(0, m) == 0,
+                pow_nat(m, 0) == 1;
+        // c_next == (w/m, pile_sym(c.v, s, 1), w%m, q_walk).
+        assert(pile_sym(c.v, s, 0, m) == c.v);
+        assert(pile_sym(c.v, s, 1, m) == pile_sym(c.v, s, 0, m) * m + s);
+        assert(c_next == (TmConfig { u: w / m, v: pile_sym(c.v, s, 1, m), a: w % m, q: q_walk }));
+        assert(tm_run(tm, c_next, 0) == c_next);
+        assert(tm_run(tm, c, 1) == c_next);
+    } else {
+        // u == s·repunit(len) + m^len·w == (s·repunit(len-1) + m^(len-1)·w)·m + s.
+        let x = s * repunit_m((len - 1) as nat, m) + pow_nat(m, (len - 1) as nat) * w;
+        assert(repunit_m(len, m) == m * repunit_m((len - 1) as nat, m) + 1);   // repunit recurrence
+        lemma_pow_nat_unfold(m, len);                                          // m^len == m·m^(len-1)
+        assert(c.u == x * m + s) by(nonlinear_arith)
+            requires
+                c.u == s * repunit_m(len, m) + pow_nat(m, len) * w,
+                repunit_m(len, m) == m * repunit_m((len - 1) as nat, m) + 1,
+                pow_nat(m, len) == m * pow_nat(m, (len - 1) as nat),
+                x == s * repunit_m((len - 1) as nat, m) + pow_nat(m, (len - 1) as nat) * w;
+        lemma_div_mod_step(x, m, s);   // (x·m + s)/m == x, %m == s
+        assert(c_next.u == x);
+        assert(c_next.a == s);
+        lemma_run_walk_left(tm, c_next, q_walk, s, (len - 1) as nat, w, i1);
+        lemma_pile_sym_shift(c.v, s, len, m);   // pile_sym(c.v·m+s, s, len) == pile_sym(c.v, s, len+1)
+        assert(tm_run(tm, c, (len + 1) as nat) == tm_run(tm, c_next, len));
     }
 }
 
