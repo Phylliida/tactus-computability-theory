@@ -2449,11 +2449,13 @@ AND (via the same exposed accept config) the ACCEPT tape-wipe.** **DE-RISK 2 (th
 take an *arbitrary* `rest`, and a u-tail absorbs straight into it
 (`pile_zeros(low + m^h·T_u, k) = low·m^k + m^{h+k}·T_u`). So the cascade is shallower than "re-thread
 everything": the loops need NO change; only the per-gadget *boundary reads* (`rest % m`, `rest / m` at
-gap_cross/match_round/decide) need the carry-free atoms `(low+m^h·t)/m^k == low/m^k + m^{h-k}·t`,
-`%m^k == low%m^k` (k≤h; prove via `lemma_pow_nat_add` to split `m^h=m^k·m^{h-k}` +
-`lemma_fundamental_div_mod_converse`, cf. `word_numbering::lemma_div_mod_step`). **Module placement:** the
-atoms must live LOW (`tm_dstring`/`tm_skip_blank`) — `gap2_reloc` imports `tm_cmp_traverse`, so the tailed
-gadgets in `tm_cmp_*` cannot pull helpers from `gap2_reloc`.
+gap_cross/match_round/decide) need the carry-free atom. **✅ THE ATOM IS BUILT (this session,
+`tm_dstring::lemma_pow_high_tail`, crate 1883/0):** `(low + m^h·t)/m^k == low/m^k + m^{h-k}·t` AND
+`% m^k == low%m^k` for `k ≤ h, m ≥ 1` — placed LOW in `tm_dstring` (everyone imports it; `gap2_reloc`
+imports `tm_cmp_traverse`, so the tailed gadgets in `tm_cmp_*` cannot pull from `gap2_reloc`) so both the
+reloc and the cmp cascade consume it. Supporting `lemma_pow_nat_pos`/`lemma_pow_nat_split` added alongside.
+**So HALF 2's FOUNDATION is in place** — the next session threads `lemma_pow_high_tail` through the
+`tm_cmp_*` gadget boundary reads (loops unchanged), starting at `gap_cross`/`match_round`.
 
 **ACCEPT tape-wipe (R-C) prereq, noted:** the accept config IS already computed inside
 `lemma_cmp_accept_decide` (`c_acc = apply_quint((q_verify_cmp,5,5,q_accept,R), c_v, m)`, body line ~236) —
