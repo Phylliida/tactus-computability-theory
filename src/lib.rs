@@ -282,6 +282,12 @@
 // and docs/gap2-input-loader-plan.md sec N+28/N+29.
 #[cfg(verus_keep_ghost)] pub mod gap2_reloc;
 
+// GAP-2 G2-F Route (i) — the RELOCATION o COMPARE assembly (emit->decide coupling). lemma_reloc_then_
+// compare_accept: compose lemma_reloc_local (WIPE o STAMP+TRANSFER) with lemma_cmp_decides_accept via
+// lemma_tm_run_split; state-id q_xfer == q_start, value bridge = drev involution (drev(output) == beta =
+// parked-reversed alpha iff output == alpha). ACCEPT direction. See gap2_reloc_compare.rs / docs sec N+30.
+#[cfg(verus_keep_ghost)] pub mod gap2_reloc_compare;
+
 // GAP-2 G2-F Route (i) brick R-P: the copy-and-park core. lemma_rp_entry (2-step handshake depositing
 // the ignition-held low digit d0 onto v) + lemma_rp_copy_park (entry o dwalk_left) park alpha's digit
 // sequence reversed in v, freeing u as workspace -- the canonical layout R-cmp reads. See tm_rp.rs.
