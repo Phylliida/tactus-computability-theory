@@ -276,6 +276,12 @@
 // q_accept). See tm_cmp_assemble.rs and docs/gap2-input-loader-plan.md sec N+27/N+28.
 #[cfg(verus_keep_ghost)] pub mod tm_cmp_assemble;
 
+// GAP-2 G2-F Route (i) — the RELOCATION gadget (emit-coupling proper): emit-end -> compare parked-entry.
+// lemma_reloc_stamp_transfer_local/_contract: stamp the output far-5 (merged into the transfer's first
+// step) + dwalk_right transfer output v->u reversed -> u = dpack(drev(output)) + m^L*5. See gap2_reloc.rs
+// and docs/gap2-input-loader-plan.md sec N+28/N+29.
+#[cfg(verus_keep_ghost)] pub mod gap2_reloc;
+
 // GAP-2 G2-F Route (i) brick R-P: the copy-and-park core. lemma_rp_entry (2-step handshake depositing
 // the ignition-held low digit d0 onto v) + lemma_rp_copy_park (entry o dwalk_left) park alpha's digit
 // sequence reversed in v, freeing u as workspace -- the canonical layout R-cmp reads. See tm_rp.rs.
