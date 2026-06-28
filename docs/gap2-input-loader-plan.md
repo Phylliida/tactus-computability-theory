@@ -2338,3 +2338,47 @@ unpinned R-P/dovetail layout call; the relocation is `tail_safe` since `q_clean`
 master separator, below the backup). (2) **reloc∘compare assembly** + value-bridge. (3) **the deferred ACCEPT
 tape-wipe** (`q_accept` → `tm_origin`; from the accept config drive both stacks to `(0,0,0,0)`). After R-cmp:
 R-S dovetail → R-C/R-MC/B-W → discharge `ceer_realizes` → drop `axiom_ceer_fp_embedding`.
+
+### N+30 — RELOCATION ∘ COMPARE *DECIDES* COMPLETE (both directions). `gap2_reloc_compare.rs` + `gap2_reject_classify.rs`, crate 1845 → 1868/0, additive.
+
+The emit→decide coupling proper: the emit-end machine provably reaches `q_accept` iff `output == α`, else
+`q_reject`. A pure composition of the two pinned contracts (relocation `lemma_reloc_local` produces exactly
+the comparator's parked entry), glued by `lemma_tm_run_split`. **Layout-independent** — lives entirely in the
+relocation's LOCAL frame, needing none of the deferred R-S/dovetail `u`-tail (the relocation is `tail_safe`).
+So N+29's "REMAINING (2) reloc∘compare assembly + value-bridge" is **DONE** at the machine level; the previous
+session's caution that this coupling needed the layout was over-conservative for the local-frame decide.
+
+  - **The state-id splice:** the relocation exits in `q_xfer` scanning `a==0`, which IS the comparator's
+    `q_start` — we pass the SAME state for both, no glue step.
+  - **The value bridge = `drev`:** the relocation lands the output *reversed* on `u` (a rightward digit-walk
+    reverses), and α is parked *reversed* on `v`, so the comparator compares `drev(output)` vs `drev(α)` —
+    equal iff `output == α` (`drev` is an involution + preserves the `1..4` digit bound). Phrased via the
+    on-tape block `beta == drev(α)`; the accept premise `drev(output) =~= beta` reads forward as `output =~= α`.
+    (The *content* bridge to `relnum` — `output == fam_digits(a,b)`, `dpack(output) == relnum` via the existing
+    `lemma_relnum_is_fam_digits` — is the downstream R-S/R-relnum wiring, not this brick.)
+
+**ACCEPT** (`gap2_reloc_compare::lemma_reloc_then_compare_accept`): from the emit-end tape with `drev(output)
+=~= beta`, compose `lemma_reloc_local` ∘ `lemma_cmp_decides_accept` (`alpha := beta`, `q_start := q_xfer`),
+reaching `q_accept` at exact fuel `reloc_compare_accept_fuel`. The `v`-tail `w == m·(dpack(beta)+m^|β|·5)`
+unpacks to the parked α-block via `lemma_div_mod_step`.
+
+**REJECT** (the divergence classifier + dispatch). `gap2_reject_classify.rs`: `cpl` (common-prefix length) +
+`lemma_cpl_{le,match,diff}` (the case split is exhaustive + mutually-exclusive, cross-checked with a port-8051
+consult), `lemma_dpack_far5_split` (factor `dpack(X)+m^|X|·5` at any cut), and four **u-shape** lemmas
+recasting that value into each terminal's `u`. `gap2_reloc_compare.rs`: `lemma_reloc_to_parked` (shared
+reloc→parked core), the four per-terminal reject assemblies (`mismatch`/`mismatch0`/`tooshort`/`toolong`), and
+**`lemma_reloc_then_compare_reject`** — the generic `drev(output) != beta ⟹ q_reject`, routing by
+`p == cpl(drev(output), beta)`: `p<|X|,|β|` → mismatch(0); `p==|X|<|β|` → too-short; `p==|β|<|X|` → too-long
+(the `p==|X|==|β|` case is impossible — it forces `X==β`). Exact case-fuel via `reloc_compare_reject_fuel`.
+
+**The `reject_quints` bundle** (the dispatch's comparator precondition) is the comparator's full reject-quint
+set over the `1..4` alphabet (per-first-digit bootstrap read, per-`V≠d` mismatch, per-`V` too-short, verify
+chain + per-digit too-long). It's a faithful over-approximation of the quints the real `psc_tm` carries (the
+deterministic comparator has no state/symbol collision: reject symbols are disjoint from the match symbol `V`
+and gap `0`) — **a concrete co-design target for R-S's `psc_tm` quint layout**.
+
+**REMAINING for R-cmp:** (1) **u-tail-lift** — still deferred WITH R-S (offset `H` = the unpinned dovetail
+layout). (2) **ACCEPT tape-wipe = R-C** (`q_accept` → `tm_origin`): needs the accept *config* (the existing
+`lemma_cmp_decides_accept` exposes only `.q == q_accept`, not the tape), so it's a distinct config-tracing
+brick (mirror `tm_cleanup`), best built with R-C. After R-cmp: R-S dovetail → R-C/R-MC/B-W → discharge
+`ceer_realizes` → drop `axiom_ceer_fp_embedding`.
