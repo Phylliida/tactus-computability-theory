@@ -33,7 +33,7 @@ use crate::tm_dwalk_prefix::{drev, lemma_dpile_is_dpack_drev};
 use crate::tm_cmp_traverse::lemma_dwalk_right_gen;
 use crate::tm_dstring::lemma_pow_nat_unfold;
 use crate::tm_two_counter::repunit_m;
-use crate::tm_copy_refresh::copy_u;
+use crate::tm_copy_refresh::{copy_u, lemma_pow_nat_add};
 use crate::gap2_master_mgmt::{lemma_q_clean, q_clean_fuel};
 
 verus! {
@@ -386,6 +386,292 @@ pub proof fn lemma_reloc_local(
         u: (dpack(drev(output), m) + pow_nat(m, big_l) * 5) as nat,
         v: (w / m), a: 0, q: q_xfer };
     assert(tm_run(tm, c1, (1 + big_l) as nat) == c2);
+
+    // ── compose: q_clean_fuel + (1 + L).
+    lemma_tm_run_split(tm, c0, q_clean_fuel(g, big_m), (1 + big_l) as nat);
+    assert((q_clean_fuel(g, big_m) + (1 + big_l)) as nat == (q_clean_fuel(g, big_m) + 1 + big_l) as nat);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+//  u-TAIL LIFT (R-cmp tail-safety, the first half) — carry a Control-Zone / dovetail backup `T_u`,
+//  parked on `u` high above the master, through the relocation untouched. This is what lets the
+//  per-stage emit→reloc→compare surface run INSIDE the global R-S dovetail frame without clobbering
+//  the search state. The `q_clean` master-wipe already carries the tail (its `t` parameter); the only
+//  new content is the STAMP+TRANSFER starting from a nonzero `u`-floor (the surviving backup, collapsed
+//  to `u`'s low end by the wipe), which rides up to a high offset above the relocated output's far-`5`.
+//  The compare-side u-precondition generalization (the second half) is a separate follow-on brick.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/// **STAMP+TRANSFER, u-floor generalization (dpile form).** Identical to
+/// [`lemma_reloc_stamp_transfer_tailed`] but the relocation starts from an arbitrary `u`-floor
+/// `c.u == u_floor` (the surviving Control-Zone / dovetail backup, sitting at `u`'s low end after the
+/// master wipe) instead of `u == 0`. The far-`5` stamp lifts the floor by one digit
+/// (`c1.u == u_floor·m + 5`) and the tailed digit-walk piles the output above it: net
+/// `u == dpile(u_floor·m + 5, output)`. This is the `u`-side analogue of the `v`-tail lift — it proves
+/// the relocation is **tail-safe**: a backup high above the master survives the wipe+transfer untouched.
+pub proof fn lemma_reloc_stamp_transfer_ufloor(
+    tm: Tm, c: TmConfig, q_reloc: nat, q_xfer: nat, output: Seq<nat>, w: nat, u_floor: nat,
+    i0: int, i1: int, i2: int, i3: int, i4: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        output.len() >= 1,
+        forall|k: int| 0 <= k < output.len() ==> 1 <= #[trigger] output[k] <= 4,
+        w % tm.m == 0,
+        c.a == 0,
+        c.u == u_floor,
+        c.v == (dpack(output, tm.m) + pow_nat(tm.m, output.len()) * w) as nat,
+        c.q == q_reloc,
+        0 <= i0 < tm.quints.len(),
+        0 <= i1 < tm.quints.len(),
+        0 <= i2 < tm.quints.len(),
+        0 <= i3 < tm.quints.len(),
+        0 <= i4 < tm.quints.len(),
+        tm.quints[i0] == mk_quint(q_reloc, 0, 5, q_xfer, Dir::R),
+        tm.quints[i1] == mk_quint(q_xfer, 1, 1, q_xfer, Dir::R),
+        tm.quints[i2] == mk_quint(q_xfer, 2, 2, q_xfer, Dir::R),
+        tm.quints[i3] == mk_quint(q_xfer, 3, 3, q_xfer, Dir::R),
+        tm.quints[i4] == mk_quint(q_xfer, 4, 4, q_xfer, Dir::R),
+    ensures
+        tm_run(tm, c, (1 + output.len()) as nat)
+            == (TmConfig {
+                    u: dpile((u_floor * tm.m + 5) as nat, output, tm.m),
+                    v: (w / tm.m), a: 0, q: q_xfer,
+               }),
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 5);
+    let big_l = output.len();
+
+    // ── step 0: stamp the far-5, cross onto output[0]. R-move: u: u_floor -> u_floor·m + 5.
+    assert(quint_matches(tm.quints[i0], c));   // q == q_reloc, a == 0
+    lemma_tm_step_picks(tm, c, i0);
+    let c1 = apply_quint(tm.quints[i0], c, m);
+    assert(tm_step(tm, c) == Some(c1));
+    // Factor c.v == X·m + output[0] where X == dpack(output.drop_first()) + m^{L-1}·w, then div/mod step.
+    lemma_pow_nat_unfold(m, big_l);   // m^L == m·m^{L-1}
+    let big_x = (dpack(output.drop_first(), m) + pow_nat(m, (big_l - 1) as nat) * w) as nat;
+    assert(dpack(output, m) == output[0] + m * dpack(output.drop_first(), m));   // dpack unfold (output nonempty)
+    assert(output[0] < m);
+    assert(c.v == big_x * m + output[0]) by(nonlinear_arith)
+        requires
+            c.v == (dpack(output, m) + pow_nat(m, big_l) * w) as nat,
+            dpack(output, m) == output[0] + m * dpack(output.drop_first(), m),
+            pow_nat(m, big_l) == m * pow_nat(m, (big_l - 1) as nat),
+            big_x == (dpack(output.drop_first(), m) + pow_nat(m, (big_l - 1) as nat) * w) as nat;
+    verus_group_theory::word_numbering::lemma_div_mod_step(big_x, m, output[0]);   // c.v/m == X, %m == output[0]
+    assert(c.v % m == output[0]);
+    assert(c.v / m == big_x);
+    // R-move with a2 = 5: c1.u == c.u·m + 5 == u_floor·m + 5.
+    assert(c1.u == (u_floor * m + 5) as nat);
+    assert(c1.a == output[0]);
+    assert(c1.v == (dpack(output.drop_first(), m) + pow_nat(m, (big_l - 1) as nat) * w) as nat);
+    assert(c1.q == q_xfer);
+    assert(tm_run(tm, c1, 0) == c1);
+    assert(tm_run(tm, c, 1) == c1);
+
+    // ── steps 1..L: the tailed digit-walk-right peels output onto u, stops scanning w%m == 0.
+    assert(1 <= output[0] <= 4);
+    lemma_dwalk_right_gen(tm, c1, q_xfer, output, w, i1, i2, i3, i4);
+    let c2 = TmConfig { u: dpile(c1.u, output, m), v: (w / m), a: (w % m), q: q_xfer };
+    assert(tm_run(tm, c1, big_l) == c2);
+    assert(c1.u == (u_floor * m + 5) as nat);
+    assert(c2.a == 0);                          // w % m == 0
+
+    // ── compose: 1 + L.
+    lemma_tm_run_split(tm, c, 1, big_l);
+    assert(tm_run(tm, c, (1 + big_l) as nat) == tm_run(tm, c1, big_l));
+}
+
+/// **STAMP+TRANSFER, u-floor (contract form).** As [`lemma_reloc_stamp_transfer_ufloor`] but with the
+/// `u`-result spelled in the parked-entry ceiling shape with the floor lifted to offset `L+1`:
+/// `dpack(drev(output)) + m^L·5 + m^{L+1}·u_floor` — the reversed output, the far-`5` ceiling, then the
+/// surviving backup riding high above. Via the [`lemma_dpile_is_dpack_drev`] bridge.
+pub proof fn lemma_reloc_stamp_transfer_ufloor_contract(
+    tm: Tm, c: TmConfig, q_reloc: nat, q_xfer: nat, output: Seq<nat>, w: nat, u_floor: nat,
+    i0: int, i1: int, i2: int, i3: int, i4: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        output.len() >= 1,
+        forall|k: int| 0 <= k < output.len() ==> 1 <= #[trigger] output[k] <= 4,
+        w % tm.m == 0,
+        c.a == 0,
+        c.u == u_floor,
+        c.v == (dpack(output, tm.m) + pow_nat(tm.m, output.len()) * w) as nat,
+        c.q == q_reloc,
+        0 <= i0 < tm.quints.len(),
+        0 <= i1 < tm.quints.len(),
+        0 <= i2 < tm.quints.len(),
+        0 <= i3 < tm.quints.len(),
+        0 <= i4 < tm.quints.len(),
+        tm.quints[i0] == mk_quint(q_reloc, 0, 5, q_xfer, Dir::R),
+        tm.quints[i1] == mk_quint(q_xfer, 1, 1, q_xfer, Dir::R),
+        tm.quints[i2] == mk_quint(q_xfer, 2, 2, q_xfer, Dir::R),
+        tm.quints[i3] == mk_quint(q_xfer, 3, 3, q_xfer, Dir::R),
+        tm.quints[i4] == mk_quint(q_xfer, 4, 4, q_xfer, Dir::R),
+    ensures
+        tm_run(tm, c, (1 + output.len()) as nat)
+            == (TmConfig {
+                    u: (dpack(drev(output), tm.m) + pow_nat(tm.m, output.len()) * 5
+                        + pow_nat(tm.m, (output.len() + 1) as nat) * u_floor) as nat,
+                    v: (w / tm.m), a: 0, q: q_xfer,
+               }),
+{
+    let m = tm.m;
+    let big_l = output.len();
+    lemma_reloc_stamp_transfer_ufloor(tm, c, q_reloc, q_xfer, output, w, u_floor, i0, i1, i2, i3, i4);
+    // dpile(u_floor·m+5, output) == (u_floor·m+5)·m^L + dpack(drev(output)).
+    lemma_dpile_is_dpack_drev((u_floor * m + 5) as nat, output, m);
+    lemma_pow_nat_unfold(m, (big_l + 1) as nat);   // m^{L+1} == m·m^L
+    assert(dpile((u_floor * m + 5) as nat, output, m)
+        == (dpack(drev(output), m) + pow_nat(m, big_l) * 5 + pow_nat(m, (big_l + 1) as nat) * u_floor) as nat)
+        by(nonlinear_arith)
+        requires
+            dpile((u_floor * m + 5) as nat, output, m)
+                == (u_floor * m + 5) * pow_nat(m, big_l) + dpack(drev(output), m),
+            pow_nat(m, (big_l + 1) as nat) == m * pow_nat(m, big_l);
+}
+
+/// **The LOCAL relocation phase, TAIL-SAFE (carry a Control-Zone backup `T_u`).** Generalizes
+/// [`lemma_reloc_local`] from `u == copy_u(0,M,g)` (bare master) to `u == copy_u(0,M,g) + m^{g+M+1}·T_u`
+/// — the spent master with a surviving high tail `T_u` parked just above it (the dovetail/temp backup the
+/// global R-S frame keeps off to the side). The wipe ([`lemma_q_clean`] with `t = T_u`) erases the master
+/// and returns the head to the boundary leaving `u == T_u·m^{g+M+1}`; the u-floor stamp+transfer then
+/// deposits the reversed output with its far-`5` ceiling and rides the backup up to offset `L+1+g+M+1`,
+/// well above the far-`5` (= digit `L`). Net the comparator's parked entry **plus** the untouched backup:
+///   `u == dpack(drev(output)) + m^L·5 + m^{(L+1+g+M+1)}·T_u`, `v == w/m`, `a == 0`, state `q_xfer`.
+/// With `T_u == 0` this is exactly [`lemma_reloc_local`]. The relocation is tail-safe because `q_clean`'s
+/// deepest left reach is the master separator (below the backup) and the transfer only writes the
+/// output region — the backup is never scanned.
+pub proof fn lemma_reloc_local_tailed(
+    tm: Tm, big_m: nat, g: nat, output: Seq<nat>, w: nat, t_u: nat,
+    q_s: nat, q_w: nat, q_r: nat, q_reloc: nat, q_xfer: nat,
+    // q_clean quints (9)
+    i_seek: int, i_trans: int, i_wipe: int, i_wr: int, i_seekr: int,
+    i_sb1: int, i_sb2: int, i_sb3: int, i_sb4: int,
+    // stamp+transfer quints (5)
+    j0: int, j1: int, j2: int, j3: int, j4: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        big_m >= 1,
+        output.len() >= 1,
+        forall|k: int| 0 <= k < output.len() ==> 1 <= #[trigger] output[k] <= 4,
+        w % tm.m == 0,
+        // q_clean quints (states q_s -> q_w -> q_r -> q_reloc), see lemma_q_clean.
+        0 <= i_seek < tm.quints.len(),
+        0 <= i_trans < tm.quints.len(),
+        0 <= i_wipe < tm.quints.len(),
+        0 <= i_wr < tm.quints.len(),
+        0 <= i_seekr < tm.quints.len(),
+        0 <= i_sb1 < tm.quints.len(),
+        0 <= i_sb2 < tm.quints.len(),
+        0 <= i_sb3 < tm.quints.len(),
+        0 <= i_sb4 < tm.quints.len(),
+        tm.quints[i_seek] == mk_quint(q_s, 0, 0, q_s, Dir::L),
+        tm.quints[i_trans] == mk_quint(q_s, 1, 0, q_w, Dir::L),
+        tm.quints[i_wipe] == mk_quint(q_w, 1, 0, q_w, Dir::L),
+        tm.quints[i_wr] == mk_quint(q_w, 0, 0, q_r, Dir::R),
+        tm.quints[i_seekr] == mk_quint(q_r, 0, 0, q_r, Dir::R),
+        tm.quints[i_sb1] == mk_quint(q_r, 1, 1, q_reloc, Dir::L),
+        tm.quints[i_sb2] == mk_quint(q_r, 2, 2, q_reloc, Dir::L),
+        tm.quints[i_sb3] == mk_quint(q_r, 3, 3, q_reloc, Dir::L),
+        tm.quints[i_sb4] == mk_quint(q_r, 4, 4, q_reloc, Dir::L),
+        // stamp+transfer quints (states q_reloc -> q_xfer).
+        0 <= j0 < tm.quints.len(),
+        0 <= j1 < tm.quints.len(),
+        0 <= j2 < tm.quints.len(),
+        0 <= j3 < tm.quints.len(),
+        0 <= j4 < tm.quints.len(),
+        tm.quints[j0] == mk_quint(q_reloc, 0, 5, q_xfer, Dir::R),
+        tm.quints[j1] == mk_quint(q_xfer, 1, 1, q_xfer, Dir::R),
+        tm.quints[j2] == mk_quint(q_xfer, 2, 2, q_xfer, Dir::R),
+        tm.quints[j3] == mk_quint(q_xfer, 3, 3, q_xfer, Dir::R),
+        tm.quints[j4] == mk_quint(q_xfer, 4, 4, q_xfer, Dir::R),
+    ensures
+        tm_run(tm,
+            TmConfig {
+                u: (copy_u(0, big_m, g, tm.m) + pow_nat(tm.m, (g + big_m + 1) as nat) * t_u) as nat,
+                v: (dpack(output, tm.m) + pow_nat(tm.m, output.len()) * w) as nat,
+                a: 0, q: q_s },
+            (q_clean_fuel(g, big_m) + 1 + output.len()) as nat)
+            == (TmConfig {
+                    u: (dpack(drev(output), tm.m) + pow_nat(tm.m, output.len()) * 5
+                        + pow_nat(tm.m, (output.len() + 1 + g + big_m + 1) as nat) * t_u) as nat,
+                    v: (w / tm.m), a: 0, q: q_xfer,
+               }),
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 5);
+    let big_l = output.len();
+    let v0 = (dpack(output, m) + pow_nat(m, big_l) * w) as nat;
+
+    // ── copy_u(0,M,g) == m^g·R(M); the q_clean (t = t_u) master-form entry equals copy_u + m^{g+M+1}·t_u.
+    assert(repunit_m(0, m) == 0) by { crate::tm_two_counter::lemma_repunit_zero(m); }
+    assert(pow_nat(m, 0) == 1);
+    assert(copy_u(0, big_m, g, m) == pow_nat(m, g) * repunit_m(big_m, m)) by(nonlinear_arith)
+        requires
+            copy_u(0, big_m, g, m) == repunit_m(0, m)
+                + pow_nat(m, g) * (5 * repunit_m(0, m) + pow_nat(m, 0) * repunit_m(big_m, m)),
+            repunit_m(0, m) == 0,
+            pow_nat(m, 0) == 1;
+    // m^g · m^{M+1} == m^{g+M+1}.
+    lemma_pow_nat_add(m, g, (big_m + 1) as nat);
+    let qc_entry = (pow_nat(m, g) * (repunit_m(big_m, m) + pow_nat(m, (big_m + 1) as nat) * t_u)) as nat;
+    assert(qc_entry == (copy_u(0, big_m, g, m) + pow_nat(m, (g + big_m + 1) as nat) * t_u) as nat)
+        by(nonlinear_arith)
+        requires
+            copy_u(0, big_m, g, m) == pow_nat(m, g) * repunit_m(big_m, m),
+            pow_nat(m, (g + big_m + 1) as nat) == pow_nat(m, g) * pow_nat(m, (big_m + 1) as nat),
+            qc_entry == (pow_nat(m, g) * (repunit_m(big_m, m) + pow_nat(m, (big_m + 1) as nat) * t_u)) as nat;
+
+    // ── v0 % m == output[0] ∈ 1..4 (the q_clean precondition). v0 == big_y·m + output[0].
+    lemma_dpack_pop(output, m);
+    lemma_pow_nat_unfold(m, big_l);
+    let big_y = (dpack(output.drop_first(), m) + pow_nat(m, (big_l - 1) as nat) * w) as nat;
+    assert(dpack(output, m) == output[0] + m * dpack(output.drop_first(), m));
+    assert(output[0] < m);
+    assert(v0 == big_y * m + output[0]) by(nonlinear_arith)
+        requires
+            v0 == (dpack(output, m) + pow_nat(m, big_l) * w) as nat,
+            dpack(output, m) == output[0] + m * dpack(output.drop_first(), m),
+            pow_nat(m, big_l) == m * pow_nat(m, (big_l - 1) as nat),
+            big_y == (dpack(output.drop_first(), m) + pow_nat(m, (big_l - 1) as nat) * w) as nat;
+    verus_group_theory::word_numbering::lemma_div_mod_step(big_y, m, output[0]);
+    assert(v0 % m == output[0]);
+    assert(1 <= v0 % m <= 4);
+
+    // ── WIPE leg: q_clean (t = t_u) erases the master, head back on the boundary in q_reloc,
+    //    leaving the backup at u == t_u·m^{g+M+1}.
+    let c0 = TmConfig { u: qc_entry, v: v0, a: 0, q: q_s };
+    lemma_q_clean(tm, g, big_m, t_u, v0, q_s, q_w, q_r, q_reloc,
+        i_seek, i_trans, i_wipe, i_wr, i_seekr, i_sb1, i_sb2, i_sb3, i_sb4);
+    let u_floor = (t_u * pow_nat(m, (g + big_m + 1) as nat)) as nat;
+    let c1 = TmConfig { u: u_floor, v: v0, a: 0, q: q_reloc };
+    assert(tm_run(tm, c0, q_clean_fuel(g, big_m)) == c1);
+
+    // ── STAMP+TRANSFER leg (u-floor): deposit reversed output + far-5 onto u above the backup.
+    lemma_reloc_stamp_transfer_ufloor_contract(tm, c1, q_reloc, q_xfer, output, w, u_floor,
+        j0, j1, j2, j3, j4);
+    let c2 = TmConfig {
+        u: (dpack(drev(output), m) + pow_nat(m, big_l) * 5 + pow_nat(m, (big_l + 1) as nat) * u_floor) as nat,
+        v: (w / m), a: 0, q: q_xfer };
+    assert(tm_run(tm, c1, (1 + big_l) as nat) == c2);
+
+    // ── reshape the backup offset: m^{L+1} · (t_u·m^{g+M+1}) == t_u · m^{L+1+g+M+1}.
+    lemma_pow_nat_add(m, (big_l + 1) as nat, (g + big_m + 1) as nat);
+    assert(pow_nat(m, (big_l + 1) as nat) * u_floor
+        == pow_nat(m, (big_l + 1 + g + big_m + 1) as nat) * t_u) by(nonlinear_arith)
+        requires
+            u_floor == (t_u * pow_nat(m, (g + big_m + 1) as nat)) as nat,
+            pow_nat(m, (big_l + 1 + g + big_m + 1) as nat)
+                == pow_nat(m, (big_l + 1) as nat) * pow_nat(m, (g + big_m + 1) as nat);
 
     // ── compose: q_clean_fuel + (1 + L).
     lemma_tm_run_split(tm, c0, q_clean_fuel(g, big_m), (1 + big_l) as nat);
