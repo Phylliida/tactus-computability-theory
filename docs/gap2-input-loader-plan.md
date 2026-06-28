@@ -2457,6 +2457,21 @@ reloc and the cmp cascade consume it. Supporting `lemma_pow_nat_pos`/`lemma_pow_
 **So HALF 2's FOUNDATION is in place** — the next session threads `lemma_pow_high_tail` through the
 `tm_cmp_*` gadget boundary reads (loops unchanged), starting at `gap_cross`/`match_round`.
 
+**DE-RISK 3 (this session — HALF 2 is SMALLER than "10-15 lemmas").** `lemma_cmp_gap_cross` is itself
+**tail-generic via its `out_rest` (above-frontier) parameter** — a u-tail absorbs into it for free:
+`pile_zeros(vk + m·(out_rest + m^{H−g}·T_u), g)/m == [pile_zeros(vk + m·out_rest, g)/m] + m^{H}·T_u`
+(verified algebraically: `(vk + m·out_rest')·m^{g-1} = vk·m^{g-1} + out_rest·m^g + m^{H-g}T_u·m^g`). So
+calling the EXISTING `lemma_cmp_gap_cross` with `out_rest := out_rest + m^{H−g}·T_u` gives the tailed behavior
+with NO new lemma — the tail rides in the high parameter, the frontier digit `d_o` is untouched. Same for
+`skip0_left` (the tail rides in `rest`). **Implication:** HALF 2 is largely *instantiating the existing
+compare chain with the u-tail living in the high/`out_rest`/`rest` parameters*, plus `lemma_pow_high_tail`
+ONLY at the few points a gadget div/mods a value whose tail could reach the scanned cell. The next session
+should (1) trace the parked-entry → bootstrap → loop → decide chain confirming the tail stays in the high
+parameter throughout (likely true given gap_cross/skip0_left/match_round all treat the above-frontier part
+opaquely), (2) re-state the top-level `lemma_reloc_then_compare_{accept,reject}` with the `+m^{H}·T_u` tail
+on `u` (`H` = the relocation's `L+1+g+M+1` from HALF 1). This is the genuine remaining u-tail-lift work, and
+it now looks like a thin instantiation layer, not a deep re-thread.
+
 **ACCEPT tape-wipe (R-C) prereq, noted:** the accept config IS already computed inside
 `lemma_cmp_accept_decide` (`c_acc = apply_quint((q_verify_cmp,5,5,q_accept,R), c_v, m)`, body line ~236) —
 only the `ensures` discards it. Exposing it is a cheap strengthening (thread `c_acc` up through
