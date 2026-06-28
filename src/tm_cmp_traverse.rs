@@ -1278,6 +1278,75 @@ pub proof fn lemma_cmp_match_round_empty(
     assert(tm_run(tm, c, (g + 4) as nat) == c3);
 }
 
+/// **The marker-placement gadget (B-cmp.7 bootstrap entry → `INV(0)`).** The 2-step entry move from the
+/// parked layout. The parked layout (a B-cmp.7 emit-wiring requirement) leaves the head one cell into `u`
+/// scanning the boundary `0` (the single `g = 1` gap blank), `output` above it in `u`, α in `v` with `α[0]`
+/// at `v`-low (`c.v == a0 + m·v_above`, `a0 = α[0] ∈ 1..4`), state `q_start`. The gadget: step `(q_start, 0,
+/// 0, q_read, R)` pops `a0` into the head (pushing the boundary `0` onto `u`), then `(q_read, a0, 5, q_mark,
+/// L)` writes the marker `5` onto `α[0]`'s cell and records `a0` in the value-track `q_mark = qw(a0)`,
+/// restoring the boundary `0`. Net `v == m·v_above + 5` (marker hiding `α[0]`, α tail above), `u == c.u`
+/// (output **untouched** — NOT consumed), `a == 0` (boundary), state `q_mark` — exactly `INV(0)`. Fuel `2`.
+/// Requires `n ≥ 5`. The `q_start`/`q_read` states are disjoint from the steady-state tracks (no determinism
+/// collision); from the `INV(0)` hand-off, [`lemma_cmp_match_round_empty`] (after one gap-cross) reaches
+/// `INV(1)`, whence the steady-state loop runs unchanged.
+pub proof fn lemma_cmp_place_marker(
+    tm: Tm, c: TmConfig, q_start: nat, q_read: nat, q_mark: nat,
+    a0: nat, v_above: nat,
+    i0: int, im: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        1 <= a0 <= 4,
+        c.a == 0,
+        c.v == a0 + tm.m * v_above,
+        c.q == q_start,
+        0 <= i0 < tm.quints.len(),
+        0 <= im < tm.quints.len(),
+        tm.quints[i0] == mk_quint(q_start, 0, 0, q_read, Dir::R),
+        tm.quints[im] == mk_quint(q_read, a0, 5, q_mark, Dir::L),
+    ensures
+        tm_run(tm, c, 2) == (TmConfig { u: c.u, v: tm.m * v_above + 5, a: 0, q: q_mark }),
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 5);
+
+    // ── Step 1: (q_start, 0, 0, q_read, R) — pop α0 into the head, push the boundary 0 onto u.
+    assert(quint_matches(tm.quints[i0], c));   // q == q_start, a == 0
+    lemma_tm_step_picks(tm, c, i0);
+    let c1 = apply_quint(tm.quints[i0], c, m);
+    assert(tm_step(tm, c) == Some(c1));
+    assert(m * v_above == v_above * m) by(nonlinear_arith);
+    assert(c.v == v_above * m + a0);
+    lemma_div_mod_step(v_above, m, a0);   // c.v/m == v_above, c.v%m == a0  (a0 < m)
+    assert(c1.u == c.u * m);
+    assert(c1.v == v_above);
+    assert(c1.a == a0);
+    assert(c1.q == q_read);
+
+    // ── Step 2: (q_read, a0, 5, q_mark, L) — write the marker 5, record a0, restore the boundary 0.
+    assert(quint_matches(tm.quints[im], c1));   // q == q_read, a == a0
+    lemma_tm_step_picks(tm, c1, im);
+    let c2 = apply_quint(tm.quints[im], c1, m);
+    assert(tm_step(tm, c1) == Some(c2));
+    assert((c.u * m) % m == 0) by(nonlinear_arith) requires m > 1;
+    assert((c.u * m) / m == c.u) by(nonlinear_arith) requires m > 1;
+    assert(c2.u == c.u);
+    assert(c2.v == v_above * m + 5);
+    assert(v_above * m + 5 == m * v_above + 5);
+    assert(c2.a == 0);
+    assert(c2.q == q_mark);
+
+    // ── Compose: 2 = 1 + 1.
+    lemma_tm_run_split(tm, c, 1, 1);
+    assert(tm_run(tm, c1, 0) == c1);
+    assert(tm_run(tm, c2, 0) == c2);
+    assert(tm_run(tm, c, 1) == c1);
+    assert(tm_run(tm, c1, 1) == c2);
+    assert(tm_run(tm, c, 2) == c2);
+}
+
 /// **B-cmp.5 (the induction STEP) — one matched round `INV(k) → INV(k+1)`.** Composes the gap-cross
 /// ([`lemma_cmp_gap_cross`], B-cmp.3) and the match round ([`lemma_cmp_match_round`], B-cmp.4) into a single
 /// config-level move over the loop invariant. This is exactly the step the full compare loop (B-cmp.5)
