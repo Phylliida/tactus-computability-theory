@@ -2382,3 +2382,78 @@ layout). (2) **ACCEPT tape-wipe = R-C** (`q_accept` → `tm_origin`): needs the 
 `lemma_cmp_decides_accept` exposes only `.q == q_accept`, not the tape), so it's a distinct config-tracing
 brick (mirror `tm_cleanup`), best built with R-C. After R-cmp: R-S dovetail → R-C/R-MC/B-W → discharge
 `ceer_realizes` → drop `axiom_ceer_fp_embedding`.
+
+### N+31 — R-S dovetail design SETTLED (port-8051 co-design) + u-tail-lift HALF 1 (tail-safe relocation) DONE. crate 1868 → 1877/0, additive.
+
+This session moved the keystone. The three remaining R-cmp items (u-tail-lift, ACCEPT tape-wipe, R-S
+dovetail) all funnel through **R-S** — it pins the global tape layout, which pins the u-tail offset `H` and
+the cleanup target. So R-S was attacked first (design), then the one concrete sub-brick the design unblocks
+(tail-safe relocation) was built and verified.
+
+**R-S DESIGN — SETTLED (port-8051 consult, this session).** The dovetail must be **base-m-native** for the
+compare: materializing α as a unary register is the `2^α` FACT-2 blow-up, dead. So R-S factors as
+**[poly-bounded control] glued to [base-m emit→reloc→compare→branch]**:
+
+- **Control (unary, RM-style n≥4 gadgets):** the outer bound `T`, inner stage `s≤T`, the enumerator `E`
+  register-bank sim, and `(a,b)=declared_pair(e,s)` extraction are ALL poly-bounded in `T,s` (NOT α) ⟹
+  unary blocks + the existing `tm.n≥2`-monotone inc/dec/walk/peek gadgets. Re-express `search_rm`'s
+  `outer-T / inner-s≤T` nesting LOGIC as a TM-orchestrator (you CANNOT black-box `search_rm`-as-an-RM: its
+  per-stage body now ends in a base-m emit+compare, not an `eq_test`). The enum-sim **re-runs from scratch
+  each outer round** — `search_rm`'s standard discipline; poly overhead, **confirmed NOT a dragon**.
+- **Per-stage body (DONE, base-m):** recompute `(a,b)` → feed unary `i_a=a+1, i_b=b+1` to the emitter
+  (`gap2_emit_*`) → emit `relnum(a,b)` digits → `reloc` → compare vs the **immutable** α-block → on
+  `q_reject` advance the dovetail and retry; on `q_accept` → cleanup→origin. Halts iff α is a declared
+  relator word-number. Compose to `mm_decides_relnum` via `lemma_tm_h0_iff` ∘ R-S-halts-iff.
+
+**THE LAYOUT — corrected against the VERIFIED u/v frame.** The consult's abstract "u-region right of β" does
+NOT map to the built machinery, whose frame is FIXED: `u`=left tape, `v`=right tape, head at the
+master/output boundary, `reloc` moves output `v→u`, compare walks output(`u`) vs α(`v`). So the Control Zone
+cannot be "to the side" in tape-space — in the u/v model it must be a **high tail** (a digit-offset above the
+head's reach), and the per-stage surface must be proven to **carry it untouched**. There is no placement that
+avoids a tail-carry: the Control Zone is finite data that must coexist with the working tape through both
+emit and compare. The previous instance's choice (**u-high-tail above the master**) is right — `q_clean`'s
+deepest left reach is the master separator, below the backup.
+
+**u-TAIL-LIFT — HALF 1 (tail-safe RELOCATION) DONE (`gap2_reloc.rs`, +3 lemmas, crate 1877/0).** Key finding:
+`lemma_q_clean` **already carries the tail** (its `t` param: entry `u=m^g·(R(M)+m^{M+1}·t)`, exit
+`u=t·m^{g+M+1}`); `lemma_reloc_local` just calls it with `t=0`. And `lemma_dwalk_right_gen` is fully
+tail-aware on `u` (`dpile(c.u,blk)` piles onto WHATEVER `c.u` is). So the lift is a clean additive
+generalization, no deep re-thread:
+- **`lemma_reloc_stamp_transfer_ufloor`** (+ `_contract`) — the stamp+transfer from an arbitrary `u`-floor
+  `c.u==u_floor` (was pinned `0`): step-0 stamp lifts `u_floor→u_floor·m+5`, the tailed walk piles output
+  above ⟹ `u == dpack(drev(output)) + m^L·5 + m^{L+1}·u_floor`.
+- **`lemma_reloc_local_tailed`** — entry `u==copy_u(0,M,g)+m^{g+M+1}·T_u` (master + backup), via
+  `q_clean(t=T_u)` then the u-floor transfer ⟹ exit `u==dpack(drev(output)) + m^L·5 + m^{(L+1+g+M+1)}·T_u`,
+  `v==w/m`, `q==q_xfer`. `T_u==0` recovers `lemma_reloc_local`. The backup rides to offset `L+1+g+M+1`,
+  well above the far-`5` (digit `L`) — so the compare (reach ≤ `L`) is naturally tail-safe.
+
+**u-TAIL-LIFT — HALF 2 (tail-safe COMPARE) = NEXT.** The comparator must carry the same `m^{H}·T_u` tail
+(`H = L+1+g+M+1`) on `u` from the parked entry through to `q_accept`/`q_reject`. The compare gadgets pin
+`c.u` EXACTLY (e.g. `lemma_cmp_accept_decide`: `c.u == pile_zeros(vk+m·5,g,m)/m`), so a tail is a frame
+addition that breaks those preconditions. **Two candidate routes (scope before building):** (a) **re-thread**
+each `tm_cmp_*` sub-lemma (gap_cross, match_round, bootstrap, loop, the 5 decide terminals) with a
+`+ m^{H}·T_u` u-term — mechanical but ~10-15 lemmas; (b) a **generic u-high-tail frame meta-lemma**: if a run
+never pops `u` past digit `H` (head's net-left-excursion-on-`u` < `H` throughout) then `tm_run` is invariant
+under `u += m^{H}·T_u` — elegant, reusable for R-C too, but needs a head-excursion bound the current
+compose-of-lemmas structure doesn't expose. Lean (b) if the excursion bound is cheap to thread through the
+existing fuel-additive composition; else (a). **PROBE (this session, `lemma_cmp_gap_cross`):** the tail
+offset **shifts down by the net left-excursion** of each gadget — gap_cross (`g` left-moves) takes a tail at
+offset `H` to offset `H−g`, value intact (entry `u=(d_o+m·out_rest)·m^{g-1}` → exit `u=out_rest`; a
+`+m^H·T_u` rides to `+m^{H−g}·T_u`). The compare's max `u`-reach is the far-`5` (digit `L`), and the decide
+terminals fire `q_accept`/`q_reject` immediately on reading it (no further left pop), so **any tail at offset
+`> L` is preserved** — and the relocation lands it at `L+1+g+M+1 ≫ L`. So route (a) is concrete: each
+gadget's post-offset = pre-offset − (its net left-excursion), same `+m^{offset}·T_u` frame-arithmetic shape
+as the reloc lemmas just built; the final offset (for R-C) is the compare's total net excursion below `H`. **This unblocks: the per-stage surface inside the global frame,
+AND (via the same exposed accept config) the ACCEPT tape-wipe.**
+
+**ACCEPT tape-wipe (R-C) prereq, noted:** the accept config IS already computed inside
+`lemma_cmp_accept_decide` (`c_acc = apply_quint((q_verify_cmp,5,5,q_accept,R), c_v, m)`, body line ~236) —
+only the `ensures` discards it. Exposing it is a cheap strengthening (thread `c_acc` up through
+`lemma_cmp_decides_accept` → `lemma_reloc_then_compare_accept`); deferred to R-C since the wipe-to-origin
+needs the global-frame accept config (= local + u-tail, i.e. HALF 2).
+
+**NEXT:** u-tail-lift HALF 2 (tail-safe compare, route (a)/(b) per the excursion-bound probe) → then R-S can
+embed the per-stage surface in the dovetail. R-S build order: control skeleton (T/s counters + back-edges,
+mirror `search_rm`'s nesting) → enum-sim-on-tape + `(a,b)` extraction → wire to emit→reloc→compare→branch →
+R-C (cleanup, consumes the exposed accept config) → R-MC (`mm_decides_relnum` via `lemma_tm_h0_iff`) → B-W
+(discharge `ceer_realizes`) → drop `axiom_ceer_fp_embedding`.
