@@ -513,6 +513,161 @@ pub proof fn lemma_cmp_marker_advance(
     assert(tm_run(tm, c, (2 * k + 3) as nat) == c_final);
 }
 
+/// **The α-exhaust marker-advance variant (B-cmp.6, the ACCEPT/too-long anchor).** The sibling of
+/// [`lemma_cmp_marker_advance`] for the round where the marker is on the **LAST** α digit: advancing it
+/// reads the **far-`5` sentinel** (sitting immediately above the marked cell, with all blank above —
+/// `whi == 5`) instead of a next α digit `s ∈ 1..4`. So phases 1–2 are identical (walk right to the `5`
+/// mark, restore `vk`, step R), but phase 2 lands scanning the far sentinel `5`; the **α-exhaust transition**
+/// `(q_read, 5, 5, q_verify_end, L)` re-writes the sentinel and switches to the verify-end track, then the
+/// left-walk returns the fully-restored α to `v`. After this brick α is **value-preserved and exhausted**
+/// (marker gone, every α digit restored, the far sentinel back at the top); the head sits one cell into `u`
+/// at the output frontier in `q_verify_end`, ready for the ACCEPT/too-long dispatch (gap-cross + read).
+///
+/// The `(q_read, 5, …)` transition is a *distinct scanned symbol* from the normal `(q_read, s, 5, qw(s), L)`
+/// dispatch (`s ∈ 1..4`), so adding it to the shared `q_read` track introduces no `tm_wf` determinism
+/// collision. Net `v == dpack(blk ++ [vk]) + m^{|blk|+1}·5` (the restored α with the far sentinel `5` at the
+/// top, **no marker**). Fuel `2·|blk| + 3` (same as the normal advance). Requires `n ≥ 5`.
+pub proof fn lemma_cmp_marker_advance_end(
+    tm: Tm, c: TmConfig, q_back: nat, q_read: nat, q_verify_end: nat,
+    blk: Seq<nat>, w: nat, whi: nat, vk: nat,
+    i1: int, i2: int, i3: int, i4: int, j: int, je: int,
+    l1: int, l2: int, l3: int, l4: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        blk.len() >= 1,
+        forall|k: int| 0 <= k < blk.len() ==> 1 <= #[trigger] blk[k] <= 4,
+        1 <= vk <= 4,
+        c.a == blk[0],
+        w == tm.m * whi + 5,
+        whi == 5,                  // the cell above the marker is the far sentinel `5`, nothing above
+        c.v == dpack(blk.drop_first(), tm.m) + pow_nat(tm.m, (blk.len() - 1) as nat) * w,
+        c.q == q_back,
+        0 <= i1 < tm.quints.len(),
+        0 <= i2 < tm.quints.len(),
+        0 <= i3 < tm.quints.len(),
+        0 <= i4 < tm.quints.len(),
+        0 <= j < tm.quints.len(),
+        0 <= je < tm.quints.len(),
+        0 <= l1 < tm.quints.len(),
+        0 <= l2 < tm.quints.len(),
+        0 <= l3 < tm.quints.len(),
+        0 <= l4 < tm.quints.len(),
+        tm.quints[i1] == mk_quint(q_back, 1, 1, q_back, Dir::R),
+        tm.quints[i2] == mk_quint(q_back, 2, 2, q_back, Dir::R),
+        tm.quints[i3] == mk_quint(q_back, 3, 3, q_back, Dir::R),
+        tm.quints[i4] == mk_quint(q_back, 4, 4, q_back, Dir::R),
+        tm.quints[j]  == mk_quint(q_back, 5, vk, q_read, Dir::R),
+        tm.quints[je] == mk_quint(q_read, 5, 5, q_verify_end, Dir::L),  // α-exhaust transition
+        tm.quints[l1] == mk_quint(q_verify_end, 1, 1, q_verify_end, Dir::L),
+        tm.quints[l2] == mk_quint(q_verify_end, 2, 2, q_verify_end, Dir::L),
+        tm.quints[l3] == mk_quint(q_verify_end, 3, 3, q_verify_end, Dir::L),
+        tm.quints[l4] == mk_quint(q_verify_end, 4, 4, q_verify_end, Dir::L),
+    ensures
+        tm_run(tm, c, (2 * blk.len() + 3) as nat)
+            == (TmConfig {
+                    u: c.u / tm.m,
+                    v: dpack(blk + seq![vk], tm.m) + pow_nat(tm.m, (blk.len() + 1) as nat) * 5,
+                    a: c.u % tm.m,
+                    q: q_verify_end,
+               }),
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 5);
+    let k = blk.len();
+    // w/whi decompositions: w == m·5 + 5, w/m == 5, w%m == 5; whi/m == 0, whi%m == 5.
+    assert(m * whi == whi * m) by(nonlinear_arith);
+    assert(w == whi * m + 5);
+    lemma_div_mod_step(whi, m, 5);                 // w/m == whi (== 5), w%m == 5
+    assert(w / m == whi);
+    assert(w % m == 5);
+    assert(0 * m + 5 == 5) by(nonlinear_arith);
+    lemma_div_mod_step(0, m, 5);                    // (0·m+5)/m == 0, %m == 5  (5 < m)
+    assert(whi / m == 0);                          // 5 < m
+    assert(whi % m == 5);
+
+    // ── Phase 1: walk right over blk to the 5-mark.
+    lemma_dwalk_right_gen(tm, c, q_back, blk, w, i1, i2, i3, i4);
+    let c_right = TmConfig { u: dpile(c.u, blk, m), v: w / m, a: w % m, q: q_back };
+    assert(tm_run(tm, c, k) == c_right);
+    assert(c_right.a == 5);
+    assert(c_right.v == whi);   // == 5
+
+    // ── Phase 2: marker step (q_back, 5, vk, q_read, R) — restore vk, move R onto the far sentinel 5.
+    assert(quint_matches(tm.quints[j], c_right));
+    lemma_tm_step_picks(tm, c_right, j);
+    let c_marker = apply_quint(tm.quints[j], c_right, m);
+    assert(tm_step(tm, c_right) == Some(c_marker));
+    // R-move a2 == vk: u' = u·m + vk, v' = v/m == whi/m == 0, a' = v%m == whi%m == 5.
+    assert(c_marker.u == dpile(c.u, blk, m) * m + vk);
+    assert(c_marker.v == 0);
+    assert(c_marker.a == 5);
+    assert(c_marker.q == q_read);
+
+    // ── Phase 3: α-exhaust transition (q_read, 5, 5, q_verify_end, L) — rewrite the far sentinel, flip L.
+    assert(quint_matches(tm.quints[je], c_marker));   // q == q_read, a == 5
+    lemma_tm_step_picks(tm, c_marker, je);
+    let c_read = apply_quint(tm.quints[je], c_marker, m);
+    assert(tm_step(tm, c_marker) == Some(c_read));
+    // L-move a2 == 5: u' = u/m, v' = v·m + 5 == 5, a' = u%m.
+    assert(vk < m);
+    lemma_div_mod_step(dpile(c.u, blk, m), m, vk);   // (dpile·m+vk)/m == dpile, %m == vk
+    assert(c_read.u == dpile(c.u, blk, m));
+    assert(c_read.v == 5);              // 0·m + 5
+    assert(c_read.a == vk);
+    assert(c_read.q == q_verify_end);
+
+    // ── Phase 4: walk left over blk2 = [vk] ++ drev(blk) (the fully-restored α) back to the boundary.
+    let dr = drev(blk);
+    lemma_drev_len(blk);              // |dr| == k
+    lemma_drev_digit_bound(blk, 4);   // dr digits in 1..4
+    let blk2 = seq![vk] + dr;
+    assert(blk2.len() == k + 1);
+    assert(blk2[0] == vk);
+    assert(blk2.drop_first() =~= dr);
+    assert forall|i: int| 0 <= i < blk2.len() implies 1 <= #[trigger] blk2[i] <= 4 by {
+        if i == 0 {
+            assert(blk2[0] == vk);
+        } else {
+            assert(blk2[i] == dr[i - 1]);
+        }
+    }
+    // precondition: c_read.u == dpack(dr) + m^k·c.u == dpack(blk2.df) + m^{|blk2|-1}·c.u.
+    lemma_dpile_is_dpack_drev(c.u, blk, m);          // dpile(c.u, blk) == c.u·m^k + dpack(dr)
+    assert(c.u * pow_nat(m, k) == pow_nat(m, k) * c.u) by(nonlinear_arith);
+    assert(c_read.u == dpack(dr, m) + pow_nat(m, k) * c.u);
+    assert((blk2.len() - 1) as nat == k);
+    lemma_dwalk_left_gen(tm, c_read, q_verify_end, blk2, c.u, l1, l2, l3, l4);
+    let c_final = TmConfig { u: c.u / m, v: dpile(c_read.v, blk2, m), a: c.u % m, q: q_verify_end };
+    assert(tm_run(tm, c_read, (k + 1) as nat) == c_final);
+
+    // final v == dpile(5, blk2) == 5·m^{k+1} + dpack(blk ++ [vk]).
+    lemma_dpile_is_dpack_drev(5, blk2, m);   // == 5·m^{|blk2|} + dpack(drev(blk2))
+    // drev(blk2) == drev([vk] ++ dr) == drev(dr) ++ drev([vk]) == blk ++ [vk].
+    lemma_drev_concat(seq![vk], dr);
+    lemma_drev_involution(blk);          // drev(dr) =~= blk
+    lemma_drev_singleton(vk);            // drev([vk]) =~= [vk]
+    assert(drev(blk2) =~= blk + seq![vk]);
+    assert(dpack(drev(blk2), m) == dpack(blk + seq![vk], m));
+    assert(blk2.len() == k + 1);
+    assert(dpile(c_read.v, blk2, m) == 5 * pow_nat(m, (k + 1) as nat) + dpack(blk + seq![vk], m));
+    assert(5 * pow_nat(m, (k + 1) as nat) == pow_nat(m, (k + 1) as nat) * 5) by(nonlinear_arith);
+    assert(c_final.v == dpack(blk + seq![vk], m) + pow_nat(m, (k + 1) as nat) * 5);
+
+    // ── Compose the four runs: 2k+3 = k + (1 + (1 + (k+1))).
+    lemma_tm_run_split(tm, c, k, (k + 3) as nat);          // tm_run(c, 2k+3) == tm_run(c_right, k+3)
+    lemma_tm_run_split(tm, c_right, 1, (k + 2) as nat);    // tm_run(c_right, k+3) == tm_run(c_marker, k+2)
+    lemma_tm_run_split(tm, c_marker, 1, (k + 1) as nat);   // tm_run(c_marker, k+2) == tm_run(c_read, k+1)
+    assert(tm_run(tm, c_marker, 0) == c_marker);
+    assert(tm_run(tm, c_read, 0) == c_read);
+    assert(tm_run(tm, c_right, 1) == c_marker);
+    assert(tm_run(tm, c_marker, 1) == c_read);
+    assert((2 * k + 3) as nat == (k + (k + 3)) as nat);
+    assert(tm_run(tm, c, (2 * k + 3) as nat) == c_final);
+}
+
 /// **B-cmp.3 — the gap-cross + boundary transition** (`docs/gap2-input-loader-plan.md` §N+23, the bridge
 /// into the digit COMPARE B-cmp.4). After a [`lemma_cmp_marker_advance`] the head sits **one cell into `u`**
 /// scanning the output stack's low cell `U % m` (`u == U / m`), in the left-walk state `q_walk` (which
@@ -740,6 +895,148 @@ pub proof fn lemma_cmp_match_round(
         v: dpack(blk + seq![vk], m) + pow_nat(m, (k + 1) as nat) * (m * suf + 5),
         a: c2.u % m,
         q: q_walk,
+    };
+    assert(tm_run(tm, c2, (2 * k + 3) as nat) == c3);
+    // c3.u == pile_zeros(out_rest, g), c3.a == 0.
+    assert((pile_zeros(out_rest, g, m) * m) % m == 0) by(nonlinear_arith) requires m > 1;
+    assert((pile_zeros(out_rest, g, m) * m) / m == pile_zeros(out_rest, g, m))
+        by(nonlinear_arith) requires m > 1;
+    assert(c3.u == pile_zeros(out_rest, g, m));
+    assert(c3.a == 0);
+
+    // ── Compose: total = 1 + g + (2k+3) = 2k + g + 4.
+    assert((g + 2 * k + 3) as nat == (g + (2 * k + 3)) as nat);
+    lemma_tm_run_split(tm, c, 1, (g + 2 * k + 3) as nat);    // tm_run(c, 1+(g+2k+3)) == tm_run(c1, g+2k+3)
+    lemma_tm_run_split(tm, c1, g, (2 * k + 3) as nat);       // tm_run(c1, g+(2k+3)) == tm_run(c2, 2k+3)
+    assert(tm_run(tm, c1, 0) == c1);
+    assert(tm_run(tm, c, 1) == c1);                          // single step
+    assert((2 * k + g + 4) as nat == (1 + (g + 2 * k + 3)) as nat);
+    assert(tm_run(tm, c, (2 * k + g + 4) as nat) == c3);
+}
+
+/// **B-cmp.6 — the FINAL matched round (α-exhaust variant).** The sibling of [`lemma_cmp_match_round`] for
+/// the round that matches the **LAST** α digit `vk` and then exhausts α. Entry is the same compare-config as
+/// `lemma_cmp_match_round` (head scanning the matched output frontier `d_o == vk` in `q_cmp`), but the α
+/// stack's marker hides the last digit with the **far-`5` sentinel** immediately above (`w == m·whi + 5`,
+/// `whi == 5`). The machine: (1) compare-match `(q_cmp, vk, 0, q_back, R)` consumes the output digit; (2)
+/// return-walk [`lemma_skip0_right`] back to α-low; (3) the **α-exhaust marker-advance**
+/// ([`lemma_cmp_marker_advance_end`]) restores `vk`, reads the far sentinel `5`, and switches to the
+/// verify-end track. Net: α is fully restored and exhausted (`v == dpack(blk ++ [vk]) + m^{|blk|+1}·5`, the
+/// far sentinel back on top, no marker); the consumed output digit became a `0` (gap `g → g+1`); the head
+/// ends one cell into `u` scanning the new top gap-`0` in `q_verify_end`, ready for the ACCEPT/too-long
+/// dispatch (a [`lemma_cmp_gap_cross`] in the verify-end track + read of the output frontier). Fuel
+/// `2·|blk| + g + 4` (same as the normal match round). Requires `n ≥ 5`.
+pub proof fn lemma_cmp_match_round_end(
+    tm: Tm, c: TmConfig,
+    q_cmp: nat, q_back: nat, q_read: nat, q_verify_end: nat,
+    blk: Seq<nat>, w: nat, whi: nat, vk: nat, g: nat, out_rest: nat,
+    jc: int, js: int,
+    i1: int, i2: int, i3: int, i4: int, j: int, je: int,
+    l1: int, l2: int, l3: int, l4: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        blk.len() >= 1,
+        forall|k: int| 0 <= k < blk.len() ==> 1 <= #[trigger] blk[k] <= 4,
+        1 <= vk <= 4,
+        g >= 1,
+        w == tm.m * whi + 5,
+        whi == 5,                  // the cell above the marker is the far sentinel `5`, nothing above
+        c.a == vk,                 // the matched output digit (d_o == vk)
+        c.u == out_rest,
+        c.v == pile_zeros(dpack(blk, tm.m) + pow_nat(tm.m, blk.len()) * w, g, tm.m),
+        c.q == q_cmp,
+        0 <= jc < tm.quints.len(),
+        0 <= js < tm.quints.len(),
+        0 <= i1 < tm.quints.len(),
+        0 <= i2 < tm.quints.len(),
+        0 <= i3 < tm.quints.len(),
+        0 <= i4 < tm.quints.len(),
+        0 <= j < tm.quints.len(),
+        0 <= je < tm.quints.len(),
+        0 <= l1 < tm.quints.len(),
+        0 <= l2 < tm.quints.len(),
+        0 <= l3 < tm.quints.len(),
+        0 <= l4 < tm.quints.len(),
+        tm.quints[jc] == mk_quint(q_cmp, vk, 0, q_back, Dir::R),    // compare match
+        tm.quints[js] == mk_quint(q_back, 0, 0, q_back, Dir::R),    // gap skip right (return)
+        tm.quints[i1] == mk_quint(q_back, 1, 1, q_back, Dir::R),
+        tm.quints[i2] == mk_quint(q_back, 2, 2, q_back, Dir::R),
+        tm.quints[i3] == mk_quint(q_back, 3, 3, q_back, Dir::R),
+        tm.quints[i4] == mk_quint(q_back, 4, 4, q_back, Dir::R),
+        tm.quints[j]  == mk_quint(q_back, 5, vk, q_read, Dir::R),
+        tm.quints[je] == mk_quint(q_read, 5, 5, q_verify_end, Dir::L),  // α-exhaust transition
+        tm.quints[l1] == mk_quint(q_verify_end, 1, 1, q_verify_end, Dir::L),
+        tm.quints[l2] == mk_quint(q_verify_end, 2, 2, q_verify_end, Dir::L),
+        tm.quints[l3] == mk_quint(q_verify_end, 3, 3, q_verify_end, Dir::L),
+        tm.quints[l4] == mk_quint(q_verify_end, 4, 4, q_verify_end, Dir::L),
+    ensures
+        tm_run(tm, c, (2 * blk.len() + g + 4) as nat)
+            == (TmConfig {
+                    u: pile_zeros(out_rest, g, tm.m),
+                    v: dpack(blk + seq![vk], tm.m) + pow_nat(tm.m, (blk.len() + 1) as nat) * 5,
+                    a: 0,
+                    q: q_verify_end,
+               }),
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 5);
+    let k = blk.len();
+    let alpha = dpack(blk, m) + pow_nat(m, k) * w;
+
+    // ── Step 1: compare match (q_cmp, vk, 0, q_back, R) — consume output digit, step R toward boundary.
+    assert(quint_matches(tm.quints[jc], c));   // q == q_cmp, a == vk
+    lemma_tm_step_picks(tm, c, jc);
+    let c1 = apply_quint(tm.quints[jc], c, m);
+    assert(tm_step(tm, c) == Some(c1));
+    // R-move a2 == 0: u' = u*m+0, v' = v/m, a' = v%m, q' = q_back.
+    assert(c1.u == out_rest * m);
+    let vlow = pile_zeros(alpha, (g - 1) as nat, m);
+    assert(pile_zeros(alpha, g, m) == vlow * m);   // pile_zeros unfold (g >= 1)
+    assert((vlow * m) % m == 0) by(nonlinear_arith) requires m > 1;
+    assert((vlow * m) / m == vlow) by(nonlinear_arith) requires m > 1;
+    assert(c1.v == vlow);
+    assert(c1.a == 0);
+    assert(c1.q == q_back);
+
+    // ── Step 2: return walk — skip0_right over the remaining gap back to α-low.
+    lemma_skip0_right(tm, c1, q_back, (g - 1) as nat, alpha, js);
+    assert(((g - 1) as nat + 1) as nat == g);
+    let c2 = TmConfig { u: pile_zeros(c1.u, g, m), v: alpha / m, a: alpha % m, q: q_back };
+    assert(tm_run(tm, c1, g) == c2);
+
+    // α decomposition: α == ma_cv * m + blk[0], ma_cv == marker-advance's required c.v.
+    let ma_cv = dpack(blk.drop_first(), m) + pow_nat(m, (k - 1) as nat) * w;
+    assert(blk[0] <= 4);
+    assert(dpack(blk, m) == blk[0] + m * dpack(blk.drop_first(), m));   // dpack unfold (blk nonempty)
+    lemma_pow_nat_unfold(m, k);   // pow_nat(m, k) == m * pow_nat(m, k-1)
+    assert(alpha == blk[0] + m * ma_cv) by(nonlinear_arith)
+        requires
+            alpha == dpack(blk, m) + pow_nat(m, k) * w,
+            dpack(blk, m) == blk[0] + m * dpack(blk.drop_first(), m),
+            pow_nat(m, k) == m * pow_nat(m, (k - 1) as nat),
+            ma_cv == dpack(blk.drop_first(), m) + pow_nat(m, (k - 1) as nat) * w;
+    assert(m * ma_cv == ma_cv * m) by(nonlinear_arith);
+    assert(alpha == ma_cv * m + blk[0]);
+    lemma_div_mod_step(ma_cv, m, blk[0]);   // alpha/m == ma_cv, alpha%m == blk[0] (blk[0] < m)
+    assert(c2.v == ma_cv);
+    assert(c2.a == blk[0]);
+
+    // c2.u == pile_zeros(out_rest, g) * m.
+    lemma_pile_zeros_shift(out_rest, g, m);   // pile_zeros(out_rest*m, g) == pile_zeros(out_rest, g+1)
+    assert(pile_zeros(out_rest, (g + 1) as nat, m) == pile_zeros(out_rest, g, m) * m);   // unfold
+    assert(c2.u == pile_zeros(out_rest, g, m) * m);
+
+    // ── Step 3: α-exhaust marker advance — restore vk, read the far sentinel 5, switch to q_verify_end.
+    lemma_cmp_marker_advance_end(tm, c2, q_back, q_read, q_verify_end, blk, w, whi, vk,
+        i1, i2, i3, i4, j, je, l1, l2, l3, l4);
+    let c3 = TmConfig {
+        u: c2.u / m,
+        v: dpack(blk + seq![vk], m) + pow_nat(m, (k + 1) as nat) * 5,
+        a: c2.u % m,
+        q: q_verify_end,
     };
     assert(tm_run(tm, c2, (2 * k + 3) as nat) == c3);
     // c3.u == pile_zeros(out_rest, g), c3.a == 0.
