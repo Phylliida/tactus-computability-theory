@@ -668,6 +668,116 @@ pub proof fn lemma_cmp_marker_advance_end(
     assert(tm_run(tm, c, (2 * k + 3) as nat) == c_final);
 }
 
+/// **The empty-prefix marker advance (B-cmp.7 bootstrap primitive).** The `blk.len() == 0` case of
+/// [`lemma_cmp_marker_advance`] — the FIRST round (`INV(0) → INV(1)`) has an empty restored prefix, so the
+/// head is **already on the marker** `5` (no phase-1 right-walk over a prefix). Entry: head scanning the
+/// marker `5` (`c.a == 5`), the α cell above it being the next digit `s` then suffix `suf` (`c.v == m·suf +
+/// s`, `1 ≤ s ≤ 4` — the normal, α-not-yet-exhausted case), state `q_back` carrying the marked value `vk`.
+/// The machine fires the same phases 2–4 as the full advance: marker step `(q_back, 5, vk, q_read, R)`
+/// (restore `vk`, step onto `s`), read+remark `(q_read, s, 5, q_walk, L)` (mark `s`, record it), then a
+/// single left-walk over `[vk]` (the restored 1-digit prefix) back to the boundary. Net `v == dpack([vk]) +
+/// m·(m·suf + 5)` — the prefix grew to `[vk]`, the marker advanced one cell. Fuel `3` (`= 2·0 + 3`).
+/// Requires `n ≥ 5`. This is the inductive seed: it builds the FIRST prefix digit so the steady-state
+/// [`lemma_cmp_marker_advance`] (which needs `blk.len() ≥ 1`) applies from round 1 onward.
+pub proof fn lemma_cmp_marker_advance_empty(
+    tm: Tm, c: TmConfig, q_back: nat, q_read: nat, q_walk: nat,
+    suf: nat, vk: nat, s: nat,
+    j: int, jr: int, l1: int, l2: int, l3: int, l4: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        1 <= vk <= 4,
+        1 <= s <= 4,
+        c.a == 5,
+        c.v == tm.m * suf + s,
+        c.q == q_back,
+        0 <= j < tm.quints.len(),
+        0 <= jr < tm.quints.len(),
+        0 <= l1 < tm.quints.len(),
+        0 <= l2 < tm.quints.len(),
+        0 <= l3 < tm.quints.len(),
+        0 <= l4 < tm.quints.len(),
+        tm.quints[j]  == mk_quint(q_back, 5, vk, q_read, Dir::R),
+        tm.quints[jr] == mk_quint(q_read, s, 5, q_walk, Dir::L),
+        tm.quints[l1] == mk_quint(q_walk, 1, 1, q_walk, Dir::L),
+        tm.quints[l2] == mk_quint(q_walk, 2, 2, q_walk, Dir::L),
+        tm.quints[l3] == mk_quint(q_walk, 3, 3, q_walk, Dir::L),
+        tm.quints[l4] == mk_quint(q_walk, 4, 4, q_walk, Dir::L),
+    ensures
+        tm_run(tm, c, 3)
+            == (TmConfig {
+                    u: c.u / tm.m,
+                    v: dpack(seq![vk], tm.m) + pow_nat(tm.m, 1) * (tm.m * suf + 5),
+                    a: c.u % tm.m,
+                    q: q_walk,
+               }),
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 5);
+    assert(m * suf == suf * m) by(nonlinear_arith);
+    assert(c.v == suf * m + s);
+    lemma_div_mod_step(suf, m, s);                 // c.v/m == suf, c.v%m == s
+
+    // ── Phase 2: marker step (q_back, 5, vk, q_read, R) — restore vk, step R onto s.
+    assert(quint_matches(tm.quints[j], c));   // q == q_back, a == 5
+    lemma_tm_step_picks(tm, c, j);
+    let c_marker = apply_quint(tm.quints[j], c, m);
+    assert(tm_step(tm, c) == Some(c_marker));
+    assert(c_marker.u == c.u * m + vk);
+    assert(c_marker.v == suf);
+    assert(c_marker.a == s);
+    assert(c_marker.q == q_read);
+
+    // ── Phase 3: read+remark (q_read, s, 5, q_walk, L) — mark s, record it, step L onto vk.
+    assert(quint_matches(tm.quints[jr], c_marker));
+    lemma_tm_step_picks(tm, c_marker, jr);
+    let c_read = apply_quint(tm.quints[jr], c_marker, m);
+    assert(tm_step(tm, c_marker) == Some(c_read));
+    assert(vk < m);
+    lemma_div_mod_step(c.u, m, vk);                // (c.u·m+vk)/m == c.u, %m == vk
+    assert(c_read.u == c.u);
+    assert(c_read.v == suf * m + 5);
+    assert(c_read.a == vk);
+    assert(c_read.q == q_walk);
+
+    // ── Phase 4: left-walk over blk2 = [vk] (the restored 1-digit prefix) back to the boundary.
+    let blk2 = seq![vk];
+    assert(blk2.len() == 1);
+    assert(blk2[0] == vk);
+    assert(blk2.drop_first() =~= Seq::<nat>::empty());
+    assert(dpack(blk2.drop_first(), m) == 0);
+    assert(pow_nat(m, 0) == 1);
+    assert forall|i: int| 0 <= i < blk2.len() implies 1 <= #[trigger] blk2[i] <= 4 by {
+        assert(blk2[0] == vk);
+    }
+    // dwalk_left_gen entry: c_read.u == dpack(blk2.df) + m^0·c.u == 0 + c.u == c.u.
+    assert(c_read.u == dpack(blk2.drop_first(), m) + pow_nat(m, 0) * c.u);
+    assert((blk2.len() - 1) as nat == 0);
+    lemma_dwalk_left_gen(tm, c_read, q_walk, blk2, c.u, l1, l2, l3, l4);
+    let c_final = TmConfig { u: c.u / m, v: dpile(c_read.v, blk2, m), a: c.u % m, q: q_walk };
+    assert(tm_run(tm, c_read, 1) == c_final);
+
+    // final v == dpile(suf·m+5, [vk]) == (suf·m+5)·m + vk == dpack([vk]) + m^1·(m·suf+5).
+    lemma_dpile_is_dpack_drev(suf * m + 5, blk2, m);   // == (suf·m+5)·m^{|blk2|} + dpack(drev(blk2))
+    lemma_drev_singleton(vk);                          // drev([vk]) =~= [vk]
+    assert(drev(blk2) =~= seq![vk]);
+    assert(dpack(drev(blk2), m) == dpack(seq![vk], m));
+    assert(dpile(c_read.v, blk2, m) == (suf * m + 5) * pow_nat(m, 1) + dpack(seq![vk], m));
+    assert((suf * m + 5) * pow_nat(m, 1) == pow_nat(m, 1) * (m * suf + 5)) by(nonlinear_arith);
+    assert(c_final.v == dpack(seq![vk], m) + pow_nat(m, 1) * (m * suf + 5));
+
+    // ── Compose: 3 = 1 + (1 + 1).
+    lemma_tm_run_split(tm, c, 1, 2);
+    lemma_tm_run_split(tm, c_marker, 1, 1);
+    assert(tm_run(tm, c_marker, 0) == c_marker);
+    assert(tm_run(tm, c_read, 0) == c_read);
+    assert(tm_run(tm, c, 1) == c_marker);
+    assert(tm_run(tm, c_marker, 1) == c_read);
+    assert(tm_run(tm, c, 3) == c_final);
+}
+
 /// **B-cmp.3 — the gap-cross + boundary transition** (`docs/gap2-input-loader-plan.md` §N+23, the bridge
 /// into the digit COMPARE B-cmp.4). After a [`lemma_cmp_marker_advance`] the head sits **one cell into `u`**
 /// scanning the output stack's low cell `U % m` (`u == U / m`), in the left-walk state `q_walk` (which
@@ -1054,6 +1164,118 @@ pub proof fn lemma_cmp_match_round_end(
     assert(tm_run(tm, c, 1) == c1);                          // single step
     assert((2 * k + g + 4) as nat == (1 + (g + 2 * k + 3)) as nat);
     assert(tm_run(tm, c, (2 * k + g + 4) as nat) == c3);
+}
+
+/// **The empty-prefix match round (B-cmp.7 bootstrap, `INV(0) → INV(1)`).** The `blk.len() == 0` case of
+/// [`lemma_cmp_match_round`] — the FIRST matched round, with no restored prefix yet (so the α stack is just
+/// the marker word `w == m·whi + 5`, `whi == m·suf + s`). Entry is the post-gap-cross compare config: head
+/// scanning the matched output frontier `d_o == vk` in `q_cmp`, `c.v == pile_zeros(w, g, m)` (the marker word
+/// `g` consumed-output `0`s below it). The machine: (1) compare-match `(q_cmp, vk, 0, q_back, R)` consumes
+/// the output digit; (2) return-walk [`lemma_skip0_right`] — with no prefix, lands directly on the marker
+/// `5`; (3) [`lemma_cmp_marker_advance_empty`] restores `vk` as the first prefix digit and advances the
+/// marker one cell. Net `v == dpack([vk]) + m·(m·suf + 5)` — the `INV(1)` shape (prefix `[vk]`, marker on the
+/// next α digit). Fuel `g + 4` (`= 2·0 + g + 4`). Requires `n ≥ 5`. After this brick the steady-state loop
+/// (which needs a non-empty prefix) runs unchanged from `INV(1)`.
+pub proof fn lemma_cmp_match_round_empty(
+    tm: Tm, c: TmConfig,
+    q_cmp: nat, q_back: nat, q_read: nat, q_walk: nat,
+    w: nat, whi: nat, suf: nat, vk: nat, s: nat, g: nat, out_rest: nat,
+    jc: int, js: int, j: int, jr: int,
+    l1: int, l2: int, l3: int, l4: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        1 <= vk <= 4,
+        1 <= s <= 4,
+        g >= 1,
+        w == tm.m * whi + 5,
+        whi == tm.m * suf + s,
+        c.a == vk,
+        c.u == out_rest,
+        c.v == pile_zeros(w, g, tm.m),
+        c.q == q_cmp,
+        0 <= jc < tm.quints.len(),
+        0 <= js < tm.quints.len(),
+        0 <= j < tm.quints.len(),
+        0 <= jr < tm.quints.len(),
+        0 <= l1 < tm.quints.len(),
+        0 <= l2 < tm.quints.len(),
+        0 <= l3 < tm.quints.len(),
+        0 <= l4 < tm.quints.len(),
+        tm.quints[jc] == mk_quint(q_cmp, vk, 0, q_back, Dir::R),    // compare match
+        tm.quints[js] == mk_quint(q_back, 0, 0, q_back, Dir::R),    // gap skip right (return)
+        tm.quints[j]  == mk_quint(q_back, 5, vk, q_read, Dir::R),   // marker step
+        tm.quints[jr] == mk_quint(q_read, s, 5, q_walk, Dir::L),    // read+remark
+        tm.quints[l1] == mk_quint(q_walk, 1, 1, q_walk, Dir::L),
+        tm.quints[l2] == mk_quint(q_walk, 2, 2, q_walk, Dir::L),
+        tm.quints[l3] == mk_quint(q_walk, 3, 3, q_walk, Dir::L),
+        tm.quints[l4] == mk_quint(q_walk, 4, 4, q_walk, Dir::L),
+    ensures
+        tm_run(tm, c, (g + 4) as nat)
+            == (TmConfig {
+                    u: pile_zeros(out_rest, g, tm.m),
+                    v: dpack(seq![vk], tm.m) + pow_nat(tm.m, 1) * (tm.m * suf + 5),
+                    a: 0,
+                    q: q_walk,
+               }),
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 5);
+
+    // ── Step 1: compare match (q_cmp, vk, 0, q_back, R) — consume output digit, step R toward boundary.
+    assert(quint_matches(tm.quints[jc], c));
+    lemma_tm_step_picks(tm, c, jc);
+    let c1 = apply_quint(tm.quints[jc], c, m);
+    assert(tm_step(tm, c) == Some(c1));
+    assert(c1.u == out_rest * m);
+    let vlow = pile_zeros(w, (g - 1) as nat, m);
+    assert(pile_zeros(w, g, m) == vlow * m);   // pile_zeros unfold (g >= 1)
+    assert((vlow * m) % m == 0) by(nonlinear_arith) requires m > 1;
+    assert((vlow * m) / m == vlow) by(nonlinear_arith) requires m > 1;
+    assert(c1.v == vlow);
+    assert(c1.a == 0);
+    assert(c1.q == q_back);
+
+    // ── Step 2: return walk — skip0_right over the gap; with empty prefix, lands on the marker 5.
+    lemma_skip0_right(tm, c1, q_back, (g - 1) as nat, w, js);
+    assert(((g - 1) as nat + 1) as nat == g);
+    let c2 = TmConfig { u: pile_zeros(c1.u, g, m), v: w / m, a: w % m, q: q_back };
+    assert(tm_run(tm, c1, g) == c2);
+    // w decomposition: w/m == whi, w%m == 5.
+    assert(m * whi == whi * m) by(nonlinear_arith);
+    assert(w == whi * m + 5);
+    lemma_div_mod_step(whi, m, 5);
+    assert(c2.v == whi);
+    assert(c2.a == 5);
+    // c2.u == pile_zeros(out_rest, g) * m.
+    lemma_pile_zeros_shift(out_rest, g, m);   // pile_zeros(out_rest*m, g) == pile_zeros(out_rest, g+1)
+    assert(pile_zeros(out_rest, (g + 1) as nat, m) == pile_zeros(out_rest, g, m) * m);
+    assert(c2.u == pile_zeros(out_rest, g, m) * m);
+
+    // ── Step 3: empty-prefix marker advance — restore vk as the first prefix digit, advance the marker.
+    lemma_cmp_marker_advance_empty(tm, c2, q_back, q_read, q_walk, suf, vk, s, j, jr, l1, l2, l3, l4);
+    let c3 = TmConfig {
+        u: c2.u / m,
+        v: dpack(seq![vk], m) + pow_nat(m, 1) * (m * suf + 5),
+        a: c2.u % m,
+        q: q_walk,
+    };
+    assert(tm_run(tm, c2, 3) == c3);
+    assert((pile_zeros(out_rest, g, m) * m) % m == 0) by(nonlinear_arith) requires m > 1;
+    assert((pile_zeros(out_rest, g, m) * m) / m == pile_zeros(out_rest, g, m))
+        by(nonlinear_arith) requires m > 1;
+    assert(c3.u == pile_zeros(out_rest, g, m));
+    assert(c3.a == 0);
+
+    // ── Compose: total = 1 + g + 3 = g + 4.
+    lemma_tm_run_split(tm, c, 1, (g + 3) as nat);
+    lemma_tm_run_split(tm, c1, g, 3);
+    assert(tm_run(tm, c1, 0) == c1);
+    assert(tm_run(tm, c, 1) == c1);
+    assert((g + 4) as nat == (1 + (g + 3)) as nat);
+    assert(tm_run(tm, c, (g + 4) as nat) == c3);
 }
 
 /// **B-cmp.5 (the induction STEP) — one matched round `INV(k) → INV(k+1)`.** Composes the gap-cross

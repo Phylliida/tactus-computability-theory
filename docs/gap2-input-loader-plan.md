@@ -2208,10 +2208,40 @@ preconditions (`whi==5` α-side, `out_rest==5`/`d_o2` output-side, the `(q_verif
 `q_verify_end` output-read anchor the handoff flagged is in place and proven to compose.
 
 **Brick queue:** B-cmp.0..B-cmp.5 ✅, B-cmp.6 ✅ (mismatch + too-short + too-long + ACCEPT-reaches-`q_accept`, all
-decision outcomes). **NEXT = B-cmp.7 proper** = the park-time sentinel insertion + the entry config (the parked
-layout from `tm_rp`/emit → the first round, incl. the **gap-`0` base case**: the loop/decision all assume `g≥1`
-from a prior consumed-output `0`, but the very first compare has `g==0`, so the entry needs a special first-round
-that places the marker and grows the gap to 1). This touches `tm_rp`/emit (the plan's "done LAST to avoid
-perturbing verified lemmas"), and pairs with the deferred **ACCEPT tape-wipe** cleanup brick (`u` already all-`0`,
-`v` needs a real digit-block wipe to `tm_origin`). After R-cmp: R-S dovetail → R-C/R-MC/B-W → discharge
-`ceer_realizes` → drop `axiom_ceer_fp_embedding`.
+decision outcomes). **NEXT = B-cmp.7 first-round / gap-`0` ENTRY (design CONFIRMED, build is the next brick).**
+
+**B-cmp.7 first-round design (port-8051 consult, 2026-06-27): OPTION B = a dedicated BOOTSTRAP gadget with a
+DISJOINT state space (`q_start`, `q_boot(d)`), keeping every steady-state brick untouched.** The wrinkle: the
+loop / marker-advance / match-round / decision bricks ALL require a non-empty restored prefix (`blk.len() ≥ 1`)
+and `g ≥ 1` (a prior consumed-output `0`). But the true R-cmp entry has an EMPTY prefix, NO marker placed yet,
+and `g == 0`. Relaxing `blk.len() ≥ 1` was rejected (lemma rot — would force re-verifying every steady-state
+transition for the empty case). So the first compare is a bespoke gadget; because `Q_boot ∩ Q_steady = ∅`, the
+existing bricks stay valid. **Target: `c_entry → INV(1)`** (or a first-position decision state), where `INV(1) =
+cmp_inv_config(qw, [α[0]], [α[1],…], 5, g=1, out_above, m)` — prefix `[α[0]]` restored, marker on `α[1]`, the
+`output[0]→0` consumed gap, head one cell into `u` scanning it, state `qw(α[1])`.
+
+**MECHANICS RESOLVED (traced this session) = PARKED-`g=1` + empty-prefix siblings.** The two-stack (Minsky)
+model made the bootstrap subtler than the high-level sketch; three sub-questions, all now resolved: (1) **Gap
+creation** — the parked layout leaves ONE boundary `0` below `output[0]` so the entry is `g=1` directly (the
+cleanest of the options; a B-cmp.7 emit-wiring requirement). (2) **No double-consume** — marker PLACEMENT (write
+`5` onto `α[0]`, record `α[0]`) must NOT consume `output[0]` (the round-at-`k=0` consumes it). With parked-`g=1`
+the placement is a clean **2-step** gadget that touches only `v` and the boundary `0`: from the entry `{a:0
+(boundary), u:output, v:[α[0],α[1],…,sentinel], q_start}`, step `(q_start, 0, 0, q_read_α, R)` pops `α[0]` into
+the head, then `(q_read_α, α[0], 5, qw(α[0]), L)` writes the marker `5` and records `α[0]` — landing at exactly
+`INV(0)` (`g=1`, empty prefix, marker on `α[0]`), `output` untouched. (3) **Empty-prefix advance / side-
+separation** — to reach `INV(1)` the marker advances `α[0]→α[1]` while RESTORING `α[0]` to `v` as the prefix; you
+cannot move right past `α[0]` without pushing it onto `u` (the §N+20 pollution flaw), so the side-preserving
+route is the balanced right-then-left probe with phase-1 walk = 0 (head already on the marker). **BUILT this
+session (crate 1785 → 1794/0, additive):** **`lemma_cmp_marker_advance_empty`** (`tm_cmp_traverse.rs`, the
+`blk=[]` marker advance — head scans the marker `5` directly; fuel `3`) + **`lemma_cmp_match_round_empty`**
+(`tm_cmp_traverse.rs`, the `blk=[]` match round `INV(0)→INV(1)` = compare-match + return-walk-onto-marker +
+`marker_advance_empty`; fuel `g+4`). These are the two genuinely-new empty-prefix siblings; both verified, mirror
+the steady-state lemmas with `blk=[]`. **REMAINING for the bootstrap:** the **placement gadget** (the 2-step
+`c_entry → INV(0)` above) + the **capstone** (`placement ∘ gap-cross ∘ match_round_empty = c_entry → INV(1)`,
+then hand to the steady-state `lemma_cmp_loop` which runs unchanged from `INV(1)`).
+
+**Then:** the park-time sentinel insertion (wire the dual far-`5` sentinels into `tm_rp`/emit output — the plan's
+"done LAST to avoid perturbing verified emit lemmas") + the full compare-decides assembly (loop ∘ branch on
+gap-cross frontier `d_o`: `==vk`→accept/too-long, `∈1..4≠vk`→mismatch, `==5`→too-short) + the deferred **ACCEPT
+tape-wipe** cleanup (`u` already all-`0`, `v` needs a digit-block wipe to `tm_origin`). After R-cmp: R-S dovetail →
+R-C/R-MC/B-W → discharge `ceer_realizes` → drop `axiom_ceer_fp_embedding`.
