@@ -680,6 +680,89 @@ pub proof fn lemma_cmp_decides_tooshort(
     lemma_tm_run_split(tm, c0, (8 + cmp_loop_fuel(1, 2, (p - 1) as nat)) as nat, (p + 2) as nat);
 }
 
+/// **B-cmp.8 — the FIRST-DIGIT MISMATCH decision (`p = 0`).** When the very first output digit differs
+/// from `α[0]` (`d_o = output[0] ∈ 1..4`, `d_o ≠ α[0]`), the bootstrap's match path doesn't apply: instead
+/// [`crate::tm_cmp_traverse::lemma_cmp_place_marker`] marks `α[0]` (→ `INV(0)`, head on the boundary, output
+/// untouched) and [`crate::tm_cmp_decide::lemma_cmp_mismatch_round`] crosses the `g=1` gap, reads `d_o`, and
+/// the mismatch quintuple fires → `q_reject`. Fuel `4`. Requires `n ≥ 5`, `|α| ≥ 1`.
+pub proof fn lemma_cmp_decides_mismatch0(
+    tm: Tm,
+    qw: spec_fn(nat) -> nat, qc: spec_fn(nat) -> nat, qb: spec_fn(nat) -> nat, qr: nat,
+    q_start: nat, q_read_boot: nat, q_reject: nat,
+    alpha: Seq<nat>, d_o: nat, out_rest: nat,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        alpha.len() >= 1,
+        forall|k: int| 0 <= k < alpha.len() ==> 1 <= #[trigger] alpha[k] <= 4,
+        1 <= d_o <= 4,
+        d_o != alpha[0],
+        forall|V: nat| #![trigger cmp_quints_present(tm, qw, qc, qb, qr, V)]
+            1 <= V <= 4 ==> cmp_quints_present(tm, qw, qc, qb, qr, V),
+        has_quint(tm, mk_quint(q_start, 0, 0, q_read_boot, Dir::R)),
+        has_quint(tm, mk_quint(q_read_boot, alpha[0], 5, qw(alpha[0]), Dir::L)),
+        has_quint(tm, mk_quint(qc(alpha[0]), d_o, d_o, q_reject, Dir::R)),
+    ensures
+        tm_run(tm,
+            TmConfig {
+                u: d_o + tm.m * out_rest,
+                v: dpack(alpha, tm.m) + pow_nat(tm.m, alpha.len()) * 5,
+                a: 0,
+                q: q_start,
+            },
+            4).q == q_reject,
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 5);
+    let a0 = alpha[0];
+    assert(1 <= a0 <= 4);
+    let v_above = (dpack(alpha.drop_first(), m) + pow_nat(m, (alpha.len() - 1) as nat) * 5) as nat;
+    let c0 = TmConfig {
+        u: d_o + m * out_rest,
+        v: dpack(alpha, m) + pow_nat(m, alpha.len()) * 5,
+        a: 0,
+        q: q_start,
+    };
+    // v == a0 + m·v_above.
+    lemma_dpack_pop(alpha, m);
+    assert(dpack(alpha, m) == a0 + m * dpack(alpha.drop_first(), m));
+    lemma_pow_nat_unfold(m, alpha.len());                      // m^L == m·m^{L-1}
+    assert(c0.v == a0 + m * v_above) by(nonlinear_arith)
+        requires
+            c0.v == dpack(alpha, m) + pow_nat(m, alpha.len()) * 5,
+            dpack(alpha, m) == a0 + m * dpack(alpha.drop_first(), m),
+            pow_nat(m, alpha.len()) == m * pow_nat(m, (alpha.len() - 1) as nat),
+            v_above == dpack(alpha.drop_first(), m) + pow_nat(m, (alpha.len() - 1) as nat) * 5;
+
+    // place the marker → INV(0).
+    let i0 = extract_quint(tm, mk_quint(q_start, 0, 0, q_read_boot, Dir::R));
+    let im = extract_quint(tm, mk_quint(q_read_boot, a0, 5, qw(a0), Dir::L));
+    crate::tm_cmp_traverse::lemma_cmp_place_marker(tm, c0, q_start, q_read_boot, qw(a0), a0, v_above, i0, im);
+    let inv0 = TmConfig { u: c0.u, v: m * v_above + 5, a: 0, q: qw(a0) };
+    assert(tm_run(tm, c0, 2) == inv0);
+
+    // INV(0) is the mismatch_round entry (g=1, output frontier d_o).
+    assert(pile_zeros(d_o + m * out_rest, 0, m) == d_o + m * out_rest);
+    assert(pile_zeros(d_o + m * out_rest, 1, m) == pile_zeros(d_o + m * out_rest, 0, m) * m);
+    assert(pile_zeros(d_o + m * out_rest, 1, m) == (d_o + m * out_rest) * m);
+    assert(((d_o + m * out_rest) * m) % m == 0) by(nonlinear_arith) requires m > 1;
+    assert(((d_o + m * out_rest) * m) / m == d_o + m * out_rest) by(nonlinear_arith) requires m > 1;
+    assert(inv0.a == pile_zeros(d_o + m * out_rest, 1, m) % m);
+    assert(inv0.u == pile_zeros(d_o + m * out_rest, 1, m) / m);
+
+    assert(cmp_quints_present(tm, qw, qc, qb, qr, a0));
+    let ib = extract_quint(tm, mk_quint(qw(a0), 0, 0, qc(a0), Dir::L));
+    let ic = extract_quint(tm, mk_quint(qc(a0), 0, 0, qc(a0), Dir::L));
+    let jm = extract_quint(tm, mk_quint(qc(a0), d_o, d_o, q_reject, Dir::R));
+    crate::tm_cmp_decide::lemma_cmp_mismatch_round(tm, inv0, qw(a0), qc(a0), q_reject,
+        1, d_o, out_rest, ib, ic, jm);
+    assert(tm_run(tm, inv0, 2).q == q_reject);
+
+    lemma_tm_run_split(tm, c0, 2, 2);
+}
+
 /// **B-cmp.8 — the TOO-LONG decision, end-to-end.** α is a proper prefix of the output: the last α digit
 /// `α[L-1] == vk` matches the output digit at position `L-1`, but the output CONTINUES with another digit
 /// `d_o2 ∈ 1..4` (`out_tail = vk + m·(d_o2 + m·out_rest2)`). The comparator reaches `INV(L-1)`
