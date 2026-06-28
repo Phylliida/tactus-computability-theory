@@ -35,6 +35,78 @@ pub proof fn lemma_pow_nat_unfold(m: nat, k: nat)
 {
 }
 
+/// `pow_nat(m, k) ≥ 1` for `m ≥ 1` (place values are positive).
+pub proof fn lemma_pow_nat_pos(m: nat, k: nat)
+    requires m >= 1,
+    ensures pow_nat(m, k) >= 1,
+    decreases k,
+{
+    if k == 0 {
+    } else {
+        lemma_pow_nat_pos(m, (k - 1) as nat);
+        assert(m * pow_nat(m, (k - 1) as nat) >= 1) by(nonlinear_arith)
+            requires m >= 1, pow_nat(m, (k - 1) as nat) >= 1;
+    }
+}
+
+/// `m^{a+b} == m^a · m^b` (the exponent-add law; local to avoid a `tm_copy_refresh` import cycle).
+pub proof fn lemma_pow_nat_split(m: nat, a: nat, b: nat)
+    ensures pow_nat(m, (a + b) as nat) == pow_nat(m, a) * pow_nat(m, b),
+    decreases b,
+{
+    if b == 0 {
+        assert(pow_nat(m, b) == 1);
+    } else {
+        lemma_pow_nat_split(m, a, (b - 1) as nat);
+        lemma_pow_nat_unfold(m, (a + b) as nat);   // m^{a+b} == m·m^{a+b-1}
+        lemma_pow_nat_unfold(m, b);                // m^b == m·m^{b-1}
+        assert((a + b - 1) as nat == (a + (b - 1)) as nat);
+        assert(pow_nat(m, (a + b) as nat) == pow_nat(m, a) * pow_nat(m, b)) by(nonlinear_arith)
+            requires
+                pow_nat(m, (a + b) as nat) == m * pow_nat(m, (a + b - 1) as nat),
+                pow_nat(m, (a + (b - 1)) as nat) == pow_nat(m, a) * pow_nat(m, (b - 1) as nat),
+                pow_nat(m, b) == m * pow_nat(m, (b - 1) as nat),
+                (a + b - 1) as nat == (a + (b - 1)) as nat;
+    }
+}
+
+/// **The `u`-tail-lift carry-free atom.** A backup `t` parked at digit-offset `h` over a low part `low`
+/// rides cleanly under `/ m^k` and `% m^k` (`k ≤ h`, `m ≥ 1`): division shifts the tail to offset `h-k`
+/// and keeps the low part's quotient; the modulus sees ONLY the low part. This is exactly the frame
+/// arithmetic a left-walk (each L-move divides `u`) performs on a Control-Zone backup high above the
+/// active tape — the backup is preserved and never pollutes a frontier read. Proof: factor
+/// `m^h·t == m^k·(m^{h-k}·t)` (exponent-add) and apply div/mod uniqueness
+/// ([`lemma_fundamental_div_mod_converse`]) à la `word_numbering::lemma_div_mod_step`.
+pub proof fn lemma_pow_high_tail(low: nat, t: nat, h: nat, k: nat, m: nat)
+    requires m >= 1, k <= h,
+    ensures
+        (low + pow_nat(m, h) * t) / pow_nat(m, k)
+            == low / pow_nat(m, k) + pow_nat(m, (h - k) as nat) * t,
+        (low + pow_nat(m, h) * t) % pow_nat(m, k) == low % pow_nat(m, k),
+{
+    let ck = pow_nat(m, k);
+    let chk = pow_nat(m, (h - k) as nat);
+    lemma_pow_nat_pos(m, k);                       // ck >= 1
+    lemma_pow_nat_split(m, (h - k) as nat, k);     // m^{(h-k)+k} == m^{h-k}·m^k
+    assert((h - k + k) as nat == h);
+    assert(pow_nat(m, h) == chk * ck);
+    let q = (low / ck + chk * t) as nat;
+    let r = low % ck;
+    // fundamental: low == ck·(low/ck) + low%ck, 0 <= low%ck < ck.
+    vstd::arithmetic::div_mod::lemma_fundamental_div_mod(low as int, ck as int);
+    assert(low == ck * (low / ck) + low % ck);
+    assert(low % ck < ck);
+    // (low + m^h·t) == q·ck + r.
+    assert((low + pow_nat(m, h) * t) as int == (q as int) * (ck as int) + (r as int)) by(nonlinear_arith)
+        requires
+            (low as int) == (ck as int) * ((low / ck) as int) + (r as int),
+            (pow_nat(m, h) as int) == (chk as int) * (ck as int),
+            (q as int) == (low / ck) as int + (chk as int) * (t as int),
+            (r as int) == (low % ck) as int;
+    vstd::arithmetic::div_mod::lemma_fundamental_div_mod_converse(
+        (low + pow_nat(m, h) * t) as int, ck as int, q as int, r as int);
+}
+
 /// `dpack(ds, m)` packs the digit sequence `ds` low-first into a base-`m` value: `ds[0]` is the lowest
 /// digit, `ds[ds.len()-1]` the highest. `dpack(ds) = ds[0] + m·dpack(ds.drop_first())`.
 pub open spec fn dpack(ds: Seq<nat>, m: nat) -> nat
