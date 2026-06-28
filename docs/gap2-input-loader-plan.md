@@ -2252,3 +2252,89 @@ gap-cross frontier`); then the deferred ACCEPT tape-wipe cleanup.
 gap-cross frontier `d_o`: `==vk`→accept/too-long, `∈1..4≠vk`→mismatch, `==5`→too-short) + the deferred **ACCEPT
 tape-wipe** cleanup (`u` already all-`0`, `v` needs a digit-block wipe to `tm_origin`). After R-cmp: R-S dovetail →
 R-C/R-MC/B-W → discharge `ceer_realizes` → drop `axiom_ceer_fp_embedding`.
+
+### N+28 — R-cmp B-cmp.8 COMPARE-DECIDES ASSEMBLY COMPLETE (the whole decision surface composes end-to-end from the parked entry, all five outcomes). Danielle co-design: Assembly→Relocation; relocation = wipe→transfer→stamp→g=1.
+
+**Port-8051 consult (this session, 2026-06-27):** confirmed the emit-coupling design + sequencing.
+(1) The relocation must **wipe `u` scratch** first (the `copy_u` spent master), then **transfer output
+`v→u` REVERSED** (a rightward head-walk over `od` naturally reverses it: each R-move pops `v`-low into the
+head, pushes the prev head onto `u`-low — so `od[L-1]` ends at `u`-low, the correct low-to-low pairing with
+the reversed-α `v`-low, Finding-1), then **stamp the output far-`5`** at the top (the `lemma_cmp_accept_decide`
+"clean ceiling" requires the far-`5` immediately above the exhausted output, `out_rest==0` — scratch debris
+between would mis-trigger too-long/mismatch). (2) The **α far-`5` sentinel is written at PARK time** (`tm_rp`),
+the **`g=1` boundary `0` is created by the transfer** (the head stops exactly at the gap-`0`). (3) **Sequencing
+= Assembly → Relocation:** define the parked-entry CONTRACT first (lock the compare's input interface), THEN
+prove the relocation produces it ("Relocation ⟹ Contract" beats building a relocation for a moving target).
+
+**BUILT this session — THE FULL COMPARE-DECIDES ASSEMBLY (`tm_cmp_assemble.rs`, crate 1801 → 1833/0, additive,
+no escape hatches).** The comparator now provably reaches `q_accept` ⟺ output `==` α and `q_reject` otherwise,
+end-to-end from the parked entry, for EVERY output/α relation. Two layers:
+
+  - **`lemma_cmp_reach_inv_p`** — THE REUSABLE CORE (bootstrap ∘ bridge ∘ loop). From the parked entry whose
+    output matches α on a length-`p` prefix (`u == dpack(α[0..p]) + m^p·out_tail`, the divergent/sentinel
+    remainder `out_tail` above; `v == dpack(α) + m^L·5`), reaches `INV(p)` — marker hiding `α[p]`, restored
+    prefix `α[0..p-1]`, gap `g = p+1`, output frontier `= out_tail % m`. **The bridge insight:** the bootstrap
+    exit is `cmp_inv_config` with **`g=2`** (the original boundary `0` PLUS the just-consumed `α[0]` cell, NOT
+    `g=1`); `pile_zeros(out_rest, 1) == pile_zeros(cmp_out_pregap, 2)/m` ⟺ `cmp_out_pregap == out_rest`. The
+    loop-`suf` carries `alpha_tail_above(α, p)` (the α value above position `p`) via the concat identity
+    `lemma_bridge_suf` (`lemma_dpack_append` + `lemma_pow_nat_add`: `α[2..L]=α[2..p+1]++α[p+1..L]`,
+    `m^{p-1}·m^{L-1-p}=m^{L-2}`). Every decision terminal consumes this `INV(p)` and reads only `out_tail`.
+
+  - **Five decision terminals** (all first/second try after the core):
+    - **`lemma_cmp_decides_accept`** — output `==` α (`u==v==dpack(α)+m^L·5`) → `q_accept` (`p=L-1`,
+      `accept_decide` α-exhaust both sentinels).
+    - **`lemma_cmp_decides_mismatch`** — `out_tail` low `= d_o ∈ 1..4`, `d_o ≠ α[p]` (`1≤p≤L-1`) → `q_reject`.
+    - **`lemma_cmp_decides_tooshort`** — `out_tail = 5` (output exhausts, α has `α[p]`) → `q_reject`.
+    - **`lemma_cmp_decides_toolong`** — `p=L-1`, α exhausts, output continues `d_o2∈1..4` → `q_reject`.
+    - **`lemma_cmp_decides_mismatch0`** — the `p=0` first-digit mismatch (`output[0]≠α[0]`): bootstrap match
+      path inapplicable, so `place_marker → mismatch_round` (fuel 4) directly. Rounds out `p≥0` coverage.
+
+**The parked-entry CONTRACT is now locked** (the relocation's target): `a=0` (boundary, `g=1`); `u = output
+reversed, far-`5` at top, NOTHING above; v = α reversed, far-`5` at top; q=q_start; output[0]==α[0] for the
+match cases, the mismatch0 terminal covers the divergent first digit. **B-cmp.8 COMPLETE.**
+
+**Brick queue:** B-cmp.0..B-cmp.7 ✅, **B-cmp.8 (decides assembly) ✅**. **NEXT = the RELOCATION gadget
+(emit-coupling proper, design pinned above): wipe `u` → transfer output `v→u` reversed → stamp output far-`5`
+→ land on `g=1`; α far-`5` into `tm_rp` park-time.** Then the deferred ACCEPT tape-wipe (drive `q_accept` to
+`tm_origin`). After R-cmp: R-S dovetail → R-C/R-MC/B-W → discharge `ceer_realizes` → drop `axiom_ceer_fp_embedding`.
+
+### N+29 — RELOCATION gadget: the LOCAL phase COMPLETE (WIPE ∘ STAMP+TRANSFER). `gap2_reloc.rs` 12/0, additive.
+
+The emit-coupling proper, built bottom-up as three bricks (`gap2_reloc.rs`, crate 1833 → 1845/0, no escape
+hatches). The N+28 design (wipe → transfer → stamp → g=1) executes with one build-level refinement: **the
+far-`5` stamp MERGES into the transfer's first step** — `(q_reloc, 0, 5, q_xfer, R)` writes the output far-`5`
+onto `u` while crossing the boundary onto `output[0]`, so the reversed output piles *above* the `5` with no
+separate stamp walk and no ping-pong. The far-`5` lands at the top because the first push ends highest.
+
+  - **B-reloc.1 — `lemma_reloc_stamp_transfer_local`/`_contract`** (the novel core). From the wiped boundary
+    (`u==0, a==0, v==dpack(output)`): step 0 stamps the `5` + crosses, then [`tm_dwalk::lemma_dwalk_right`]
+    peels output onto `u`. Net `u == dpile(5, output) == dpack(drev(output)) + m^L·5` (the
+    [`tm_dwalk_prefix::lemma_dpile_is_dpack_drev`] bridge), `v==0`, `a==0`, `q==q_xfer`.
+  - **B-reloc.2 — `lemma_reloc_stamp_transfer_tailed`/`_contract`** (the workhorse). Carries the α-block on
+    `v` as a high tail via [`tm_cmp_traverse::lemma_dwalk_right_gen`] (the tail-aware right walk — NO
+    `run_tail_v` needed): from `v == dpack(output) + m^L·w` (above-output value `w` = one-cell gap `0` +
+    parked α-block, `w%m==0`), lands `u == dpack(drev(output)) + m^L·5`, `v == w/m` (the α-block), `a==0`
+    (the `g=1` boundary, `= w%m`). Step-0 div/mod factored via `lemma_div_mod_step` (dodges the nonlinear-
+    division rlimit blow).
+  - **B-reloc.3 — `lemma_reloc_local`** (WIPE ∘ STAMP+TRANSFER). From the emit-end `u == copy_u(0,M,g) ==
+    m^g·R(M)` (the spent master), `v == dpack(output) + m^L·w`, it runs **`gap2_master_mgmt::lemma_q_clean`
+    with `t=0`** (the existing master-erase: wipe the master to `0`, return the head to the boundary in
+    `q_reloc`) then B-reloc.2. The splice is **state identification** (`q_clean`'s `q_home == q_reloc`, lands
+    scanning `a==0`, the stamp quint fires — no glue). `copy_u(0,M,g)` ≡ `q_clean`'s `t=0` master form via the
+    `repunit` bridge; the `q_clean` precond `1 ≤ v%m ≤ 4` = `output[0]` via `div_mod_step`.
+
+**Why no separate wipe brick:** `lemma_q_clean` (t=0) IS the master wipe — it erases `copy_u`'s ones and
+returns to the boundary with `v` restored, `u==0` locally. The α-block is just part of `v` (rides through the
+pile/unpile of `q_clean` automatically; its low digit is `output[0]`, so `q_clean`'s `v%m∈1..4` precond holds).
+
+**The parked-entry CONTRACT is now PRODUCED** by `lemma_reloc_local` (local frame): `u == dpack(drev(output))
++ m^L·5` = `lemma_cmp_bootstrap`'s `u` shape with W = `drev(output)`; `v == α-block`; `a==0` (g=1); state
+`q_xfer`. **Wiring reloc → compare** = state-id `q_xfer == q_start` + the value-bridge (`drev(output)` value ==
+α value ⟺ `output==α` by `drev` involution ⟺ the relation, via `lemma_relnum_is_fam_digits`).
+
+**REMAINING for R-cmp (all deferred-glue or self-contained):** (1) **u-tail-lift** — carry the surviving
+dovetail/temp above the far-`5` through the relocation (deferred WITH R-S: the exact backup offset H is the
+unpinned R-P/dovetail layout call; the relocation is `tail_safe` since `q_clean`'s deepest left reach is the
+master separator, below the backup). (2) **reloc∘compare assembly** + value-bridge. (3) **the deferred ACCEPT
+tape-wipe** (`q_accept` → `tm_origin`; from the accept config drive both stacks to `(0,0,0,0)`). After R-cmp:
+R-S dovetail → R-C/R-MC/B-W → discharge `ceer_realizes` → drop `axiom_ceer_fp_embedding`.
