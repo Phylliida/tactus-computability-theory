@@ -2163,3 +2163,55 @@ output frontier digit `1..4` ⟹ `q_reject`). This needs the α-exhaust marker-a
 `lemma_cmp_marker_advance` whose `s`-read is `5` not `1..4`) feeding `q_verify_end`. **Then B-cmp.7 sentinels →
 B-cmp.6 ACCEPT wipe** (`q_wipe_v` right-wipe-until-blank + return to origin; `u` already all-`0`). After
 R-cmp: R-S dovetail → R-C/R-MC/B-W → discharge `ceer_realizes` → drop `axiom_ceer_fp_embedding`.
+
+### N+27 — R-cmp B-cmp.6 α-EXHAUST DECISION PATH COMPLETE (the whole compare decision surface is machine-checked). Far-sentinel encoding `suf=5` confirmed (port-8051 consult). Decision lemmas refactored to a uniform `INV` entry.
+
+**Design confirmed (port-8051 consult, this session, 2026-06-27):** (1) the far-α-sentinel is encoded as
+`suf == 5` threaded through the existing loop — when the loop reduces `ds` to the last digit, `cmp_above([last],
+5, m) == 5`, so the cell above the marker (hiding the last α digit) IS the far-`5` sentinel, with all blank
+above (`whi == 5`). Zero new loop machinery. (2) the α-exhaust transition `(q_read, 5, 5, q_verify_end, L)` is a
+distinct scanned symbol from the normal `(q_read, s, 5, qw(s), L)` dispatch (`s∈1..4`), so no `tm_wf`
+determinism collision. (3) build the α-exhaust marker-advance variant FIRST as the shared anchor for both
+too-long and ACCEPT; (4) ACCEPT geometry decoupled — prove "reaches `q_accept`", leave the tape-wipe to a
+separate cleanup brick.
+
+**Built (crate 1766 → 1785/0, additive, no escape hatches):**
+  - **`lemma_cmp_marker_advance_end`** (`tm_cmp_traverse.rs`) — the α-exhaust marker-advance primitive (the
+    shared anchor). Phases 1–2 identical to `lemma_cmp_marker_advance` (walk right to the `5` mark, restore
+    `vk`, step R), but phase-2 lands scanning the far sentinel `5` (`whi == 5`); the α-exhaust transition
+    `(q_read, 5, 5, q_verify_end, L)` re-writes the sentinel and the left-walk returns the fully-restored α to
+    `v`. Net `v == dpack(blk ++ [vk]) + m^{|blk|+1}·5` (α restored + exhausted, far sentinel on top, NO marker),
+    head one cell into `u` at the output frontier in `q_verify_end`. Fuel `2·|blk| + 3` (same as the normal
+    advance).
+  - **`lemma_cmp_match_round_end`** (`tm_cmp_traverse.rs`) — the FINAL matched round (sibling of
+    `lemma_cmp_match_round`): compare-match the last digit + return-walk + `lemma_cmp_marker_advance_end`,
+    landing at the `q_verify_end` boundary. Fuel `2·|blk| + g + 4`.
+  - **`lemma_cmp_accept_decide`** (`tm_cmp_decide.rs`) — ACCEPT end-to-end (reaches `q_accept`): from the
+    loop-exit `INV`, gap-cross #1 → `lemma_cmp_match_round_end` → verify-end gap-cross #2 reads the output
+    far-`5` sentinel → `(q_verify_cmp, 5, 5, q_accept, R)`. Output `==` α (equal length, all matched). Fuel
+    `2·|blk| + 3·g + 6`.
+  - **`lemma_cmp_toolong_round`** (`tm_cmp_decide.rs`) — too-long reject end-to-end (reaches `q_reject`): same
+    `INV` entry, but the output continues with a digit `d_o2∈1..4` above the last matched one → α exhausted but
+    output longer → `q_reject`. Fuel `2·|blk| + 3·g + 6`.
+
+**Decision-lemma entry made UNIFORM** (refactor): `lemma_cmp_accept_decide`/`lemma_cmp_toolong_round` now start
+from the loop-exit `INV` (head one cell into `u` scanning gap-`0`, the `q_walk` track), prepending gap-cross #1,
+exactly like the existing `lemma_cmp_mismatch_round`/`lemma_cmp_tooshort_round`. So the eventual assembly is a
+clean branch on the gap-cross frontier `d_o`: `d_o==vk` (last digit, lookahead) → accept (if output exhausts) /
+too-long (if output continues); `d_o∈1..4, ≠vk` → mismatch; `d_o==5` → too-short. Each branch's lemma does its
+own gap-cross internally — only the value-selected one fires, no double-cross.
+
+**B-cmp.6 DECISION SURFACE COMPLETE** — all five compare outcomes machine-checked: match-loop (`lemma_cmp_loop`),
+mismatch (`lemma_cmp_mismatch_round`), too-short (`lemma_cmp_tooshort_round`), too-long (`lemma_cmp_toolong_round`),
+ACCEPT (`lemma_cmp_accept_decide`). The α-exhaust path consumes the dual far-`5` sentinels purely via
+preconditions (`whi==5` α-side, `out_rest==5`/`d_o2` output-side, the `(q_verify_cmp, 5, …)` accept quint), so the
+`q_verify_end` output-read anchor the handoff flagged is in place and proven to compose.
+
+**Brick queue:** B-cmp.0..B-cmp.5 ✅, B-cmp.6 ✅ (mismatch + too-short + too-long + ACCEPT-reaches-`q_accept`, all
+decision outcomes). **NEXT = B-cmp.7 proper** = the park-time sentinel insertion + the entry config (the parked
+layout from `tm_rp`/emit → the first round, incl. the **gap-`0` base case**: the loop/decision all assume `g≥1`
+from a prior consumed-output `0`, but the very first compare has `g==0`, so the entry needs a special first-round
+that places the marker and grows the gap to 1). This touches `tm_rp`/emit (the plan's "done LAST to avoid
+perturbing verified lemmas"), and pairs with the deferred **ACCEPT tape-wipe** cleanup brick (`u` already all-`0`,
+`v` needs a real digit-block wipe to `tm_origin`). After R-cmp: R-S dovetail → R-C/R-MC/B-W → discharge
+`ceer_realizes` → drop `axiom_ceer_fp_embedding`.
