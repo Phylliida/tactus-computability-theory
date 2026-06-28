@@ -19,7 +19,8 @@ use crate::tm::{Tm, TmConfig, tm_wf, tm_run, tm_step, quint_matches, apply_quint
 use crate::tm_gadget::{mk_quint, lemma_tm_step_picks};
 use crate::tm_dstring::{dpack, pow_nat};
 use crate::tm_skip_blank::pile_zeros;
-use crate::tm_cmp_traverse::{lemma_cmp_gap_cross, lemma_cmp_match_round_end};
+use crate::tm_cmp_traverse::{lemma_cmp_gap_cross, lemma_cmp_match_round_end,
+    lemma_cmp_place_marker, lemma_cmp_match_round_empty};
 use crate::tm_run_lemmas::lemma_tm_run_split;
 
 verus! {
@@ -366,6 +367,107 @@ pub proof fn lemma_cmp_toolong_round(
     assert((2 * k + 3 * g + 6) as nat == (g + (2 * k + 2 * g + 6)) as nat);
     assert((2 * k + 2 * g + 6) as nat == ((2 * k + g + 4) + (g + 2)) as nat);
     assert(tm_run(tm, c, (2 * k + 3 * g + 6) as nat) == c_rej);
+}
+
+/// **B-cmp.7 — the BOOTSTRAP first round (`parked entry → INV(1)`).** Composes the three empty-prefix
+/// primitives into the full first matched round: from the parked layout (head one cell into `u` scanning
+/// the boundary `0`, `output[0] == a0` at `u`-low, `α[0] == a0` at `v`-low, far structure above, state
+/// `q_start`), [`lemma_cmp_place_marker`] marks `α[0]` (`→ INV(0)`), a `g = 1` [`lemma_cmp_gap_cross`] reads
+/// the output frontier `a0`, and [`lemma_cmp_match_round_empty`] matches it and advances the marker, landing
+/// at `INV(1)` (prefix `[a0]`, marker on `α[1] == s`). The value-indexed states differ across the phases:
+/// placement and the first gap-cross run in `α[0]`'s track (`qw_a0`/`qc_a0`/`qb_a0`), while the match's exit
+/// (after recording the lookahead `s`) is `α[1]`'s track `qw_s` — exactly the state the steady-state loop's
+/// `INV(1)` expects. Requires `output[0] == α[0] == a0` (the first digit matches — the steady-state loop
+/// handles round 1 onward). Fuel `8` (`2` place + `1` gap-cross + `5` match). Requires `n ≥ 5`.
+pub proof fn lemma_cmp_bootstrap(
+    tm: Tm, c: TmConfig,
+    q_start: nat, q_read_boot: nat, qw_a0: nat, qc_a0: nat, qb_a0: nat, qr: nat, qw_s: nat,
+    a0: nat, s: nat, suf: nat, v_above: nat, out_rest: nat,
+    i0: int, im: int, ib: int, ic: int,
+    jc: int, js: int, j: int, jr: int, l1: int, l2: int, l3: int, l4: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        1 <= a0 <= 4,
+        1 <= s <= 4,
+        c.a == 0,
+        c.u == a0 + tm.m * out_rest,           // output[0] == a0 at u-low (the MATCH), out_rest above
+        c.v == a0 + tm.m * v_above,            // α[0] == a0 at v-low
+        v_above == tm.m * suf + s,             // α[1] == s above α[0], suf beyond
+        c.q == q_start,
+        0 <= i0 < tm.quints.len(),
+        0 <= im < tm.quints.len(),
+        0 <= ib < tm.quints.len(),
+        0 <= ic < tm.quints.len(),
+        0 <= jc < tm.quints.len(),
+        0 <= js < tm.quints.len(),
+        0 <= j < tm.quints.len(),
+        0 <= jr < tm.quints.len(),
+        0 <= l1 < tm.quints.len(),
+        0 <= l2 < tm.quints.len(),
+        0 <= l3 < tm.quints.len(),
+        0 <= l4 < tm.quints.len(),
+        tm.quints[i0] == mk_quint(q_start, 0, 0, q_read_boot, Dir::R),     // place step 1
+        tm.quints[im] == mk_quint(q_read_boot, a0, 5, qw_a0, Dir::L),      // place step 2 (mark α[0])
+        tm.quints[ib] == mk_quint(qw_a0, 0, 0, qc_a0, Dir::L),             // gap-cross boundary
+        tm.quints[ic] == mk_quint(qc_a0, 0, 0, qc_a0, Dir::L),             // gap-cross gap skip
+        tm.quints[jc] == mk_quint(qc_a0, a0, 0, qb_a0, Dir::R),            // compare match
+        tm.quints[js] == mk_quint(qb_a0, 0, 0, qb_a0, Dir::R),            // return skip
+        tm.quints[j]  == mk_quint(qb_a0, 5, a0, qr, Dir::R),               // marker step
+        tm.quints[jr] == mk_quint(qr, s, 5, qw_s, Dir::L),                 // read+remark (record s)
+        tm.quints[l1] == mk_quint(qw_s, 1, 1, qw_s, Dir::L),
+        tm.quints[l2] == mk_quint(qw_s, 2, 2, qw_s, Dir::L),
+        tm.quints[l3] == mk_quint(qw_s, 3, 3, qw_s, Dir::L),
+        tm.quints[l4] == mk_quint(qw_s, 4, 4, qw_s, Dir::L),
+    ensures
+        tm_run(tm, c, 8)
+            == (TmConfig {
+                    u: pile_zeros(out_rest, 1, tm.m),
+                    v: dpack(seq![a0], tm.m) + pow_nat(tm.m, 1) * (tm.m * suf + 5),
+                    a: 0,
+                    q: qw_s,
+               }),
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 5);
+
+    // ── Phase A: place the marker on α[0] → INV(0).
+    lemma_cmp_place_marker(tm, c, q_start, q_read_boot, qw_a0, a0, v_above, i0, im);
+    let c_inv0 = TmConfig { u: c.u, v: m * v_above + 5, a: 0, q: qw_a0 };
+    assert(tm_run(tm, c, 2) == c_inv0);
+
+    // ── Phase B: gap-cross (g=1) over the boundary 0, read the output frontier a0.
+    assert(c.u == a0 + m * out_rest);
+    assert(pile_zeros(a0 + m * out_rest, 0, m) == a0 + m * out_rest);
+    assert(pile_zeros(a0 + m * out_rest, 1, m) == pile_zeros(a0 + m * out_rest, 0, m) * m);   // unfold
+    assert(pile_zeros(a0 + m * out_rest, 1, m) == (a0 + m * out_rest) * m);   // g=1
+    assert(((a0 + m * out_rest) * m) % m == 0) by(nonlinear_arith) requires m > 1;
+    assert(((a0 + m * out_rest) * m) / m == a0 + m * out_rest) by(nonlinear_arith) requires m > 1;
+    assert(c_inv0.a == pile_zeros(a0 + m * out_rest, 1, m) % m);
+    assert(c_inv0.u == pile_zeros(a0 + m * out_rest, 1, m) / m);
+    lemma_cmp_gap_cross(tm, c_inv0, qw_a0, qc_a0, 1, a0, out_rest, ib, ic);
+    let c_cmp = TmConfig { u: out_rest, v: pile_zeros(c_inv0.v, 1, m), a: a0, q: qc_a0 };
+    assert(tm_run(tm, c_inv0, 1) == c_cmp);
+
+    // ── Phase C: empty-prefix match round → INV(1). (w = m·v_above+5, whi = v_above, g = 1.)
+    assert(c_cmp.v == pile_zeros(m * v_above + 5, 1, m));
+    lemma_cmp_match_round_empty(tm, c_cmp, qc_a0, qb_a0, qr, qw_s,
+        m * v_above + 5, v_above, suf, a0, s, 1, out_rest,
+        jc, js, j, jr, l1, l2, l3, l4);
+    let c_inv1 = TmConfig {
+        u: pile_zeros(out_rest, 1, m),
+        v: dpack(seq![a0], m) + pow_nat(m, 1) * (m * suf + 5),
+        a: 0,
+        q: qw_s,
+    };
+    assert(tm_run(tm, c_cmp, 5) == c_inv1);   // match_round_empty fuel g+4 = 1+4 = 5
+
+    // ── Compose: 2 + 1 + 5 = 8.
+    lemma_tm_run_split(tm, c, 2, 6);
+    lemma_tm_run_split(tm, c_inv0, 1, 5);
+    assert(tm_run(tm, c, 8) == c_inv1);
 }
 
 } // verus!

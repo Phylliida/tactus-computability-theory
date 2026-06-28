@@ -2232,13 +2232,20 @@ the head, then `(q_read_α, α[0], 5, qw(α[0]), L)` writes the marker `5` and r
 separation** — to reach `INV(1)` the marker advances `α[0]→α[1]` while RESTORING `α[0]` to `v` as the prefix; you
 cannot move right past `α[0]` without pushing it onto `u` (the §N+20 pollution flaw), so the side-preserving
 route is the balanced right-then-left probe with phase-1 walk = 0 (head already on the marker). **BUILT this
-session (crate 1785 → 1794/0, additive):** **`lemma_cmp_marker_advance_empty`** (`tm_cmp_traverse.rs`, the
-`blk=[]` marker advance — head scans the marker `5` directly; fuel `3`) + **`lemma_cmp_match_round_empty`**
-(`tm_cmp_traverse.rs`, the `blk=[]` match round `INV(0)→INV(1)` = compare-match + return-walk-onto-marker +
-`marker_advance_empty`; fuel `g+4`). These are the two genuinely-new empty-prefix siblings; both verified, mirror
-the steady-state lemmas with `blk=[]`. **REMAINING for the bootstrap:** the **placement gadget** (the 2-step
-`c_entry → INV(0)` above) + the **capstone** (`placement ∘ gap-cross ∘ match_round_empty = c_entry → INV(1)`,
-then hand to the steady-state `lemma_cmp_loop` which runs unchanged from `INV(1)`).
+session — THE FULL FIRST-ROUND BOOTSTRAP `parked-entry → INV(1)` (crate 1785 → 1801/0, additive, no escape
+hatches):** **`lemma_cmp_marker_advance_empty`** (`tm_cmp_traverse.rs`, the `blk=[]` marker advance — head scans
+the marker `5` directly; fuel `3`); **`lemma_cmp_match_round_empty`** (`tm_cmp_traverse.rs`, the `blk=[]` match
+round `INV(0)→INV(1)` = compare-match + return-walk-onto-marker + `marker_advance_empty`; fuel `g+4`);
+**`lemma_cmp_place_marker`** (`tm_cmp_traverse.rs`, the 2-step entry gadget `parked → INV(0)`: pop `α[0]`, write
+the marker `5`, record `α[0]`, output untouched; fuel `2`); and the capstone **`lemma_cmp_bootstrap`**
+(`tm_cmp_decide.rs`, `parked-entry → INV(1)` = `place_marker ∘ gap-cross(g=1) ∘ match_round_empty`; fuel `8`).
+The value-indexed states thread correctly: placement + first gap-cross run in `α[0]`'s track (`qw_a0`/`qc_a0`/
+`qb_a0`), the match's exit (after recording the lookahead `s=α[1]`) is `α[1]`'s track `qw_s` — exactly the state
+`INV(1)` expects, so the steady-state `lemma_cmp_loop` runs unchanged from there. **B-cmp.7 compare-internal
+bootstrap COMPLETE.** **REMAINING (true emit-coupling, "done LAST"):** the park-time emit-wiring that produces
+the `lemma_cmp_bootstrap` entry interface (the dual far-`5` sentinels into `tm_rp`/emit output + the one boundary
+`0` for `g=1`); then the full compare-decides assembly (`bootstrap → cmp_inv_config bridge → loop → branch on
+gap-cross frontier`); then the deferred ACCEPT tape-wipe cleanup.
 
 **Then:** the park-time sentinel insertion (wire the dual far-`5` sentinels into `tm_rp`/emit output — the plan's
 "done LAST to avoid perturbing verified emit lemmas") + the full compare-decides assembly (loop ∘ branch on
