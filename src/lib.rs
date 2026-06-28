@@ -271,6 +271,11 @@
 // MISMATCH reject (gap-cross + (q_cmp,d_o,d_o,q_reject,R)). See tm_cmp_decide.rs + plan sec N+26.
 #[cfg(verus_keep_ghost)] pub mod tm_cmp_decide;
 
+// GAP-2 G2-F Route (i) brick R-cmp (B-cmp.8): the compare-DECIDES assembly. lemma_cmp_decides_accept
+// composes bootstrap -> bridge -> loop -> accept_decide into the end-to-end ACCEPT (output == alpha ->
+// q_accept). See tm_cmp_assemble.rs and docs/gap2-input-loader-plan.md sec N+27/N+28.
+#[cfg(verus_keep_ghost)] pub mod tm_cmp_assemble;
+
 // GAP-2 G2-F Route (i) brick R-P: the copy-and-park core. lemma_rp_entry (2-step handshake depositing
 // the ignition-held low digit d0 onto v) + lemma_rp_copy_park (entry o dwalk_left) park alpha's digit
 // sequence reversed in v, freeing u as workspace -- the canonical layout R-cmp reads. See tm_rp.rs.
