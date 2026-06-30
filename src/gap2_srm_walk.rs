@@ -316,4 +316,131 @@ pub proof fn lemma_r0_walk(tm: Tm, c: TmConfig, g0: nat, words: Seq<nat>, rest: 
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// L₀^N — the §9 "proceed to next blank to the LEFT, N times" (mirror of R₀^N).
+//
+// `P_N` (append-end) walks back left after printing: `…, L₀^N, R`. `L₀^N` is the exact mirror of
+// `R₀^N` (swap `u ↔ v`, `R ↔ L`): from the head on the trailing separator with `A` held in `u`
+// (head-adjacent = the last word), it walks left past `N` separators reconstructing `A` into `v`, and
+// lands on the leading separator. Reuses `words_layout`/`u_accum`/`r0_steps` verbatim (direction-
+// agnostic nat layouts) — only the tape side and move direction flip. Built on brick 1's
+// `lemma_walk_left_to_blank`. (Plan §N+54 §V; the print-fusion that joins `R₀^N` to `L₀^N` inside
+// `P_N` is handled at the `P_N` assembly, not here.)
+
+/// Quintuples for `L₀^N` (mirror of `r0_quints_present`, with `Dir::L`): word 0 needs cross
+/// `(h0,0,0,h0+1,L)` and walk `(h0+1,1,1,h0+1,L)`; the remaining words use base `h0+1`.
+pub open spec fn l0_quints_present(tm: Tm, h0: nat, n: nat) -> bool
+    decreases n
+{
+    if n == 0 {
+        true
+    } else {
+        &&& (exists|ic: int| 0 <= ic < tm.quints.len()
+                && tm.quints[ic] == mk_quint(h0, 0, 0, (h0 + 1) as nat, Dir::L))
+        &&& (exists|iw: int| 0 <= iw < tm.quints.len()
+                && tm.quints[iw] == mk_quint((h0 + 1) as nat, 1, 1, (h0 + 1) as nat, Dir::L))
+        &&& l0_quints_present(tm, (h0 + 1) as nat, (n - 1) as nat)
+    }
+}
+
+/// **One `L₀` step (mirror of `lemma_r0_word_step`).** From the head ON a separator (`a == 0`) in
+/// state `h`, with the next word (`l` ones) above an `inner` tail in `u` (`u == pile_ones(inner*m, l, m)`),
+/// the cross `(h,0,0,h2,L)` + walk `(h2,1,1,h2,L)` peel the word leftward; after `l+1` steps the head
+/// lands on the word's separator (`a == 0`, `u == inner`) in `h2`, separator + word piled onto `v`.
+pub proof fn lemma_l0_word_step(
+    tm: Tm, c: TmConfig, h: nat, h2: nat, l: nat, inner: nat, i_cross: int, i_walk: int,
+)
+    requires
+        tm_wf(tm),
+        0 <= i_cross < tm.quints.len(),
+        0 <= i_walk < tm.quints.len(),
+        tm.quints[i_cross] == mk_quint(h, 0, 0, h2, Dir::L),
+        tm.quints[i_walk] == mk_quint(h2, 1, 1, h2, Dir::L),
+        c.a == 0,
+        c.q == h,
+        c.u == pile_ones(inner * tm.m, l, tm.m),
+    ensures
+        tm_run(tm, c, (l + 1) as nat)
+            == (TmConfig { u: inner, v: pile_ones(c.v * tm.m, l, tm.m), a: 0, q: h2 }),
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 1);
+    lemma_tm_step_picks(tm, c, i_cross);
+    let c1 = (TmConfig { u: c.u / m, v: c.v * m + 0, a: c.u % m, q: h2 });
+    assert(tm_step(tm, c) == Some(c1));   // apply_quint L with a2 == 0
+    assert(c.v * m + 0 == c.v * m);
+    if l == 0 {
+        assert(pile_ones(inner * m, 0, m) == inner * m);
+        assert((inner * m) % m == 0) by(nonlinear_arith) requires m > 1;
+        assert((inner * m) / m == inner) by(nonlinear_arith) requires m > 1;
+        assert(pile_ones(c.v * m, 0, m) == c.v * m);
+        assert(c1 == (TmConfig { u: inner, v: pile_ones(c.v * m, 0, m), a: 0, q: h2 }));
+        assert(tm_run(tm, c1, 0) == c1);
+        assert(tm_run(tm, c, 1) == c1);
+    } else {
+        lemma_pile_ones_div_mod(inner * m, l, m);
+        assert(c1.a == 1);
+        assert(c1.u == pile_ones(inner * m, (l - 1) as nat, m));
+        assert(c1.v == c.v * m);
+        lemma_walk_left_to_blank(tm, c1, h2, (l - 1) as nat, inner * m, i_walk);
+        assert((inner * m) % m == 0) by(nonlinear_arith) requires m > 1;
+        assert((inner * m) / m == inner) by(nonlinear_arith) requires m > 1;
+        assert(((l - 1) as nat + 1) as nat == l);
+        lemma_tm_run_split(tm, c, 1, l);
+        assert(tm_run(tm, c1, 0) == c1);
+        assert(tm_run(tm, c, 1) == c1);
+        assert((1 + l) as nat == (l + 1) as nat);
+    }
+}
+
+/// **`L₀^N` — proceed to the next blank to the LEFT, `N` times (mirror of `lemma_r0_walk`).** From the
+/// head ON a separator (`a == 0`) in state `h0`, with `u == words_layout(words, rest, m)` (the `N` words
+/// in `u`, head-adjacent first), walks left past all `N` separators and lands on the far separator
+/// (`a == 0`, `u == rest`) in state `h0+N`, reconstructing the words into `v` (`v == u_accum(c.v, words, m)`).
+/// Induction on `words.len()`, composing `lemma_l0_word_step`. No verifier escape hatches.
+pub proof fn lemma_l0_walk(tm: Tm, c: TmConfig, h0: nat, words: Seq<nat>, rest: nat)
+    requires
+        tm_wf(tm),
+        c.a == 0,
+        c.q == h0,
+        c.u == words_layout(words, rest, tm.m),
+        l0_quints_present(tm, h0, words.len()),
+    ensures
+        tm_run(tm, c, r0_steps(words))
+            == (TmConfig { u: rest, v: u_accum(c.v, words, tm.m), a: 0, q: (h0 + words.len()) as nat }),
+    decreases words.len(),
+{
+    let m = tm.m;
+    if words.len() == 0 {
+        assert(tm_run(tm, c, 0) == c);
+        assert(words_layout(words, rest, m) == rest);
+        assert(u_accum(c.v, words, m) == c.v);
+    } else {
+        let l = words.first();
+        let ws = words.drop_first();
+        assert(l0_quints_present(tm, h0, words.len()));
+        assert(exists|ic: int| 0 <= ic < tm.quints.len()
+                && tm.quints[ic] == mk_quint(h0, 0, 0, (h0 + 1) as nat, Dir::L));
+        assert(exists|iw: int| 0 <= iw < tm.quints.len()
+                && tm.quints[iw] == mk_quint((h0 + 1) as nat, 1, 1, (h0 + 1) as nat, Dir::L));
+        let ic = choose|ic: int| 0 <= ic < tm.quints.len()
+                && tm.quints[ic] == mk_quint(h0, 0, 0, (h0 + 1) as nat, Dir::L);
+        let iw = choose|iw: int| 0 <= iw < tm.quints.len()
+                && tm.quints[iw] == mk_quint((h0 + 1) as nat, 1, 1, (h0 + 1) as nat, Dir::L);
+        let inner = words_layout(ws, rest, m);
+        assert(c.u == pile_ones(inner * m, l, m));
+        lemma_l0_word_step(tm, c, h0, (h0 + 1) as nat, l, inner, ic, iw);
+        let c1 = (TmConfig { u: inner, v: pile_ones(c.v * m, l, m), a: 0, q: (h0 + 1) as nat });
+        assert(tm_run(tm, c, (l + 1) as nat) == c1);
+        assert(l0_quints_present(tm, (h0 + 1) as nat, (words.len() - 1) as nat));
+        assert(ws.len() == words.len() - 1);
+        lemma_l0_walk(tm, c1, (h0 + 1) as nat, ws, rest);
+        assert(r0_steps(words) == (l + 1 + r0_steps(ws)) as nat);
+        lemma_tm_run_split(tm, c, (l + 1) as nat, r0_steps(ws));
+        assert(u_accum(c.v, words, m) == u_accum(c1.v, ws, m));
+        assert(((h0 + 1) + ws.len()) as nat == (h0 + words.len()) as nat);
+    }
+}
+
 } // verus!
