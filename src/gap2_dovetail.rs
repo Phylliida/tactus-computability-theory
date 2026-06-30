@@ -37,11 +37,13 @@ use verus_group_theory::machine_group::Dir;
 use verus_group_theory::word_numbering::lemma_div_mod_step;
 use crate::tm::{Tm, TmConfig, tm_wf, tm_step, tm_run, apply_quint};
 use crate::tm_gadget::{mk_quint, lemma_tm_step_picks};
-use crate::tm_two_counter::{repunit_m, sep, lemma_repunit_digits_le, lemma_repunit_step};
+use crate::tm_two_counter::{repunit_m, sep, lemma_repunit_digits_le, lemma_repunit_step,
+    lemma_repunit_div_mod};
 use crate::tm_h0_bwd::{digits_le, tm_config_wf, lemma_digits_le_pop, lemma_digits_le_low,
     lemma_digits_le_push};
 use crate::tm_dstring::{pow_nat, lemma_pow_nat_unfold, lemma_pow_nat_pos, lemma_pow_high_tail};
 use crate::tm_walk::{pile_ones, lemma_pile_ones_shift};
+use crate::tm_run_lemmas::lemma_tm_run_split;
 
 verus! {
 
@@ -624,6 +626,170 @@ pub proof fn lemma_st_inner_step(
     assert(c1 == tgt);
     assert(tm_run(tm, c1, 0) == c1);
     assert(tm_run(tm, c, 1) == c1);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The OUTER STEP (leftward growth into the blank).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// **Closed form of `pile_ones`.** `pile_ones(v, k, m) == v·m^k + R(k)` — piling `k` ones onto `v`'s
+/// low end shifts `v` up `k` places and fills a `k`-repunit below. Induction on `k`.
+pub proof fn lemma_pile_ones_closed(v: nat, k: nat, m: nat)
+    ensures
+        pile_ones(v, k, m) == (v * pow_nat(m, k) + repunit_m(k, m)) as nat,
+    decreases k,
+{
+    if k == 0 {
+        assert(pow_nat(m, 0) == 1);
+        assert(repunit_m(0, m) == 0);
+        assert(v * pow_nat(m, 0) == v) by(nonlinear_arith) requires pow_nat(m, 0) == 1;
+    } else {
+        lemma_pile_ones_closed(v, (k - 1) as nat, m);   // pile(v,k-1) == v·m^{k-1} + R(k-1)
+        lemma_pow_nat_unfold(m, k);                      // m^k == m·m^{k-1}
+        lemma_repunit_step((k - 1) as nat, m);           // R(k) == m·R(k-1) + 1
+        assert(((k - 1) as nat + 1) as nat == k);
+        assert(pile_ones(v, k, m) == (v * pow_nat(m, k) + repunit_m(k, m)) as nat) by(nonlinear_arith)
+            requires
+                pile_ones(v, k, m) == pile_ones(v, (k - 1) as nat, m) * m + 1,
+                pile_ones(v, (k - 1) as nat, m)
+                    == v * pow_nat(m, (k - 1) as nat) + repunit_m((k - 1) as nat, m),
+                pow_nat(m, k) == m * pow_nat(m, (k - 1) as nat),
+                repunit_m(k, m) == m * repunit_m((k - 1) as nat, m) + 1;
+    }
+}
+
+/// **Walk-output bridge.** Piling `s` ones onto the `[sep()][working]` tail reconstructs the SHARED
+/// block content: `pile_ones(working·m + sep(), s, m) == st_right(s, working, m)`. The leftward walk in
+/// the outer step lands its peeled ones in exactly this shape (`[s ones][sep()][working]`).
+pub proof fn lemma_pile_ones_st_right(s: nat, working: nat, m: nat)
+    ensures
+        pile_ones((working * m + sep()) as nat, s, m) == st_right(s, working, m),
+{
+    lemma_pile_ones_closed((working * m + sep()) as nat, s, m);
+    // pile == (working·m + sep())·m^s + R(s) ; st_right(s) == R(s) + m^s·(sep() + m·working).
+    assert((working * m + sep()) * pow_nat(m, s) == pow_nat(m, s) * (sep() + m * working))
+        by(nonlinear_arith);
+}
+
+/// **The OUTER STEP** — close the inner round and grow the block by one, LEFTWARD into the blank.
+/// From the cnt-exhausted boundary `st_config(s, 0, working, q0)` (head on `sep()`, the whole `T+1 = s`
+/// block on `u`), `s + 3` steps reach `st_config(0, s+1, working, q_home)` — the next round's start
+/// (`s := 0`, `cnt := T+2 = s+1`). The working region stays put and BOTH delimiters survive
+/// (Danielle's boundary gotcha): the `sep()` rides onto `v` between block and working, and growth
+/// happens at the block's blank-facing LEFT end. Four quintuples:
+///   `(q0, sep(), sep(), q_walk, L)`     preserve `sep()`, step onto the rightmost block one,
+///   `(q_walk, 1, 1, q_walk, L)`         walk left across the block (the [`lemma_walk_left_tailed`] loop),
+///   `(q_walk, 0, 1, q_settle, R)`       turnaround at the blank: write the NEW one, step right,
+///   `(q_settle, 1, 1, q_home, L)`       settle the head back onto the new leftmost one.
+pub proof fn lemma_st_outer_step(
+    tm: Tm, s: nat, working: nat,
+    q0: nat, q_walk: nat, q_settle: nat, q_home: nat,
+    i_sep: int, i_one_l: int, i_grow: int, i_settle: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 2,
+        s >= 1,
+        q0 < tm.m,
+        0 <= i_sep < tm.quints.len(),
+        0 <= i_one_l < tm.quints.len(),
+        0 <= i_grow < tm.quints.len(),
+        0 <= i_settle < tm.quints.len(),
+        tm.quints[i_sep] == mk_quint(q0, sep(), sep(), q_walk, Dir::L),
+        tm.quints[i_one_l] == mk_quint(q_walk, 1, 1, q_walk, Dir::L),
+        tm.quints[i_grow] == mk_quint(q_walk, 0, 1, q_settle, Dir::R),
+        tm.quints[i_settle] == mk_quint(q_settle, 1, 1, q_home, Dir::L),
+    ensures
+        tm_run(tm, st_config(s, 0, working, q0, tm.m), (s + 3) as nat)
+            == st_config(0, (s + 1) as nat, working, q_home, tm.m),
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 2);
+    lemma_st_config_zero(s, working, q0, m);
+    let cS = st_config(s, 0, working, q0, m);   // { u: R(s), v: working, a: sep(), q0 }
+    assert(cS.u == repunit_m(s, m));
+    assert(cS.v == working);
+    assert(cS.a == sep());
+
+    // ── Leg 1 (L): preserve sep(), step onto the rightmost block one. ──
+    lemma_tm_step_picks(tm, cS, i_sep);
+    let c1 = apply_quint(tm.quints[i_sep], cS, m);
+    assert(tm_step(tm, cS) == Some(c1));
+    lemma_repunit_div_mod((s - 1) as nat, m);   // R(s)/m == R(s-1), %m == 1  (s ≥ 1)
+    assert(((s - 1) as nat + 1) as nat == s);
+    assert(c1.u == repunit_m((s - 1) as nat, m));   // R(s)/m
+    assert(c1.a == 1);                              // R(s)%m
+    assert(c1.v == working * m + sep());
+    assert(c1.q == q_walk);
+    assert(tm_run(tm, c1, 0) == c1);
+    assert(tm_run(tm, cS, 1) == c1);
+
+    // ── Leg 2 (walk left, s steps): traverse the block to the left boundary. ──
+    // c1.u == R(s-1) == R(s-1) + m^s·0  (tail = 0, the blank above the block).
+    assert(pow_nat(m, ((s - 1) as nat + 1) as nat) * 0 == 0) by(nonlinear_arith);
+    assert(c1.u == repunit_m((s - 1) as nat, m)
+        + pow_nat(m, ((s - 1) as nat + 1) as nat) * 0);
+    lemma_walk_left_tailed(tm, c1, q_walk, (s - 1) as nat, 0, i_one_l);   // fires s times
+    let c2 = TmConfig { u: 0, v: pile_ones(c1.v, s, m), a: 0, q: q_walk };
+    assert(tm_run(tm, c1, s) == c2);
+    lemma_pile_ones_st_right(s, working, m);
+    assert(c1.v == (working * m + sep()) as nat);
+    assert(c2.v == st_right(s, working, m));
+
+    // ── Leg 3 (R): grow at the blank, step right onto the old leftmost one. ──
+    lemma_tm_step_picks(tm, c2, i_grow);
+    let c3 = apply_quint(tm.quints[i_grow], c2, m);
+    assert(tm_step(tm, c2) == Some(c3));
+    lemma_st_right_pop(s, working, m);          // st_right(s)%m == 1, /m == st_right(s-1)  (s ≥ 1)
+    assert(0nat * m == 0) by(nonlinear_arith);
+    assert(c3.u == 1);                          // c2.u·m + 1 == 0·m + 1
+    assert(c3.a == 1);                          // c2.v % m == st_right(s)%m
+    assert(c3.v == st_right((s - 1) as nat, working, m));   // c2.v / m == st_right(s)/m
+    assert(c3.q == q_settle);
+    assert(tm_run(tm, c3, 0) == c3);
+    assert(tm_run(tm, c2, 1) == c3);
+
+    // ── Leg 4 (L): settle head onto the new leftmost one. ──
+    lemma_tm_step_picks(tm, c3, i_settle);
+    let c4 = apply_quint(tm.quints[i_settle], c3, m);
+    assert(tm_step(tm, c3) == Some(c4));
+    assert(1nat / m == 0) by(nonlinear_arith) requires m > 2;
+    assert(1nat % m == 1) by(nonlinear_arith) requires m > 2;
+    assert(c4.u == 0);                          // c3.u / m == 1/m
+    assert(c4.a == 1);                          // c3.u % m == 1%m
+    // v: st_right(s-1)·m + 1 == st_right(s).
+    lemma_repunit_step((s - 1) as nat, m);      // R(s) == m·R(s-1) + 1
+    lemma_pow_nat_unfold(m, s);                 // m^s == m·m^{s-1}
+    assert(c4.v == st_right(s, working, m)) by(nonlinear_arith)
+        requires
+            c4.v == st_right((s - 1) as nat, working, m) * m + 1,
+            st_right((s - 1) as nat, working, m)
+                == repunit_m((s - 1) as nat, m) + pow_nat(m, (s - 1) as nat) * (sep() + m * working),
+            st_right(s, working, m) == repunit_m(s, m) + pow_nat(m, s) * (sep() + m * working),
+            repunit_m(s, m) == m * repunit_m((s - 1) as nat, m) + 1,
+            pow_nat(m, s) == m * pow_nat(m, (s - 1) as nat);
+    assert(c4.q == q_home);
+    assert(tm_run(tm, c4, 0) == c4);
+    assert(tm_run(tm, c3, 1) == c4);
+
+    // ── Target G = st_config(0, s+1, working, q_home). ──
+    lemma_st_right_pop((s + 1) as nat, working, m);   // st_right(s+1)%m==1, /m==st_right(s)
+    assert(((s + 1) as nat - 1) as nat == s);
+    let cG = st_config(0, (s + 1) as nat, working, q_home, m);
+    assert(cG.u == 0);                          // R(0)
+    assert(cG.a == 1);                          // st_right(s+1)%m
+    assert(cG.v == st_right(s, working, m));    // st_right(s+1)/m
+    assert(c4 == cG);
+
+    // ── Compose the four legs: cS ─1→ c1 ─s→ c2 ─1→ c3 ─1→ c4 == cG. ──
+    lemma_tm_run_split(tm, cS, 1, s);                       // run(cS, 1+s) == run(c1, s) == c2
+    assert(tm_run(tm, cS, (1 + s) as nat) == c2);
+    lemma_tm_run_split(tm, cS, (1 + s) as nat, 1);          // run(cS, 1+s+1) == run(c2, 1) == c3
+    assert(tm_run(tm, cS, (1 + s + 1) as nat) == c3);
+    lemma_tm_run_split(tm, cS, (1 + s + 1) as nat, 1);      // run(cS, 1+s+1+1) == run(c3, 1) == c4
+    assert(tm_run(tm, cS, (1 + s + 1 + 1) as nat) == c4);
+    assert((1 + s + 1 + 1) as nat == (s + 3) as nat);
 }
 
 } // verus!
