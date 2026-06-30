@@ -2534,7 +2534,7 @@ noted in N+31 (`lemma_cmp_accept_decide_tailed` currently ensures only `.q == q_
 `c_acc` config up is deferred to R-C). **NEXT = R-S** (control skeleton → enum-sim → wire emit→reloc→compare
 →branch) per the build order above.
 
-### N+33 — R-S control skeleton OPENS: LAYER 1 (Control-Zone tape layout) + LAYER 2 brick 1 (peek-`cnt` zero-test). `gap2_dovetail.rs` 18/0, crate 1917/0 → additive. Design co-designed + endorsed (port-8051).
+### N+33 — R-S control skeleton OPENS: LAYER 1 (Control-Zone layout) + peek-`cnt` + tailed walk-left (dec foundation). `gap2_dovetail.rs` 23/0, crate 1930/0, additive. Design co-designed (port-8051); dec-cnt layout fork surfaced + consulted (resolve next).
 
 The keystone build opens. R-S re-expresses `search_rm`'s outer-`T` / inner-`s ≤ T` dovetail nesting as a
 **TM orchestrator** over the `assemble4` n≥4 window scaffold (the per-stage body is now a base-`m`
@@ -2587,11 +2587,40 @@ pinned the **Control Zone (CZ)** layout — the thing R-S most needs, since it f
 automatic — route digit-bound reads through `lemma_digits_le_low` (which discharges it via `lemma_small_mod`);
 and a `if c==0 {0} else {1}` in an `ensures` needs `0nat`/`1nat` suffixes (E0283 otherwise).
 
-**NEXT (R-S layer 2 — the remaining back-edge primitives, head IN the CZ, all tail-generic on the `v`
-working tail via the blank-separator walk-stop):**
-2. **dec-cnt** (INNER_TOP advance): clone `lemma_dec` with the `cnt` block and `s,T` as a `u`-high-tail
-   above the cnt/s separator (the walk halts at that blank) and `v=vtail` inert. `lemma_cz_u_pop` already
-   gives the post-dec quotient `cz_u(cnt−1, s, T)`.
+**Built (cont.) — the dec-cnt FOUNDATION:**
+- **`lemma_walk_left_tailed`** (gap2_dovetail 23/0) — the tail-generic walk-left: `u == repunit(j0) +
+  m^{j0+1}·tail` peels `j0+1` ones onto `v` and STOPS at the separator, landing `u == tail` (the s,T blocks
+  ride untouched). `tail==0` recovers `lemma_walk_left_inner`. The walk leg of any CZ dec/seek.
+
+**⚠ DEC-CNT DESIGN FORK (consult 2, port-8051, this session) — RESOLVE BEFORE BUILDING dec-cnt.** Composing
+the standard 2-counter dec dance (sep-peel → walk-left → erase-turnaround → discard → walk-back) on the CZ
+with `cnt` as the LOWEST block **over-shifts the `s,T` tail by one place**: walk-left-tailed stops AT the
+cnt/s separator (`u==rest`), but the discard's R-move still pushes a cell, so `rest` lands at offset `cnt+1`
+not `cnt` (a spurious extra separator). In the non-tail 2-counter case `u==0` so it's invisible; the tail
+exposes it. There is NO net-zero-move "pop-and-collapse" in the TM model — removing a cell from a block's
+*inner* (head-adjacent) end forces either a hole or a full-tape shift (Danielle: "Option A is a mirage").
+**Danielle's verdict = Option (B): put the most volatile counter OUTERMOST** (farthest from home, highest on
+`u`). Then dec = **seek-to-far-end → overwrite the outermost `1` → seek-back**; overwriting the outermost
+bit of the outermost block changes NO other block's offset (`s,T` never move). `cz_u(cnt−1)` is then literally
+`cz_u(cnt)` minus the last cell.
+- **FOLLOW-ON TENSION (unresolved):** `cnt` is dec'd every inner step but `s` is INC'd every inner step, and
+  inc grows a block — which ALSO wants the grown block outermost (else it shifts neighbours up). Only one
+  counter can be outermost. So Option (B) as stated handles dec-cnt but not inc-s.
+- **ALTERNATIVE worth weighing first (this session's idea): SHARED-TOTAL.** `s` and `cnt` share ONE fixed
+  block of `T+1` ones split by the head position — left-of-head = `s` ones, right-of-head = `cnt` ones. An
+  inner step is then a SINGLE head move right (`s++`, `cnt--` simultaneously — no inc/dec dance at all);
+  the cnt zero-test is "head at the block's right end" (peek-right); the body's `s` input is the head
+  position; the outer step extends the block by one and resets the head left. This eliminates the
+  inc/dec/offset problem entirely for the inner loop — the natural Minsky idiom. Cost: the body's E(s) input
+  is coupled to the head position (needs extraction), and it's a layout rethink. **Decide SHARED-TOTAL vs
+  Option-B (cnt outermost, s rebuilt via copy_u/q_clean) before building the inner-loop primitives.** The
+  committed bricks (layout infra, peek template, `lemma_walk_left_tailed`) are reusable under either.
+
+**THEN (after the layout fork resolves):** dec-cnt / inner-step, inc-s (or its shared-total replacement),
+SETUP (`cnt:=T+1`) + OUTER_CONT (`clear s; inc T`); then the shuttle (CZ-home ↔ working-home over the
+spent-master region) → wire to emit→reloc→compare→branch → R-C (cleanup, consumes the exposed accept
+config) → R-MC (`mm_decides_relnum` via `lemma_tm_h0_iff`) → B-W (discharge `ceer_realizes`) → drop
+`axiom_ceer_fp_embedding`.
 3. **inc-s** (CONT) — grows the `s` block; needs a mid-`u`-stack insert (shifts `T` up) — the one op that
    touches a neighbour, so likely a seek-to-`s` + rebuild, or reorder so `s` is outermost. **DESIGN SUB-CALL:
    pick the inc-side discipline before building** (the emitter's `copy_u`/`q_clean` rebuild is the template).
