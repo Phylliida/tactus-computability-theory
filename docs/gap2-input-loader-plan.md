@@ -3461,3 +3461,55 @@ A fresh instance re-read this plan, the AGENDA, and the source, then **confirmed
 3. **The §8.2 rotation `T_N` (brick 3) — SOURCE-BLOCKED.** `T_N(S)` (transfer first word to the end) and the register-`n` INC/DEC macros (l.1158–1196) are the OCR-garbled heart of the scan; even poppler `-layout` on page 16–17 collapses the superscript/subscript formulas (`R_N(r)`, `d_N*`, `a_N^(i)(n)`, the `T^{j-1}…T^{N-j+1}` rotation counts). §E's `INC(j)=T^{j-1}·P·T^{N-j+1}` is convention-dependent and does not obviously land the append on word `j` (appending after `T^{j-1}` puts the head at word `j-1`'s end) — i.e. the exact rotation arithmetic CANNOT be ported verbatim from this scan, and reconstructing it (even for the `s=1` unary specialization) is exactly the "creative reconstruction → dragon" the standing instruction forbids. **Getting a cleaner copy of S–S §8.2, or co-designing the `s=1` rotation explicitly with Danielle, is the gate before brick 3.**
 
 **STATUS / SURFACED TO DANIELLE.** Route confirmed + co-signed; brick 1 (the one piece N+52 explicitly cleared to build) is verified + committed; §9 is pinned from the source. The remaining bricks (multi-state `R₀^N` + A-representation + the §8.2 rotation) are the body-machine architecture that this project has consistently co-design-gated (N+35 was explicitly "architect-first, no code"), and the rotation is additionally blocked on cleaner source. This is a genuine co-design gate (the analog of N+52, one brick further along), not a stopping point of convenience. **NEXT:** with Danielle — (i) a cleaner S–S §8.2 text (or confirm the `s=1` rotation derivation), and (ii) the multi-state `R₀^N` / A-representation layout, then build brick 2 (`P`/`D`/`J` composites) → brick 3 (`T_N` rotation) → brick 4 (INC/DEC macros) → brick 5 (enum-sim wiring per N+35 §3, minus godel).
+
+### N+54 — THE §8.2 "SOURCE-BLOCK" IS LIFTED. The scan is NOT unreadable: rendering the PDF at 600 DPI (`pdftoppm -r 600` + crop, then read the image) shows §8.1/§8.2/§9 cleanly — the OCR garbling was a `pdftotext` artifact, not the page. The **complete construction is now transcribed from the source** (no reconstruction). Per the project's standing rule (faithful textbook bricks build solo; gate only route-reversals + creative forks), the build resumes. Durable crops saved to `docs/ss-scans/`.
+
+A fresh instance, instead of re-firing N+53's "need cleaner text" ask, tried a different extraction: **`nix-shell -p poppler-utils imagemagick → pdftoppm -png -r 600 -f PAGE -l PAGE ComputabilityOfRecursiveFunctions.pdf`, then `convert … -crop` the sub/superscript region, then read the PNG visually.** At 600 DPI every formula N+53 called "OCR-garbled" is legible. The `/tmp/cor.txt` garbling was purely a `pdftotext` failure on the typeset super/subscripts; the underlying page is clean. **This is the reusable un-block: for any S–S formula, render the page at 600 DPI and read the image — do NOT trust `pdftotext` on the super/subscript-dense pages (§8.2, §10).** Reading the rendered source page is "following the reading closely" — the opposite of the "creative reconstruction" the standing instruction forbids. (PDF page numbers: §8 intro p.13, Thm 8.1 + ops + macros p.14, §8.2 `T_N(S)` p.16, `R_N`/`J_N*`/`T_N`/macros p.17, §9 TM-rep p.18, §9 `R₀`/`P`/`D`/`J` + Thm 9.1 p.19. Saved crops in `docs/ss-scans/ss-p13…p19-*.png`.)
+
+**§I — THE PRIMITIVE SRM OPERATION SET (Thm 8.1, p.14 / p.13 intro), verbatim.** Alphabet `𝒶 ∪ {,}` is *labelled* `a₀(=comma=blank), a₁, …, a_s` so the superscript index `i` runs `0..s` (so `P^(0)` = "append a comma", `J^(0)` = "test-for-comma"). The single register holds one word `A`; the multi-register LRM state `A₁,…,A_N` (register `j` = word `A_j`) is `A = A₁,A₂,…,A_N` (commas separate words). Ops (subscripts shorn — one register):
+- `a. P^(i):  A → A aᵢ`  — append letter `aᵢ` to the **END** of `A`.
+- `b. D:      aᵢA → A`   — delete the **FIRST** letter of `A`.
+- `f'. J^(i)[E1]: jump to exit 1 if A begins with aᵢ`  — test the **FIRST** letter.
+- (Appendix-C alt: `Scd[E1,…,E(s+1)]` = scan-and-delete-front, one combined op.)
+- `J̄[E1] = J^(0)[E1],…,J^(s)[E1]` = "jump if `A ≠ ∧` (non-empty)"; for `N>1`, `A` always holds ≥1 comma ⟹ `J̄` is unconditional.
+
+**§II — THE ROTATION, EXACT (this is what N+53 had as "garbled / cannot port").**
+- **§8.1 `T` (transfer first word to end):** `A₁,A₂,…,A_N → A₂,…,A_N,A₁`. Built by induction (p.17): helper `R_N(r)[E1]` (rotate the first `r` words past a marked word) with `R_N(0)[E1] = J^(1)[E1]`, `R_N(r+1)[E1] = P^(0), T_{N+1}(R_N(r)[E1])`; then `J_N*[E1] = P^(0), P^1, T_{N+1}^(1)(R_N(N-1)[E1])`; then `T_N = {1. P^(0), T_{N+1}(J_N*[2]);  2. D}`. (Uses `J^(0)`/`P^(0)` — the strong set.)
+- **§8.2 weak-set `T_N(S)` (p.16), the one we use** — `S` any subroutine "which jumps when finished (never takes normal exit 0)"; `T_N(S)` started on `A₁,…,A_N` transfers the first word onto the end of the last (`→ A₂,…,A_N,A₁`) then performs `S`:
+  ```
+  1.    J^(1)[2], J^(2)[3], …, J^(s)[s+1], D, S
+  2.    D, P^(1), {1}
+   ⋮
+  s+1.  D, P^(s), {1}
+  ```
+  (`{1}` = "go to line 1".) Loop: while the front letter is some `aᵢ`, move it front→end (`D` then `P^(i)`); when the front is the comma (word 1 exhausted), `D` the comma and do `S`. **For the unary enumerator `s=1`** this collapses to: `1. J^(1)[2], D, S    2. D, P^(1), {1}`.
+
+**§III — THE LRM-INSTRUCTION MACROS, EXACT EXPONENTS (p.14 unsubscripted = p.17 subscripted; THEY MATCH).** To operate on register `n` of `N`, rotate it to the working end, operate, rotate back (a full `N`-cycle). The asymmetry N+53 flagged is real and **resolved by reading**: `P` appends to the END so it rotates reg `n` to the *tail* (`T^n … T^{N-n}`); `D`/`J` work on the FRONT so rotate reg `n` to the *head* (`T^{n-1} … T^{N-n+1}`).
+| macro | meaning | realization |
+|---|---|---|
+| `a₁. P_N^(i)(n)` | append `aᵢ` to register `n` | `T^{n}, P^(i), T^{N-n}` |
+| `b₁. D_N(n)` | delete first letter of reg `n` | `T^{n-1}, D, T^{N-n+1}` |
+| `h₁. N→N+1` | introduce empty register | `P^(0)` (append a comma) |
+| `i₁. N→N-1` | remove a register | `T^{N-1}, D` |
+| `f₁'. J_N^(i)(n)[m]` | test first letter of reg `n` | `T^{n-1}, J^(i)[m+1], T^{N-n+1}` (+ "compensation": replace line `m` by `m. T^{n-1}; m+1. T^{N-n+1}, old line m`) |
+| (N=1 base) | | `P₁^(i)(1)=P^(i)`, `D₁(1)=D`, `J₁^(i)(1)[E1]=J^(i)[E1]` — no rotation |
+
+For the unary enumerator's `RegisterMachine` we need only `INC(n) = P_N^(1)(n)` and a `DEC-JUMP(n)` built from `f₁'`(test reg `n` empty) + `b₁`(decrement) — `s=1`, `N=k` fixed register count.
+
+**§IV — THE §9 TM REALIZATION (p.18–19), verbatim — this is the level the crate's `tm.rs` IS.** Standard one-head two-way TM, instructions `L, R, P^(i) (i=1..s), E (=P^(0)=print 0), J^(i) (i=0..s)`; "`E` and `J^(0)` are dispensable." **Representation:** a word `A₁,…,A_N` of the SRM is `⋯⋯ 0 ↓A₁ 0 A₂ 0 A₃ ⋯ 0 A_N 0^∞` — `0` is the comma/blank, head `↓` on the **first square right of the leading 0** (= `A₁`'s first cell; an empty `A_j` is two adjacent 0s), trailing `0^∞`, left side don't-care. Ambiguity (the tail also reads as `…,A_N,∧` etc.) is harmless because **`N` is fixed and known**. Subroutines (`s=1` shown):
+- **`R₀` (proceed to next blank right) = `1. R, J^(1)[1], …, J^(s)[1]`** — move R, loop-while-letter; lands on the next `0`. This is exactly brick 1 (`lemma_walk_right_to_blank`) preceded by one `R`. `L₀` is the mirror.
+- **`a₁. P_N^(i) (append `aᵢ` to end of A) = `1. L, R₀^N, P^(i), L₀^N, R`** — step left onto the leading 0, walk right past `N` blanks to the trailing blank beyond `A_N`, print `aᵢ`, walk back `N` blanks, step right to restore the head.
+- **`b₁. D_N (delete first letter) = `1. E, R`** — erase the scanned front letter (→ left don't-care), move right. (FIFO-consume-from-left: the left garbage grows, the head stays at the front of the remaining word — so D maintains "head at standard position relative to the grown leading garbage".)
+- **`f₁'. J_N^(i)[E1] = `J^(i)[E1]`** — dispatch on the scanned cell; no head motion.
+- **Thm 9.1:** initial `0↓x₁0x₂⋯0x_n0^∞` → (if `f` defined) `0↓x₁0x₂⋯0x_n0 f(x⃗) 0^∞` (or `0↓f(x⃗)0^∞` per §5). Unary `1ⁿ` ⟹ all partial recursive functions are `{0,1}`-TM computable.
+
+**§V — MAPPING TO THE CRATE (`tm.rs` config `(u,v,a,q)`, base-`m` half-tapes, `apply_quint` R: `u:=u·m+a2, a:=v%m, v:=v/m`).** Hold `A = A₁ 0 A₂ 0 ⋯ A_N 0 [rest]` in `v` (low digit = head-adjacent = front of `A₁`); the scanned `a` = current front cell; `u` = left don't-care/garbage.
+- **`D_N` = E,R** = one `tm_step` of `(q, σ, 0, q', R)` (erase scanned by writing `0`, move R). One quintuple; trivial.
+- **`J_N^(i)`** = read `a` (state-dispatch quints `(q, σ, …)` per `σ`). No motion.
+- **`R₀^N`** = the multi-state **word-counter** (the genuinely-new piece): states `g₀…g_N`; cross-separator quints `(g_{j-1}, 0, 0, g_j, R)` (j=1..N) cross the `j`-th blank; walk quints `(g_j, 1, 1, g_j, R)` (j=1..N) walk word `j` via brick 1; from head-on-leading-0 in `g₀`, lands head-on-trailing-0 (A_N's separator) in `g_N`. (`N` fixed ⟹ finite quint list. The distinct states ARE the comma-count — a single state would walk forever, N+53's correct worry.) `L₀^N` mirrors.
+- **`P_N^(i)`** = `L` (one step) ∘ `R₀^N` ∘ `P^(i)` (one step, write `aᵢ` over the trailing 0) ∘ `L₀^N` ∘ `R` (one step). Composed via `tm_run_lemmas::lemma_tm_run_split`.
+- **`T_N(S)`** = the §8.2 loop over `D_N`/`P_N^(1)`/`J_N^(1)` (s=1). The register-`n` macros compose `T_N` per §III.
+
+The natural spec for the layout is `words_layout(words: Seq<nat>, rest, m) = if empty {rest} else pile_ones(words_layout(words.drop_first(), rest, m) * m, words[0], m)` (each word a unary run, a `0` separator above it, recursing to `rest`) — built directly on the existing `pile_ones` + its shift/div_mod lemmas, exactly like brick 1.
+
+**§VI — DECISION & NEXT.** The §8.2 source-block (the ONLY reason brick 3 was gated above N+53's items 1–2) is **lifted**. Items 1 (multi-state `R₀^N`) and 2 (A-layout) are now fully source-specified: `R₀^N`'s state-numbering is mechanical TM construction (not creative math), and the A-rep is pinned by §9 (`0`-delimited, head right-of-leading-0, `N` fixed). Per the project's own rule (N+47: every textbook brick — CS-1…7, FA-5…9b, all of Layer 1 — built solo; the gate blocks *creative* forks, not *faithful* ports) and Danielle's standing "follow the reading, do the upfront investment" note, the build **resumes solo**, layout-agnostic (like brick 1, to avoid premature zone-commitment). **Building order:** brick 2a `R₀^N`/`L₀^N` (the word-counter — `gap2_srm_walk.rs` continuation) → 2b `D_N`/`J_N`/`P_N` composites → brick 3 `T_N(S)` rotation (s=1) → brick 4 `INC`/`DEC-JUMP(n)` macros → brick 5 enum-sim wiring (N+35 §3 asset map, minus godel). The ONE thing still genuinely co-design-worthy is how the A-string's tape zone *integrates with* the existing `gap2_dovetail`/`gap2_emit_fam`/`gap2_reloc_compare` packed-base-m zones (N+35 §3) — deferred by building the bricks layout-agnostic; surface at brick 5 (wiring), not before.
