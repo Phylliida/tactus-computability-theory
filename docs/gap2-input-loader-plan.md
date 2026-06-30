@@ -3078,3 +3078,51 @@ sim pipeline — historically the tractable domain in this project), discarding 
 but dissolving Q4. The reading (AC + [18]) describes Option B. Both have real new work; B's is plausibly
 the more tractable and is reading-faithful. **Decision still belongs to Danielle (sunk cost + reserved
 architecture).** Recorded so whichever she picks has a concrete first-brick list, no re-derivation needed.
+
+### N+39 — Option B's CRUX CLAIM SOURCE-VERIFIED (no code): the reuse pipeline is provably magnitude-parametric, so B's exponential entry-fold has no hidden FACT-2 dragon. The B recommendation is now bulletproof; still human-gated.
+
+Unsupervised session. Danielle's A-vs-B call (surfaced N+38, Zulip) is still unanswered; her latest note
+(2026-06-30T04:39Z) is the general "follow the reading / upfront investment / no creative dragons"
+methodology reinforcement. The safe layout-independent well is dry. Per the held gate ("architect the body
+WITH the human"; port-8051 distrusted on body math since N+34) I did **not** build either option's body.
+Instead I did the one piece of decision-de-risking that respects the gate: I converted the N+38 addendum's
+load-bearing *assertion* — "the rm_to_tm/godel/tm_h0 sim lemmas are parametric in register magnitude, so
+B's entry-fold is bounded-proof" — into a **source-checked fact** by reading the actual signatures. This is
+the single claim the whole B recommendation rests on (if the sim pipeline secretly required *bounded*
+registers, B's exponential entry-fold WOULD re-hit FACT-2 and A might win). It holds, verbatim:
+
+- **`config_wf(m, c)`** (`machine.rs:47`) = `c.pc <= m.instructions.len() && c.registers.len() == m.num_regs`.
+  Bounds the **number** of registers and the pc — register **values** `c.registers[i]` are unbounded `nat`.
+- **`machine_wf(m)`** (`machine.rs:34`) = `num_regs > 0` + every instruction's register/target in-bounds.
+  No magnitude bound anywhere.
+- **`tm_config_wf(tm, c)`** (`tm_h0_bwd.rs:57`) = `c.a <= tm.n && c.q < tm.m && digits_le(c.u,tm.m,tm.n)
+  && digits_le(c.v,...)`. `digits_le` bounds each base-`m` **digit** of `u`/`v` by the alphabet `n`, but
+  `u`/`v` themselves are **unbounded** `nat`s (tape length/magnitude free); `c.a`/`c.q` are finite
+  alphabet/state indices.
+- **`lemma_tm_h0_iff(tm,c)`** (`tm_h0_bwd.rs:347`): `requires tm_wf(tm), tm_config_wf(tm,c)` — no value bound.
+- **`lemma_godel_halts_iff(rm_k,c_k)`** (`godel_run.rs:295`): `requires machine_wf(rm_k), config_wf(rm_k,c_k)`
+  — no value bound; the exponential `godel_encode` lives only *inside* `rm2_config_enc(c_k)`, abstractly.
+
+**Conclusion (now checked, not believed).** All three well-formedness gates bound only **finite control
+data** (register count, pc, alphabet size, state count) and **never** register values or tape magnitude. So
+Option B's entry-fold — a finite `R ← R·m + d` loop over the `Θ(a+b)` base-`m` digits of α, exponential
+*runtime* (`R` reaches `≈ m^L`) but bounded *proof* (induction over the digits) — feeds its unbounded `R`
+straight into `godel`/`rm_to_tm`/`lemma_tm_h0_iff`, all of which carry it abstractly. The `2^α` blow-up is
+never *materialized* as raw quads; it appears only inside the sim's `repunit`/`godel`. **B does NOT re-hit
+FACT-2's dragon.** That was the only residual uncertainty in the N+38 recommendation; it is now closed
+against source.
+
+**Net.** The recommendation stands and is now bulletproof: **Option B** (single-register / S–S URM,
+reading-faithful, dissolves Q4, reuses the verified RM-domain sim pipeline) over **Option A** (base-m +
+bespoke shift-embedded right-counter gadgets in the dragon-prone TM-tape domain). The decision is reduced
+to a **one-word answer** for Danielle; whichever she picks, the next instance executes with no
+re-derivation. **B's concrete first-brick list** (all RM-domain, all reusing existing verified infra):
+(1) **entry-fold** — `R ← R·m + d` URM gadget folding ignition's base-`m` α into one register
+(reuse `multi_output_primitives`); (2) **relnum URM** — compute `relnum(a,b)` in a register, proved `==`
+the spec via the unconditional `lemma_relnum_is_fam_digits` (`gap2_fam_digits.rs:238`,
+`relnum == dpack(fam_digits(a,b),m)`); (3) **register compare** `relnum(a,b) =?= R_α`; (4) **dovetail-body
+halts-iff** — reuse the `search_rm` template (`lemma_search_rm_halts_iff`, `search_rm_outer.rs:643`) with
+the body predicate swapped from `declared_match` to `relnum(declared_pair(e,s)) == R_α`; then TM-sim the
+whole URM via `rm_to_tm` + `godel` + `lemma_tm_h0_iff` and discharge `ceer_realizes`. **A's first brick** =
+the shift-embedded tailed right-counter sim-gadget suite (heavier, TM-tape domain). Nothing built; the
+conditional chain `lemma_ceer_word_problem_in_h3` still stands.
