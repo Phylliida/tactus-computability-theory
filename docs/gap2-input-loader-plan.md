@@ -2702,12 +2702,29 @@ tail-safe, N+32) ∘ shuttle-up-back-to-INNER_TOP.
 > * **`t_u` = the SHARED block.** The shuttle has to repackage `st_config`'s `u = R(s)` + the head/`v`
 >   block content into the body's `t_u` high tail (and back, on shuttle-UP — the outer/inner edges expect
 >   `st_config` again). The block value the body must preserve untouched as `t_u` is the whole `T+1` run.
-> * **OPEN DESIGN (the real shuttle sub-fork): how does `s` index the emit?** The emit primitives
->   (`gap2_emit_window::seret*`) emit a FIXED symbol sequence — they don't read a stage index. So the
->   per-stage variation (which program/budget stage `s` selects) is NOT inside emit as built; the s-mirror
->   must drive *what gets emitted/compared* (the candidate relnum's `(a,b)` and/or the sim budget). Pin
->   this with Danielle (emit-interface + s-indexing) BEFORE coding the shuttle: it decides whether the
->   s-mirror feeds a decode-stage in front of emit, or the dovetail enumerates `(a,b,budget)` differently.
+> * **⚠ CORRECTION — `(a,b)` is NOT the block antidiagonal `(s, cnt−1)`.** A tempting linchpin (and a
+>   confidently-WRONG port-8051 confirmation) was that the SHARED block directly encodes the candidate
+>   pair `a = s` (left), `b = cnt−1` (right), so the dovetail enumerates `ℕ²` on the antidiagonal `T=a+b`
+>   and the shuttle just "measures both block halves." **Cross-checking the actual spec kills this.**
+>   `mm_decides_relnum` (`gap2_relnum.rs:249`) requires the machine accept `α` IFF `α = relnum(a,b)` for some
+>   `declared_pair(e,s) = Some((a,b))`. And `declared_pair(e,s)` (`ceer.rs:24`) **RUNS the CEER enumerator
+>   register machine on input `s`** and reads `(a,b) = (reg[1], reg[2])` from its halting registers — `None`
+>   if it doesn't halt. So `(a,b)` is a genuine (possibly non-halting) COMPUTATION of `s`, not an
+>   antidiagonal read. (Lesson re-confirmed: cross-check architectural claims against the built spec; the
+>   port-8051 partner plausibly hallucinates the math.)
+> * **The real body architecture (the deep remaining GAP-2 heart).** Stage `(T, s)`: **simulate
+>   `e.enumerator` (a register machine) on input `s` for budget `T` steps** — exactly the `rm_to_tm`
+>   register→TM machinery already in the crate. If it halts within `T`, extract `(a,b)` from its registers,
+>   THEN run `EMIT(relnum(a,b)) → RELOC → COMPARE` against `α`; match ⟹ accept. The dovetail over `(T, s)`
+>   makes every `(s, sufficient-budget)` eventually tried (the budget exists because the enumerator may run
+>   arbitrarily long). So in the SHARED block, `s` = the enumerator's INPUT (the shuttle's s-mirror feeds
+>   it), the block size `T+1` = the budget, and `cnt−1` is budget-minus-stage — NOT an emit exponent. The
+>   emit primitives (`gap2_emit_window::seret*`) are the relnum-emission AFTER `(a,b)` is known; their
+>   `big_m`-style exponents come from the enumerator's output registers, not from the block.
+> * **NEXT-SESSION FIRST MOVE:** architect the body with the *human* Danielle (port-8051 got the math wrong
+>   here — do not trust it on this point): how `rm_to_tm`-style enumerator-simulation embeds as the
+>   per-stage body, how its output registers feed emit, and how the budget `T` bounds it. The shuttle's
+>   down-target is then "enumerator-sim entry on input `s`", and the s-mirror feeds `s` as the RM input.
 
 A **round-level driver** (iterate inner-iter `T+1×` then outer, given a per-stage body contract quantified
 over `s=0..T` with a fuel function) is deferred to the body wiring — the per-stage fuel is body-specific.
