@@ -2606,21 +2606,33 @@ bit of the outermost block changes NO other block's offset (`s,T` never move). `
 - **FOLLOW-ON TENSION (unresolved):** `cnt` is dec'd every inner step but `s` is INC'd every inner step, and
   inc grows a block — which ALSO wants the grown block outermost (else it shifts neighbours up). Only one
   counter can be outermost. So Option (B) as stated handles dec-cnt but not inc-s.
-- **ALTERNATIVE worth weighing first (this session's idea): SHARED-TOTAL.** `s` and `cnt` share ONE fixed
-  block of `T+1` ones split by the head position — left-of-head = `s` ones, right-of-head = `cnt` ones. An
-  inner step is then a SINGLE head move right (`s++`, `cnt--` simultaneously — no inc/dec dance at all);
-  the cnt zero-test is "head at the block's right end" (peek-right); the body's `s` input is the head
-  position; the outer step extends the block by one and resets the head left. This eliminates the
-  inc/dec/offset problem entirely for the inner loop — the natural Minsky idiom. Cost: the body's E(s) input
-  is coupled to the head position (needs extraction), and it's a layout rethink. **Decide SHARED-TOTAL vs
-  Option-B (cnt outermost, s rebuilt via copy_u/q_clean) before building the inner-loop primitives.** The
-  committed bricks (layout infra, peek template, `lemma_walk_left_tailed`) are reusable under either.
+**✅ FORK RESOLVED (consult 3, port-8051): SHARED-TOTAL.** `s` and `cnt` are ONE contiguous block of `T+1`
+ones split by the HEAD POSITION — ones LEFT of head = `s` (consumed stages), ones RIGHT of head = `cnt`
+(remaining). This eliminates the inc/dec/offset problem entirely:
+- **INNER STEP** = move the head RIGHT one cell over a `1` (`s++` and `cnt--` simultaneously — a SINGLE TM
+  step, no inc/dec/seek/rebuild dance). This replaces both dec-cnt AND inc-s.
+- **cnt zero-test (INNER_TOP)** = peek-RIGHT: is the next cell the block's end blank/marker? (the s,T-side
+  analog of `lemma_cz_peek`; reuse `lemma_peek_right`/`tm_right_gadgets`.)
+- **body's `s` input** = the count of ones LEFT of the head; the body re-runs `E(s)` each round, so mirror
+  `s` into a working-region counter during the (already-required) shuttle-DOWN — cheap, one extra scan.
+- **OUTER STEP** (`T++`, `s:=0`) = append one `1` at the block's RIGHT end + walk the head back to the
+  block's LEFT end.
+- **⚠ DANIELLE'S GOTCHA:** shared-total trades counter-maintenance for **boundary-maintenance** — the
+  outer-step append + walk-back must NOT overwrite the markers delimiting the block from the rest of the
+  tape. Pin the block's two delimiters (left + right) and prove the outer step preserves them.
 
-**THEN (after the layout fork resolves):** dec-cnt / inner-step, inc-s (or its shared-total replacement),
-SETUP (`cnt:=T+1`) + OUTER_CONT (`clear s; inc T`); then the shuttle (CZ-home ↔ working-home over the
-spent-master region) → wire to emit→reloc→compare→branch → R-C (cleanup, consumes the exposed accept
-config) → R-MC (`mm_decides_relnum` via `lemma_tm_h0_iff`) → B-W (discharge `ceer_realizes`) → drop
-`axiom_ceer_fp_embedding`.
+The committed bricks stay reusable: `cz_u`/`cz_config`/wf + the digit helpers (the block is still a unary
+run on `u`, now `T+1` ones); `lemma_walk_left_tailed` (the outer-step walk-back-to-left-end); `lemma_cz_peek`
+is the LEFT-peek template (the RIGHT-peek for the cnt-end test mirrors it via `lemma_peek_right`).
+
+**NEXT (build SHARED-TOTAL):** (1) the split-block layout config (head inside the `T+1` block at position
+`s`, left/right delimiters pinned) + wf; (2) the inner-step head-move lemma (`s,cnt → s+1,cnt-1`) +
+cnt-zero peek-right; (3) the outer-step (append-right + walk-back-left, preserving delimiters per the
+gotcha); (4) compose the dovetail state graph (INNER_TOP / inner-step / OUTER_CONT back-edges) over the
+assemble4 windows, parametric over the body hook. **THEN:** the shuttle (CZ-home ↔ working-home over the
+spent-master region; mirror `s` into the working counter en route) → wire to emit→reloc→compare→branch →
+R-C (cleanup, consumes the exposed accept config) → R-MC (`mm_decides_relnum` via `lemma_tm_h0_iff`) → B-W
+(discharge `ceer_realizes`) → drop `axiom_ceer_fp_embedding`.
 3. **inc-s** (CONT) — grows the `s` block; needs a mid-`u`-stack insert (shifts `T` up) — the one op that
    touches a neighbour, so likely a seek-to-`s` + rebuild, or reorder so `s` is outermost. **DESIGN SUB-CALL:
    pick the inc-side discipline before building** (the emitter's `copy_u`/`q_clean` rebuild is the template).
