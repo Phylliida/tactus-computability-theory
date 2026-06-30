@@ -2730,3 +2730,111 @@ A **round-level driver** (iterate inner-iter `T+1×` then outer, given a per-sta
 over `s=0..T` with a fuel function) is deferred to the body wiring — the per-stage fuel is body-specific.
 THEN: R-C (cleanup) → R-MC (`mm_decides_relnum` via `lemma_tm_h0_iff`) → B-W (`ceer_realizes`) → drop
 `axiom_ceer_fp_embedding`.
+
+### N+35 — THE PER-STAGE BODY ARCHITECTURE (the enum-sim seam): grounded design + recommended route + the design gate. NO code (architect-first per "no undesigned directions").
+
+The SHARED-TOTAL skeleton (N+34) leaves ONE hypothesis open in `lemma_dovetail_inner_iter`: the per-stage
+body's REJECT path `tm_run(tm, st_config(s,cnt,…,q_top), f_body) == st_config(s,cnt,…,q_step)`. Discharging it
+IS the deep remaining GAP-2 heart. This session is a **grounded architecture pass** (no build): the previous
+note rightly flagged that port-8051 hallucinated the body math (the `(a,b)`-antidiagonal), so the design here
+is cross-checked against the BUILT spec/code, not the proxy model. Every asset claim below was verified against
+current source this session.
+
+**1. What the body computes (corrected target).** At dovetail stage `(T, s)`:
+- **simulate `e.enumerator`** — a *general k-register* `RegisterMachine` — **on input `s`** with a budget from `T`;
+- if it halts in budget: extract `(a,b) = (reg[1], reg[2]) = declared_pair(e,s)`;
+- **emit `relnum(a,b)`** base-m digits (R-relnum-gen) → reloc → **compare to the immutable α-block** (R-cmp, tailed N+32);
+- **match ⟹ ACCEPT** (→ R-C cleanup → origin); **else REJECT** (→ shuttle-up → INNER_TOP, advancing the dovetail).
+
+This is the generate-and-compare semantics of `mm_decides_relnum` (`gap2_relnum.rs:249`). `(a,b)` is a genuine
+(possibly non-halting) COMPUTATION of `s` via `declared_pair` (`ceer.rs:24`) — **NOT** the block antidiagonal
+`(s, cnt−1)` (the N+34-killed hallucination).
+
+**2. Why the enum-sim MUST live inside `psc_tm` (irreducible).** `lemma_tm_h0_iff` realizes the decided set
+`S` as `H₀(tm_to_modmachine(psc_tm))` only for a SINGLE TM that halts-on-blank iff input∈S. Here
+`S = { relnum(a,b) : (a,b) declared }`; deciding `α∈S` intrinsically needs candidate relnums (⟸ enumerate
+declared pairs ⟸ simulate the enumerator) AND a base-m compare to α — both in ONE TM (there is no
+modmachine-level composition of two H₀'s). **The unary↔base-m seam is cheap:** the enumerator yields `(a,b)`
+as SMALL unary register values (CEER reg contents, poly-bounded — NOT `2^anything`); R-relnum-gen reads the
+small `(a,b)` and emits base-m. `relnum` is long, but `a,b` themselves are modest. So only the boundary value
+`(a,b)` crosses unary→base-m, not a huge number.
+
+**3. Asset audit (verified against current source).**
+- **enum-sim (RM-level):** `search_rm_sim::instrument` — a *fuel-guarded* bounded sim of `E`: reaches `halted_pc`
+  (carrying the halt config's registers) if `E` halts within budget, else `timeout_pc`. **TOTAL (always returns).**
+- **pair-extraction (RM-level, proven against `declared_pair`):** `search_rm_inner::srm_decl1/2` +
+  `lemma_srm_decl_is_declared` (`run_halts(E, init(s), T+1) ⟹ declared_pair(e,s)=Some((srm_decl1,srm_decl2))`).
+- **per-step TM sim:** `tm_sim::lemma_sim_step` (one RM(2) step ↦ `rm_to_tm` gadget run, `tm_reaches`), to-completion
+  chain `tm_run_sim::lemma_sim_run`, whole-machine `tm_run_sim::lemma_rm_tm_origin_iff`.
+- **k→2:** `godel_run::lemma_godel_halts_iff`; composed bridge `godel_modular::lemma_rm_k_halts_iff_mm_in_H0`
+  (RM(k) halts ⟺ `mm_in_H0`, in the **rep1-unary** input convention — the FACT-2 α-dragon, why we DON'T feed α here).
+- **gadget library** (`lemma_inc/dec/peek/walk/bounce/_right`): takes a `tm` param, requires only `tm.n≥2`,
+  uses the tm's own `m` ⟹ **modulus-generic**.
+- **`search_rm` itself proves `declared_EQUIV`** (the reflexive-symmetric-transitive closure;
+  `search_rm_outer.rs:643` `lemma_search_rm_halts_iff: halts(search_rm(e),pair(a,b)) ⟺ declared_equiv(e,a,b)`),
+  a DIFFERENT consumer (the CEER word problem) from `mm_decides_relnum`'s `declared_pair`-membership. So
+  **`search_rm` is a STRUCTURAL TEMPLATE, not directly reusable** for G2-F — its eq-test-against-input body is
+  replaced by emit→compare-against-α, and its RM dovetail by the TM SHARED-TOTAL block.
+
+**4. The modulus fact (decisive for reuse).** `quint_wf` (`tm.rs:47`) requires the CURRENT state
+`q ∈ [n+1, m−1]` ⟹ **`m` bounds the STATE space**, not just the `n+1` alphabet. `rm_to_tm`'s
+`m = tm_mod(len) = 19+16·len`. `psc_tm` has MORE states (sim ⊎ control ⊎ emit ⊎ compare ⊎ cleanup) ⟹
+`psc_tm.m > tm_mod(len)`. Consequences:
+  - (a) reusing `rm_to_tm(godel(E))`'s QUINT LIST verbatim as a **state-disjoint sub-block** of `psc_tm.quints`
+    is sound — quints are `m`-independent values; `tm_wf` determinism holds because the state zones are disjoint;
+  - (b) BUT `apply_quint`'s tape effect uses `m` (base-`m` pack `u·m+a2`, `v/m`, `v%m`) and the 2-counter
+    encoding (`two_counter_config`, `repunit_m(·,m)`) is base-`m` ⟹ **`lemma_sim_step` (pinned at
+    `m=tm_mod(len)`) does NOT transfer verbatim**; it must be **re-proven at `psc_tm.m`**, dispatching to the
+    same `m`-generic gadgets. *This is the central new infrastructure.*
+
+**5. RECOMMENDED ROUTE (β-refined: reuse the RM-sim structure at `psc_tm.m`).** `psc_tm(e)` = ONE n≥4 `tm_wf`
+TM, one modulus `m` covering all zones, tape: `[enum-sim 2-counter bank] · [CZ SHARED-TOTAL block] · [output-scratch]
+· [α-block]`, blank/`sep`-delimited, head shuttles. The enum-sim sub-region = the quint STRUCTURE of
+`rm_to_tm(godel(E))` re-instantiated at `psc_tm.m`, driven by the SHARED-TOTAL `(T,s)` dovetail; using
+`instrument`'s fuel-guard so the sim is TOTAL (always halted/timeout) — which **discharges the `f_body` reject
+hypothesis without manual TM-step counting**. The remaining GAP-2 deep bricks:
+  - **R-enum.1 — `m`-generic sim.** Re-state `lemma_sim_step`/`lemma_sim_run` parametric in the modulus
+    (reuse the `m`-generic gadgets). Modest IF the gadgets are as `m`-generic as audited (Q2).
+  - **R-enum.2 — tape-tail carry for the sim gadgets.** The sim runs in a tape WINDOW; CZ/output/α ride as
+    inert tails. The N+31/N+32 pattern applied to inc/dec/walk (cf. the already-built `lemma_walk_left_tailed`).
+  - **R-enum.3 — disjoint-zone union + `tm_wf`.** Assemble sim ⊎ control ⊎ emit ⊎ compare ⊎ cleanup into one
+    `psc_tm`; determinism by zone-disjoint states (the `assemble4` discipline). Lengthy but mechanical.
+  - **R-enum.4 — fuel=`T` / input=`s` wiring via the shuttle.** Shuttle-DOWN sets the sim bank from the SHARED
+    block's `s`-mirror (count the `s` ones with `lemma_walk_left_tailed`) + budget `T`; shuttle-UP restores `st_config`.
+  - **R-enum.5 — extract `(a,b)`** from the halted sim registers (the `srm_decl` analog at TM level) → feed R-relnum-gen.
+  Then: R-relnum-gen (STEP-2 emitter, mostly done) → R-cmp (tailed, done) → branch → R-C → R-MC → B-W → drop axiom.
+
+**6. ALTERNATIVE (Route α — fresh direct-k TM sim).** Re-implement the whole enum-sim as bespoke TM gadgets over
+`k` unary blocks (no godel, no `rm_to_tm` reuse), solving the k-block insertion-shift problem from scratch.
+**Tentatively REJECTED:** duplicates ~1500 lines of proven godel+`rm_to_tm`+sim; the k≥3 shift is exactly why
+`rm_to_tm` uses 2 blocks (godel) — Route β reuses that work.
+
+**7. OPEN DESIGN QUESTIONS — the GATE (for the human Danielle; port-8051 NOT trusted here per N+34).**
+  - **Q1.** Route β (reuse `rm_to_tm` structure at `psc_tm.m` via `m`-generic sim) vs Route α (fresh direct-k)? [recommend β]
+  - **Q2.** Modulus reconciliation: `psc_tm.m` covers all zones AND is the word-numbering modulus (free in
+    `ceer_realizes`, chosen `= psc_tm.m`). The sim was built at `tm_mod(len)`; is `m`-genericizing `lemma_sim_step`
+    cheap (gadgets audited `m`-generic), or a hidden re-thread?
+  - **Q3.** Bounded-sim mechanism: use `instrument`'s RM-fuel-guard (sim TOTAL ⟹ clean `f_body`) vs a manual
+    TM-step-bounded loop counting `T`? [recommend the fuel-guard]
+  - **Q4.** Do the sim bank and the SHARED-TOTAL block coexist on the tape (both unary, blank-separated), with the
+    shuttle CLEARING/rebuilding the bank each round ("re-run from scratch")? Confirm the layout + teardown.
+  - **Q5.** The `(a,b)` handoff: small-unary `(a,b)` from sim registers → R-relnum-gen counters `iₐ=a+1, i_b=b+1`. Confirm.
+
+**8. What was NOT done, and why.** No code: discharging `f_body` is a ≥1000-line build whose route needs the
+gate above (the "no undesigned directions" rule + the explicit instruction to architect the body with the *human*
+Danielle). SHARED-TOTAL + R-relnum-gen + R-cmp stand. The body's deep heart (R-enum.1–5) is now precisely scoped
+and reuse-mapped against verified assets — ready to build once Q1–Q5 are settled.
+
+**9. Soundness check on quint-list reuse (Q-A closed against the code).** A sounding-board pass flagged the
+right thing to verify: *are the reused quintuple symbols constants, or `m`-expressions?* (If the symbols were
+`m`-dependent, the reused list would mismatch the base-`psc_tm.m` tape and `apply_quint` would find no
+transition.) **Resolved against the code — they are constants:** `Quintuple.a`/`.a2` are plain `nat` symbols
+(`tm.rs:24`, `0 ≤ a,a2 ≤ n`), `quint_matches` compares only the fixed `qt.q == c.q && qt.a == c.a`
+(`tm.rs:78`), and the sim/gadget quints write CONSTANT symbols `{0=blank, 1=one, sep()=2}` (e.g.
+`tm_inc.rs:42-45`, `tm_walk.rs:56`). The ONLY `m`-dependence is in `apply_quint`'s tape arithmetic
+(`u·m+a2`, `v/m`, `v%m`) and the config encoding (`repunit_m(c,m)`/`two_counter_config`), and the gadget
+lemmas are proven `m`-generic (any `m>1`, symbols `≤ n`, which holds since `2 ≤ n` at `n≥4`). **So reusing
+`rm_to_tm(godel(E))`'s quint LIST at `psc_tm.m` is SOUND** — R-enum.1's only real work is re-running
+`lemma_sim_step`'s per-instruction dispatch at the new `m` (the gadgets transfer). This strengthens the
+route-β recommendation. The same pass independently confirmed §2's irreducibility (no `H₀`-composition
+shortcut; the single-TM embedding is the required proof path).
