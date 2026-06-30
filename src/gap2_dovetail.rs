@@ -792,4 +792,69 @@ pub proof fn lemma_st_outer_step(
     assert((1 + s + 1 + 1) as nat == (s + 3) as nat);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// The dovetail state graph (INNER_TOP / inner-iter / OUTER_CONT back-edges),
+// parametric over the per-stage body hook.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// **One inner iteration of the dovetail** (parametric over the per-stage body). At INNER_TOP
+/// `st_config(s, cnt, working, q_top)` with `cnt ≥ 1` (head on the leftmost remaining one), the body
+/// runs at stage `s` — the `q_top`-scanning-`1` dispatch threads shuttle-down / emit→reloc→compare /
+/// shuttle-back — and on the **REJECT path** returns to the SAME cell in state `q_step` after `f_body`
+/// steps. That body contract is taken as a `tm_run` HYPOTHESIS here (discharged once the body is wired:
+/// `f_body` becomes the real per-stage fuel, the hypothesis the body's reject lemma). The inner-step
+/// quintuple `(q_step, 1, 1, q_top, R)` then advances the head one cell right, so the whole iteration
+/// moves `(s, cnt) → (s+1, cnt−1)` back at INNER_TOP — the search_rm inner-loop back-edge.
+pub proof fn lemma_dovetail_inner_iter(
+    tm: Tm, s: nat, cnt: nat, working: nat, q_top: nat, q_step: nat, f_body: nat, i_step: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 2,
+        cnt >= 1,
+        tm_run(tm, st_config(s, cnt, working, q_top, tm.m), f_body)
+            == st_config(s, cnt, working, q_step, tm.m),
+        0 <= i_step < tm.quints.len(),
+        tm.quints[i_step] == mk_quint(q_step, 1, 1, q_top, Dir::R),
+    ensures
+        tm_run(tm, st_config(s, cnt, working, q_top, tm.m), (f_body + 1) as nat)
+            == st_config((s + 1) as nat, (cnt - 1) as nat, working, q_top, tm.m),
+{
+    let m = tm.m;
+    let c_top = st_config(s, cnt, working, q_top, m);
+    lemma_st_inner_step(tm, s, cnt, working, q_step, q_top, i_step);   // run(step-config, 1) == advanced
+    lemma_tm_run_split(tm, c_top, f_body, 1);   // run(c_top, f_body+1) == run(run(c_top,f_body), 1)
+}
+
+/// **The OUTER_CONT back-edge.** At cnt-exhaustion `st_config(s, 0, working, q_top)` the outer step
+/// closes the round and re-enters INNER_TOP at the next round's start `st_config(0, s+1, working, q_top)`
+/// — `s := 0`, `cnt := T+2`, the block one one longer. This is exactly [`lemma_st_outer_step`] with
+/// `q_home := q_top` (the loop closes on itself), named to complete the dovetail state graph:
+/// `INNER_TOP →(inner-iter)* → OUTER_CONT → INNER_TOP`. The body hook supplies the inner-iter edges;
+/// these two lemmas supply the control skeleton they hang on, over the assemble4 windows.
+pub proof fn lemma_dovetail_outer_iter(
+    tm: Tm, s: nat, working: nat, q_top: nat, q_walk: nat, q_settle: nat,
+    i_sep: int, i_one_l: int, i_grow: int, i_settle: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 2,
+        s >= 1,
+        q_top < tm.m,
+        0 <= i_sep < tm.quints.len(),
+        0 <= i_one_l < tm.quints.len(),
+        0 <= i_grow < tm.quints.len(),
+        0 <= i_settle < tm.quints.len(),
+        tm.quints[i_sep] == mk_quint(q_top, sep(), sep(), q_walk, Dir::L),
+        tm.quints[i_one_l] == mk_quint(q_walk, 1, 1, q_walk, Dir::L),
+        tm.quints[i_grow] == mk_quint(q_walk, 0, 1, q_settle, Dir::R),
+        tm.quints[i_settle] == mk_quint(q_settle, 1, 1, q_top, Dir::L),
+    ensures
+        tm_run(tm, st_config(s, 0, working, q_top, tm.m), (s + 3) as nat)
+            == st_config(0, (s + 1) as nat, working, q_top, tm.m),
+{
+    lemma_st_outer_step(tm, s, working, q_top, q_walk, q_settle, q_top,
+        i_sep, i_one_l, i_grow, i_settle);
+}
+
 } // verus!
