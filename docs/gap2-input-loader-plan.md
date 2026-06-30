@@ -3209,3 +3209,74 @@ matching N+41:
 Harness notify is a brief *status + re-pause*, not a new decision request — Danielle already holds the
 crisp one-word ask from N+38–41. Resume conditions unchanged: **B** → N+39's 4-brick RM-domain list; **A**
 → the shift-embedded right-counter TM-gadget suite. `lemma_ceer_word_problem_in_h3` still stands.
+
+### N+43 — PRIMARY-SOURCE read of S–S itself (not AC's one-sentence pointer): the godel register-fold IS the source's canonical §10.1 Minsky construction. This CORRECTS an N+38 misframing and makes B reading-faithful at the *mechanism* level (not just the layout level). Still human-gated; no code.
+
+Unsupervised re-invocation. Block re-confirmed (HEAD `cb7ff86` N+42; tree clean; `MESSAGES_FROM_USER.md`
+latest still 2026-06-30T04:39Z general note; no A/B letter). Per Danielle's standing + most-recent
+instruction (*"follow the reading closely … better that upfront investment than doing something creative
+and encountering dragons"*) and her 2026-06-26 note (*"I put computability of recursive functions in
+tactus-computability-theory … you can use nix-shell to read it"*), this session did the read N+38 only
+got secondhand: the **actual Shepherdson–Sturgis paper** (`ComputabilityOfRecursiveFunctions.pdf`, crate
+root), extracted via `nix-shell -p poppler-utils → pdftotext -layout`. N+38 quoted AC's *one-sentence*
+pointer to [18]; this reads [18]'s own construction. It both **confirms B and corrects a subtlety** in the
+N+38 framing.
+
+**What S–S actually constructs (the chain that grounds the crate's whole sim pipeline):**
+- **§7 / Thm 7.1 — LRM (Limited Register Machine):** instructions `P(n)`/`D(n)`/`J(n)[E1]` (+ bring-in/
+  remove register). *All partial recursive functions are LRM-computable.* This **is** the crate's `RM`
+  model. §7 (lines 626–635) gives the exact "compute `f`, copy answer into one register, delete the rest"
+  pattern — the template for B's register-compare brick.
+- **§8 / Thm 8.1 — SRM (Single-Register Machine):** regard `⟨1⟩,…,⟨N⟩` as ONE word `A` over `𝒶∪{,}`
+  (comma = register separator); ops = append-`aᵢ` / delete-first / jump-if-begins-`aᵢ`, with a rotate
+  subroutine `T`. *All partial recursive functions are computable by a single-register machine* = a
+  one-way, two-symbol (`0,1`; `0`=comma) tape machine (lines 718–721). **This is verbatim the decider
+  convention AC's *Modular Machines I* p.4 cites** ("`T` simulates a single-register machine").
+- **§9 — Reduction to TM:** assign one internal state per program line ⟹ the SRM/LRM program becomes a
+  standard single-head TM. (The crate's `rm_to_tm` is this step for the 2-register Minsky form below.)
+- **§10 / Thm 10.1 — Minsky single-register via Gödel fold (the decisive one):** S–S represents the
+  *entire* URM state by the number `∏ⱼ pⱼ^{⟨reg j⟩}` and simulates `P(n)=×pₙ`, `D(n)=÷pₙ`,
+  `J(n)[E1]=Div?pₙ`. §10 then (lines 1150–1175, "Following Minsky … using **one extra register**")
+  realizes `×k / ÷k / Div?` on a register **pair** (`n`, scratch `n+1`) by plain `+1/−1` loops.
+
+**The correction this forces on N+38.** N+38 read AC/§5's "no register-fold, no Gödel expansion" as
+indicting the body's godel sim itself, and called the body's `rm_to_tm` register-fold a *"reintroduced
+2-stack Gödel sim the reading says to avoid."* The **primary source says the opposite**: the Gödel
+register-fold `∏ pⱼ^{regⱼ}` reduced to a register-pair with `+1/−1` realization **IS §10.1 — S–S's own
+canonical Minsky construction**, the textbook route, not a deviation. Cross-checked against the code and
+it matches structurally exactly:
+- `godel.rs:135–146`: `godel_encode(regs) = ∏ⱼ base(j)^{regs[j]}` = §10.1's `∏ pⱼ^{⟨reg j⟩}`. Sole
+  difference: a **Sylvester/Euclid pairwise-coprime** `base(j)` instead of literal primes `pⱼ` (godel.rs:12
+  — "to dodge primality and the unbounded prime sequence its proof would need"). Pairwise-coprimality is
+  exactly the unique-factorization property §10.1's divisibility decode needs ⟹ a *faithful, Verus-
+  friendly* §10.1, not a different idea.
+- `godel_dispatch.rs::rm2_config_enc` (`reg0 = godel_encode`, `reg1 = 0`-at-boundaries multiply/divide
+  scratch) = §10's register-**pair** realization (Gödel-number register + one scratch). `rm_to_tm` +
+  `two_counter_config` (`u=reg0`, `v=reg1`) = the §9 TM-sim of that pair. So **the crate's entire
+  `godel`+`rm_to_tm`+`two_counter` pipeline is a verified §10.1+§10+§9 implementation.** Maximally
+  reading-faithful.
+
+**What is actually the deviation (sharpens, doesn't move, the A/B call).** Q4 is **not** the Gödel sim
+(that's §10.1). Q4 is purely **Option A's choice to keep α as an extra *immutable base-`m` block beside*
+the §10.1 register-pair sim** — a region with no counterpart anywhere in §7–§10; the §10.1 counters are
+exponential and overrun it (the caught dragon). The source machine has *one* register-pair and free
+scratch — nothing parked alongside. So:
+- **Option B = the source machine, whole:** fold α (+ dovetail state + candidate `(a,b)` + generated
+  `relnum`) into the §10.1 URM state; the dovetail + `relnum` + compare are all URM/register arithmetic
+  (§7.1 "compute `f`, answer in one register"); TM-sim via the **existing** §10.1+§9 `godel`/`rm_to_tm`/
+  `lemma_tm_h0_iff`. There is no immutable side-block ⟹ Q4 *cannot arise*. Every B brick now has a
+  primary-source citation: entry-fold = §7.1 compositional URM (`R←R·m+d` loop; N+38-addendum item 1
+  confirms it's bounded-proof, not FACT-2); relnum-URM = §7.1; register-compare = §7 lines 626–635;
+  dovetail-body halts-iff = `search_rm` template at the RM level; the fold-to-TM = §10.1+§9, already built.
+- **Option A = the source machine + a non-source immutable α side-block** (shift-embedded right-counter
+  gadgets to move α out of the exponential counter's way each macro-step). It is precisely "something
+  creative" bolted onto §10.1 — the category Danielle's note names as the dragon source.
+
+**Net.** The primary source does not change the recommendation (still **B**) — it removes the *last*
+conceptual hesitation about B by showing the godel-fold B reuses is the canonical §10.1 Minsky machine,
+and recasts A as a strict *addition* to (deviation from) the source rather than a peer alternative. This
+is a strengthening + a correction of the recorded analysis, **not a new question for Danielle**, so per
+N+41/N+42's anti-spam discipline the open one-word ask is *not* re-fired. No code (A/B still diverge at the
+body; gate reserved + sunk cost real). Resume conditions unchanged: **B** → N+39's RM-domain brick list,
+now each citation-grounded; **A** → the shift-embedded right-counter TM-gadget suite.
+`lemma_ceer_word_problem_in_h3` stands; crate GREEN (1979/0) preserved by determinism.
