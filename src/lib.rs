@@ -469,3 +469,10 @@
 // convention (AC + [18]); no immutable alpha tape-block, so no Q4. See gap2_urm_fold.rs and
 // docs/gap2-input-loader-plan.md §N+38/§N+39/§N+47.
 #[cfg(verus_keep_ghost)] pub mod gap2_urm_fold;
+
+// GAP-2 G2-F — α-srm body brick 1: the §9 walk-to-blank loops R₀ / L₀ (Shepherdson–Sturgis
+// *Computability of Recursive Functions* §8–§9). Peel one unary word's run of `1`s across the head
+// and land on the next separator blank, generalizing tm_walk's ones-loops to "L ones above an
+// arbitrary tail `rest`" (== pile_ones(rest, L, m)). The shift-free realization of the single
+// rotating string register. See gap2_srm_walk.rs and docs/gap2-input-loader-plan.md §N+52.
+#[cfg(verus_keep_ghost)] pub mod gap2_srm_walk;
