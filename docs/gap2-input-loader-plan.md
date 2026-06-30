@@ -2640,3 +2640,57 @@ R-C (cleanup, consumes the exposed accept config) → R-MC (`mm_decides_relnum` 
 Then: the shuttle (CZ-home ↔ working-home over the spent-master region) → wire to emit→reloc→compare→branch
 → R-C (cleanup, consumes the exposed accept config) → R-MC (`mm_decides_relnum` via `lemma_tm_h0_iff`) → B-W
 (discharge `ceer_realizes`) → drop `axiom_ceer_fp_embedding`.
+
+### N+34 — R-S SHARED-TOTAL CONTROL SKELETON COMPLETE (plan NEXT items 1–4). `gap2_dovetail.rs` 23 → 48/0, crate 1930 → 1955/0, additive. The keystone double-loop is built end-to-end as a TM, parametric over the per-stage body.
+
+All four SHARED-TOTAL design calls from §N+33's consult-3 were confirmed by Danielle (port-8051) and built:
+**Design A** (head ON the leftmost remaining `cnt`-one), **branch-on-scanned-symbol** cnt-zero test
+(overriding the legacy "peek-right" — the head already sits on the distinguishing cell, so reading `a`
+suffices), **leftward growth** into the blank (the "append at the RIGHT end" prose was a misstatement —
+right end = working-adjacent; growth MUST go into the block's blank-facing LEFT end, else the unbounded-`T`
+block would shift the whole working region), and **`sep() = 2` as the pinned right delimiter** (an immutable
+wall — relying on the working region's leftmost cell is a soft boundary that breaks if α/output ever starts
+with a `1`).
+
+**The whole `s`/`cnt`/`T` triple folds into ONE block** whose length encodes `T+1` and whose head-split
+encodes `s` (ones left) vs `cnt` (ones at/right). The inner step becomes a literal single TM move — no
+inc/dec/seek/rebuild — which is why this design eliminates the dec-cnt-vs-inc-s offset fork entirely.
+
+**Built (`gap2_dovetail.rs`, all verified, no escape hatches):**
+- **`st_right(cnt, working, m)` = `R(cnt) + m^cnt·(sep() + m·working)`** — the head-and-right content
+  `[cnt ones][sep()][working]` as ONE value (`a = st_right%m`, `v = st_right/m`); uniform across `cnt>0`
+  (`a=1`) and `cnt=0` (`a=sep()`), which is what makes branch-on-symbol work. `lemma_st_right_pop` (low
+  digit + pop quotient `st_right(cnt)/m == st_right(cnt−1)`), `lemma_st_right_digits_le`.
+- **`st_config(s, cnt, working, q, m)`** — `u = R(s)` (consumed ones, then blank), head+`v` = `st_right`.
+  `lemma_st_config_scanned` (the zero-test: `a==1 ⇔ cnt>0`, `a==sep() ⇔ cnt==0`), `lemma_st_config_zero`
+  (the `cnt==0` boundary form `{R(s), working, sep(), q}`), `lemma_st_config_wf`.
+- **`lemma_st_inner_step`** — the single `R` move over the `1`: `(s,cnt) → (s+1,cnt−1)`, working tail
+  riding. REPLACES both dec-cnt and inc-s.
+- **`lemma_st_outer_step`** — the `s+3`-step leftward-growth round-close `st_config(s,0,working,q0) →
+  st_config(0,s+1,working,q_home)`: `L`(preserve sep, step onto block) → walk-left `s` (reuse
+  `lemma_walk_left_tailed`, tail=0) → `R`(grow at the blank) → `L`(settle on new leftmost). Working region
+  stationary, both delimiters survive (Danielle's boundary gotcha discharged). New helpers
+  `lemma_pile_ones_closed` (`pile_ones(v,k,m) = v·m^k + R(k)`) + `lemma_pile_ones_st_right` (walk output =
+  `st_right`).
+- **`lemma_dovetail_inner_iter`** — the INNER_TOP back-edge, **parametric over the body**: the body's
+  reject path is a `tm_run` HYPOTHESIS (`run(top, f_body) == st_config(s,cnt,q_step)`), composed with the
+  inner step via `lemma_tm_run_split` to advance `(s,cnt)→(s+1,cnt−1)`. When the body is wired, `f_body`
+  becomes the real per-stage fuel and the hypothesis is the body's reject lemma.
+- **`lemma_dovetail_outer_iter`** — the OUTER_CONT back-edge (= `lemma_st_outer_step` with `q_home:=q_top`),
+  closing `INNER_TOP →(inner-iter)* → OUTER_CONT → INNER_TOP`.
+
+**Build lessons:** `pow_nat(m,cnt)·tail == tail` for `cnt==0` needs a `by(nonlinear_arith) requires
+pow_nat(m,cnt)==1` (the `1·tail` won't fire on its own when the multiplier is a non-literal spec term); the
+`cnt==0` repunit/pow reductions must be spelled with the *variable* `cnt` (asserting `repunit_m(0,m)` with
+a literal `0` doesn't substitute); `1/m`,`1%m`,`0·m` all need explicit `by(nonlinear_arith) requires m>2`;
+every `tm_run(…,1)` leg needs its fuel-0 base `tm_run(c_next,0)==c_next` asserted before the `run-split`
+compose (the established `tm_right_gadgets` pattern).
+
+**NEXT — the shuttle** (the one remaining structural piece before wiring): CZ-home ↔ working-home over the
+spent-master region, mirroring `s` into a working-region counter en route (reuse `lemma_walk_left_tailed`
+to count the `s` ones during shuttle-DOWN). This is what discharges the `f_body` hypothesis: the body
+entry = shuttle-down ∘ emit→reloc→compare (already tail-safe, N+32) ∘ shuttle-up-back-to-INNER_TOP.
+A **round-level driver** (iterate inner-iter `T+1×` then outer, given a per-stage body contract quantified
+over `s=0..T` with a fuel function) is deferred to the body wiring — the per-stage fuel is body-specific.
+THEN: R-C (cleanup) → R-MC (`mm_decides_relnum` via `lemma_tm_h0_iff`) → B-W (`ceer_realizes`) → drop
+`axiom_ceer_fp_embedding`.
