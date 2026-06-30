@@ -294,6 +294,12 @@
 // parked-reversed alpha iff output == alpha). ACCEPT direction. See gap2_reloc_compare.rs / docs sec N+30.
 #[cfg(verus_keep_ghost)] pub mod gap2_reloc_compare;
 
+// GAP-2 G2-F Route (i) — u-TAIL-LIFT HALF 2: the tail-safe RELOCATION o COMPARE. lemma_reloc_to_parked_
+// tailed + lemma_reloc_then_compare_accept_tailed: compose lemma_reloc_local_tailed (HALF 1) with
+// lemma_cmp_decides_accept_tailed so the emit-end -> q_accept surface carries the Control-Zone backup
+// t_u (high tail on u). See gap2_reloc_compare_tailed.rs and docs sec N+31/N+32.
+#[cfg(verus_keep_ghost)] pub mod gap2_reloc_compare_tailed;
+
 // GAP-2 G2-F Route (i) — the digit-string DIVERGENCE CLASSIFIER (reject support). cpl (common-prefix len)
 // + lemma_cpl_{le,match,diff} + lemma_dpack_far5_split + the four u-shape lemmas recasting dpack(X)+m^|X|*5
 // into each reject terminal's u (mismatch/mismatch0/tooshort/toolong). See gap2_reject_classify.rs.
