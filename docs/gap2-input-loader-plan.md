@@ -3046,3 +3046,35 @@ explicit instruction to "architect the body WITH the human" it is surfaced for D
 here.** Nothing built; the conditional chain `lemma_ceer_word_problem_in_h3` still stands. port-8051 is
 *not* consulted (it hallucinated the body math at N+34, and the latest note says follow the reading, not
 the proxy).
+
+**N+38 addendum — Option B feasibility RESOLVED (the one uncertainty above), no code.** Checked the two
+load-bearing claims against source so the A-vs-B decision is concrete, not hand-waved:
+1. **The entry fold is a bounded gadget, NOT FACT-2's dragon.** FACT-2's rejected blowup was the
+   *unrolled raw-quad* construction of `repunit_m(2^α)` (exponentially many quads ⟹ non-finite machine).
+   Folding ignition's base-`m` α-digits into a URM register via a **finite** `R ← R·m + d` loop
+   (`L = Θ(a+b)` iterations) is a standard compositional URM program: exponential *runtime* (R reaches
+   `α ≈ m^L`), but **bounded proof** (induction over the `L` digits; the rm_to_tm/godel sim lemmas are
+   parametric in register magnitude — `lemma_tm_h0_iff`, `lemma_sim_step`, `lemma_godel_halts_iff` never
+   bound register values, they carry `repunit_m(V)` with `V` abstract). The `2^α` only appears
+   *abstractly* inside the godel sim; it is never *materialized* by raw quads. So B does not re-hit the
+   dragon.
+2. **B is RM-domain throughout — it reuses the verified `search_rm` dovetail at the RM level, NOT as TM
+   gadgets.** `search_rm` (`search_rm_outer.rs:643`) dovetails purely over `Configuration`/`registers`
+   (query in `register[0]`, `lemma_search_rm_halts_iff`), and `multi_output_primitives.rs` supplies the
+   S–S compositional URM-builder infrastructure. So Option B = build a URM `psc_urm(e)` reusing
+   search_rm's dovetail TEMPLATE with the body predicate swapped from `declared_match` (test query pair)
+   to `relnum(declared_pair(e,s)) == R_α` (compute `relnum`, compare to the entered α-register), prove
+   its halts-iff, then TM-sim it via the **existing** `rm_to_tm` + `godel` + `lemma_tm_h0_iff` pipeline.
+   The genuinely new bricks are all RM-domain: (i) the entry fold; (ii) a URM that computes `relnum(a,b)`
+   + a proof it equals the spec `relnum` (`gap2_relnum.rs`; reuse `lemma_relnum_is_fam_digits`); (iii) the
+   register compare; (iv) the new dovetail-body halts-iff. **None of A's bespoke TM tape engineering** (the
+   shift-embedded right-counter gadgets, multi-region tail bookkeeping, the `assemble4`/`assemble5`
+   scaffolds) is needed.
+
+**Net for the decision.** Option A keeps the work in the **TM-tape domain** (shift-embedded sim gadgets +
+Q4 + the n≥4 assemble scaffolds — the domain that produced the dragons), reusing the done base-`m`
+emitter/compare. Option B moves the work to the **RM domain** (a new URM + the standard, already-built
+sim pipeline — historically the tractable domain in this project), discarding the base-`m` emitter/compare
+but dissolving Q4. The reading (AC + [18]) describes Option B. Both have real new work; B's is plausibly
+the more tractable and is reading-faithful. **Decision still belongs to Danielle (sunk cost + reserved
+architecture).** Recorded so whichever she picks has a concrete first-brick list, no re-derivation needed.
