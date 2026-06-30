@@ -423,4 +423,207 @@ pub proof fn lemma_walk_left_tailed(tm: Tm, c: TmConfig, q_walk: nat, j0: nat, t
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SHARED-TOTAL layout (§N+33, consult-3): `s` and `cnt` are ONE contiguous block
+// of `T+1` ones split by the HEAD POSITION — ones LEFT of head = `s` (consumed
+// stages), ones at/RIGHT of head = `cnt` (remaining). This folds `s`, `cnt`, AND
+// `T` into one block (block length = `T+1`; head-split = `s` vs `cnt`), so the
+// inner step is a SINGLE head-move (no inc/dec/seek/rebuild dance).
+//
+// Geometry (pinned from the `t_u` convention, §N+32; co-designed port-8051):
+// the block is leftmost — its LEFT end faces infinite blank (growth room), its
+// RIGHT end faces the working region (master+output+α, on `v` at home) across a
+// pinned `sep() = 2` delimiter. Head rests ON the leftmost remaining `cnt`-one
+// (Design A): `s` ones on `u` (low, head-adjacent), the other `cnt − 1` ones +
+// the `sep()` + working on the (`a`, `v`) side.
+//   • INNER STEP = one `R` move over a `1` (`s++`, `cnt--`) — a single TM step.
+//   • cnt-ZERO test = BRANCH ON THE SCANNED SYMBOL (`a == 1` ⟹ `cnt > 0`;
+//     `a == sep()` ⟹ `cnt == 0`) — the head already sits on the distinguishing
+//     cell, so no peek is needed (overrides the legacy "peek-right" phrasing).
+//   • OUTER STEP grows the block LEFTWARD into the blank (the following layer).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// **The head-and-right content** of the SHARED-TOTAL block: `[cnt ones][sep()][working]`,
+/// packed low→high. `st_right = R(cnt) + m^{cnt}·(sep() + m·working)`. The scanned symbol is
+/// `st_right % m` and the right half-tape `v` is `st_right / m`, so this single value captures the
+/// head cell and everything to its right uniformly across the `cnt > 0` (`a = 1`) and `cnt == 0`
+/// (`a = sep()`) cases — the key to the branch-on-symbol zero-test.
+pub open spec fn st_right(cnt: nat, working: nat, m: nat) -> nat {
+    (repunit_m(cnt, m) + pow_nat(m, cnt) * (sep() + m * working)) as nat
+}
+
+/// **The `st_right` low digit + pop quotient** (mirror of [`lemma_cz_u_pop`]). The head-nearest place
+/// is `1` iff `cnt > 0` (else the block-end `sep()`), and dividing it out drops one `cnt` one:
+/// `st_right(cnt)/m == st_right(cnt−1)` for `cnt > 0` (`== working` for `cnt == 0`). This is BOTH the
+/// cnt-zero scanned read AND the inner-step `cnt--` (the head-move pops the low one).
+pub proof fn lemma_st_right_pop(cnt: nat, working: nat, m: nat)
+    requires
+        m > 2,
+    ensures
+        st_right(cnt, working, m) % m == (if cnt == 0 { sep() } else { 1nat }),
+        st_right(cnt, working, m) / m
+            == (if cnt == 0 { working } else { st_right((cnt - 1) as nat, working, m) }),
+{
+    let tail = (sep() + m * working) as nat;     // the [sep()][working] content above the cnt ones
+    let sr = st_right(cnt, working, m);
+    assert(sr == repunit_m(cnt, m) + pow_nat(m, cnt) * tail);   // def
+    if cnt == 0 {
+        assert(repunit_m(cnt, m) == 0);          // cnt == 0
+        assert(pow_nat(m, cnt) == 1);            // cnt == 0
+        assert(pow_nat(m, cnt) * tail == tail) by(nonlinear_arith)
+            requires pow_nat(m, cnt) == 1;       // 1·tail
+        assert(sr == tail);                      // 0 + 1·tail
+        assert(m * working == working * m) by(nonlinear_arith);
+        assert(tail == working * m + sep());
+        lemma_div_mod_step(working, m, sep());   // (working·m + sep())/m == working, %m == sep()  (sep()=2 < m)
+        assert(sr % m == sep());
+        assert(sr / m == working);
+    } else {
+        lemma_repunit_step((cnt - 1) as nat, m); // R(cnt) == m·R(cnt-1) + 1
+        assert(((cnt - 1) as nat + 1) as nat == cnt);
+        lemma_pow_nat_unfold(m, cnt);            // m^{cnt} == m·m^{cnt-1}
+        let q = st_right((cnt - 1) as nat, working, m);
+        assert(q == repunit_m((cnt - 1) as nat, m) + pow_nat(m, (cnt - 1) as nat) * tail);   // def
+        assert(sr == m * q + 1) by(nonlinear_arith)
+            requires
+                sr == repunit_m(cnt, m) + pow_nat(m, cnt) * tail,
+                repunit_m(cnt, m) == m * repunit_m((cnt - 1) as nat, m) + 1,
+                pow_nat(m, cnt) == m * pow_nat(m, (cnt - 1) as nat),
+                q == repunit_m((cnt - 1) as nat, m) + pow_nat(m, (cnt - 1) as nat) * tail;
+        assert(m * q == q * m) by(nonlinear_arith);
+        lemma_div_mod_step(q, m, 1);             // (q·m + 1)/m == q, %m == 1
+        assert(sr == q * m + 1);
+        assert(sr % m == 1);
+        assert(sr / m == q);
+    }
+}
+
+/// **Every digit of `st_right` is a real symbol** (`≤ n`): the `cnt` ones (`lemma_repunit_digits_le`),
+/// the `sep() = 2 ≤ n` delimiter, and the working tail (by hypothesis) compose via
+/// [`lemma_digits_le_concat`] (the cnt-block sits strictly below `m^{cnt}` by [`lemma_repunit_lt_pow`]).
+pub proof fn lemma_st_right_digits_le(cnt: nat, working: nat, m: nat, n: nat)
+    requires
+        m >= 2,
+        n >= 2,
+        n < m,
+        digits_le(working, m, n),
+    ensures
+        digits_le(st_right(cnt, working, m), m, n),
+{
+    let tail = (sep() + m * working) as nat;
+    assert(m * working == working * m) by(nonlinear_arith);
+    lemma_digits_le_push(working, m, n, sep());   // digits_le(working·m + sep())  (sep()=2 ≤ n)
+    assert(tail == working * m + sep());
+    lemma_repunit_digits_le(cnt, m, n);
+    lemma_repunit_lt_pow(cnt, m);                 // R(cnt) < m^{cnt}
+    lemma_digits_le_concat(repunit_m(cnt, m), tail, cnt, m, n);
+}
+
+/// **The SHARED-TOTAL inner config** (Design A). `s` consumed ones on `u` (low, head-adjacent), then
+/// blank; the head + right half-tape encode `[cnt ones][sep()][working]` via [`st_right`]. The head
+/// scans a `1` when `cnt > 0` (resting on the leftmost remaining one) or `sep()` when `cnt == 0`
+/// (the block fully consumed, head at the working delimiter).
+pub open spec fn st_config(s: nat, cnt: nat, working: nat, q: nat, m: nat) -> TmConfig {
+    TmConfig {
+        u: repunit_m(s, m),
+        v: st_right(cnt, working, m) / m,
+        a: st_right(cnt, working, m) % m,
+        q,
+    }
+}
+
+/// **The scanned symbol IS the zero-test.** `st_config.a == 1` iff `cnt > 0`, `== sep()` iff `cnt == 0`.
+/// The dovetail's INNER_TOP dispatch reads this single cell: `1` ⟹ run the per-stage body then the
+/// inner step; `sep()` ⟹ the round is exhausted, take the outer step.
+pub proof fn lemma_st_config_scanned(s: nat, cnt: nat, working: nat, q: nat, m: nat)
+    requires
+        m > 2,
+    ensures
+        st_config(s, cnt, working, q, m).a == (if cnt == 0 { sep() } else { 1nat }),
+{
+    lemma_st_right_pop(cnt, working, m);
+}
+
+/// **The cnt-exhausted boundary form.** `st_config(s, 0, working, q)` is exactly the head-on-`sep()`
+/// config `{ u: R(s), v: working, a: sep(), q }` — the whole `T+1 = s` block on `u` (left of head),
+/// the working region flush on `v`. This is the config the outer-step (leftward growth) consumes.
+pub proof fn lemma_st_config_zero(s: nat, working: nat, q: nat, m: nat)
+    requires
+        m > 2,
+    ensures
+        st_config(s, 0, working, q, m)
+            == (TmConfig { u: repunit_m(s, m), v: working, a: sep(), q }),
+{
+    lemma_st_right_pop(0, working, m);            // st_right(0)/m == working, %m == sep()
+}
+
+/// **The SHARED-TOTAL config is well-formed** (`tm_config_wf`): scanned `1`/`sep() ≤ n`, state `q < m`,
+/// both half-tapes carry only symbol-digits (`u == R(s)` via [`lemma_repunit_digits_le`]; the head+`v`
+/// content via [`lemma_st_right_digits_le`] then [`lemma_digits_le_pop`]/[`lemma_digits_le_low`]).
+pub proof fn lemma_st_config_wf(tm: Tm, s: nat, cnt: nat, working: nat, q: nat)
+    requires
+        tm_wf(tm),
+        tm.n >= 2,
+        q < tm.m,
+        digits_le(working, tm.m, tm.n),
+    ensures
+        tm_config_wf(tm, st_config(s, cnt, working, q, tm.m)),
+{
+    reveal(tm_wf);                                // 0 < n < m, m > 1
+    let m = tm.m;
+    let n = tm.n;
+    assert(m > 2);
+    let sr = st_right(cnt, working, m);
+    lemma_repunit_digits_le(s, m, n);             // digits_le(u == R(s))
+    lemma_st_right_digits_le(cnt, working, m, n); // digits_le(sr)
+    lemma_digits_le_pop(sr, m, n);                // digits_le(sr/m == v)
+    lemma_digits_le_low(sr, m, n);                // sr % m == a ≤ n
+}
+
+/// **The INNER STEP** — a single `R` move over the leftmost `cnt`-one (`cnt ≥ 1`): `s++`, `cnt--`,
+/// the working tail riding untouched. From `st_config(s, cnt, …)` scanning a `1`, the quintuple
+/// `(q0, 1, 1, q1, R)` pushes the one onto `u` (`R(s) → R(s+1)`) and pops the next place off the
+/// right tape (`st_right(cnt) → st_right(cnt−1)` via [`lemma_st_right_pop`]), landing
+/// `st_config(s+1, cnt−1, …)`. This single primitive REPLACES both `dec-cnt` and `inc-s`.
+pub proof fn lemma_st_inner_step(
+    tm: Tm, s: nat, cnt: nat, working: nat, q0: nat, q1: nat, i1: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 2,
+        cnt >= 1,
+        0 <= i1 < tm.quints.len(),
+        tm.quints[i1] == mk_quint(q0, 1, 1, q1, Dir::R),
+    ensures
+        tm_run(tm, st_config(s, cnt, working, q0, tm.m), 1)
+            == st_config((s + 1) as nat, (cnt - 1) as nat, working, q1, tm.m),
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 2);
+    let c = st_config(s, cnt, working, q0, m);
+    lemma_st_right_pop(cnt, working, m);          // st_right(cnt)%m == 1, /m == st_right(cnt-1)
+    assert(c.a == 1);                             // cnt ≥ 1
+    lemma_tm_step_picks(tm, c, i1);
+    let c1 = apply_quint(tm.quints[i1], c, m);
+    assert(tm_step(tm, c) == Some(c1));
+    // R move: u' = u·m + 1, v' = v/m, a' = v%m, q' = q1.
+    assert(c1.u == c.u * m + 1);
+    assert(c1.v == c.v / m);
+    assert(c1.a == c.v % m);
+    assert(c1.q == q1);
+    // u side: R(s)·m + 1 == R(s+1).
+    lemma_repunit_step(s, m);
+    assert(m * repunit_m(s, m) == repunit_m(s, m) * m) by(nonlinear_arith);
+    assert(c1.u == repunit_m((s + 1) as nat, m));
+    // right side: c.v == st_right(cnt)/m == st_right(cnt-1); so c1 = st_config(s+1, cnt-1).
+    assert(c.v == st_right((cnt - 1) as nat, working, m));   // pop quotient
+    let tgt = st_config((s + 1) as nat, (cnt - 1) as nat, working, q1, m);
+    assert(c1.v == st_right((cnt - 1) as nat, working, m) / m);   // == tgt.v
+    assert(c1.a == st_right((cnt - 1) as nat, working, m) % m);   // == tgt.a
+    assert(c1 == tgt);
+    assert(tm_run(tm, c1, 0) == c1);
+    assert(tm_run(tm, c, 1) == c1);
+}
+
 } // verus!
