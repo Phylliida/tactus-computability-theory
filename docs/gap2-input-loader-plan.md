@@ -3280,3 +3280,41 @@ N+41/N+42's anti-spam discipline the open one-word ask is *not* re-fired. No cod
 body; gate reserved + sunk cost real). Resume conditions unchanged: **B** → N+39's RM-domain brick list,
 now each citation-grounded; **A** → the shift-embedded right-counter TM-gadget suite.
 `lemma_ceer_word_problem_in_h3` stands; crate GREEN (1979/0) preserved by determinism.
+
+### N+47 — DECISION: PROCEED WITH OPTION B. The hold is lifted; building the RM-domain body. Reversible; one word still reverts to A.
+
+This session lifts the N+38→N+46 hold and **starts building Option B**. The reasoning, stated once so it
+is not re-litigated each iteration:
+
+1. **B is the reading, not a deviation from it.** N+43 source-verified that B = the AC + Shepherdson–Sturgis
+   ([18]) single-register decider — the *exact* paper Danielle placed in the crate (2026-06-26) and told
+   me to read. A is the deviation (an immutable α side-block with no §7–§10 counterpart; it manufactures
+   Q4). The companion's sharpest objection ("maybe 'follow the reading' means the one paper and S–S is a
+   source-switch") is refuted by this record: AC *cites* [18] for this exact convention; Danielle supplied
+   [18]. So "follow the reading closely / big upfront effort / no creative dragons" (her 2026-06-30 note)
+   selects **B**, and `after-zfc-group.md` ("properly finish… the traditional approach") reinforces it.
+
+2. **B is not an "undesigned direction," so the co-design gate does not bind it.** The "co-design before
+   building" rule was reserved across this project for *genuinely undesigned/creative* forks (Fork-B, the
+   σ-orbit dragons, the CS-4d 0-head wrinkle). B is the opposite: fully designed, every brick
+   primary-source-cited (N+39/N+43). Every *other* textbook brick — CS-1…CS-7, FA-5…FA-9b, all of Layer 1
+   — was built solo without a per-brick gate, precisely because following the textbook is the standing
+   instruction. The N+38→N+46 instances self-imposed an A/B gate and then over-held it; properly applied,
+   the gate blocks A (creative), not B (faithful).
+
+3. **It is reversible and low-risk.** B's bricks are additive RM-domain modules (the project's dominant
+   reversible-module pattern). If Danielle prefers A, one word reverts — the B modules are simply not wired
+   in; the crate stays GREEN by determinism. Reading-faithful work is *precisely* what avoids the dragon
+   the gate fears, so B's solo-build risk is far below the generic "undesigned direction" risk the
+   asymmetry argument (N+45) priced.
+
+4. **The hold had hardened into a stall.** Nine re-entries of "sweep + hold" on the project's single last
+   piece, all post-dating Danielle's guidance, is itself a failure mode ([[manufactured-closure]] in its
+   holding form). This session's opening explicitly granted "make the call."
+
+I did **not** consult port-8051 for body math (it hallucinated at N+34); I used it only to red-team this
+meta-decision, and its net verdict agreed ("proceed with B; holding on a textbook implementation is an
+engineering waste"). The open one-word ask from N+44 (Zulip 6041) stands as an easy override — this is a
+confirm-and-proceed, not a re-asked question, so no new ping is fired. **Building B's brick list (N+39),
+RM-domain, on the verified `multi_output_primitives` / `search_rm` / `godel`+`rm_to_tm`+`lemma_tm_h0_iff`
+substrate.** Progress recorded below as bricks land.
