@@ -423,6 +423,10 @@
 // GAP-2 G2-F Route (i): the EMITTER SEQUENCER -- chains per-block phase lemmas (state-id splice, no glue)
 // into the full fam_digits emission. See gap2_emit_seq.rs / §N+12.
 #[cfg(verus_keep_ghost)] pub mod gap2_emit_seq;
+// GAP-2 G2-F Route (i): R-relnum-gen STEP-2 CAPSTONE -- chains uinv_phase_tail ∘ q_clean ∘ u_phase into the
+// full fam_digits(a,b) emission (the master-swap is the dissolved load_master frame-shift, §N+13.1). Layout-
+// independent (emitter model-B, parametric in g/H). See gap2_emit_fam.rs / docs/gap2-input-loader-plan.md §5.
+#[cfg(verus_keep_ghost)] pub mod gap2_emit_fam;
 #[cfg(verus_keep_ghost)] pub mod gap2_master_mgmt;
 // GAP-2 G2-F item 4 (input loader / init setup): lay the initial double-repunit u = m^g·D from the dovetail
 // two-counter block D = R(b+1)·0·R(a+1). The SHIFT-UP primitive (no-emit float-up), rightward mirror of
