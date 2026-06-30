@@ -2917,3 +2917,46 @@ shifting. Resolving this (Q4) determines whether the right-counter suite is "v-t
 + the m-generic `lemma_sim_step` re-proof (R-enum.1) remain gated on Danielle's Q1 (route) and Q4 (layout/
 teardown). The conditional chain still stands; this banks the low-risk pattern-work without committing to a
 disputed direction.
+
+### N+37 — R-relnum-gen STEP-2 CAPSTONE BUILT: the full `fam_digits(a,b)` emission. `gap2_emit_fam.rs`, crate 1973 → 1979/0.
+
+Unsupervised session: Danielle's Q1–Q5 gate is **still unanswered** (her latest `MESSAGES_FROM_USER.md`
+note, 2026-06-30T04:39Z, is a general "follow the reading closely / don't be creative / don't waste effort"
+methodology reinforcement — NOT a Q1–Q5 answer). Per the standing protocol (gate closed ⟹ build only
+layout-independent work; port-8051 NOT trusted on the body architecture per N+34), I did **not** touch the
+Q4-gated right-counter / R-enum heart. Instead I closed the next **emitter** brick, which is provably
+independent of the Q4 search-bank layout (it is model-B home/shuttle, parametric in `g`/`H`).
+
+**Built (`src/gap2_emit_fam.rs`, all verified, no escape hatches):**
+- **`lemma_emit_fam_digits`** — the R-relnum-gen STEP-2 CAPSTONE. Chains the three already-verified pieces
+  ```
+    lemma_uinv_phase_tail  ∘  lemma_q_clean  ∘  lemma_u_phase
+  ```
+  into the headline: from the init tape `u = m^g·R(b+1) + m^(g+b+2)·R(a+1)`, `v = 0`, head on the pivot in
+  `entry5(pc_uinv)`, after `uinv_phase_fuel + q_clean_fuel + u_phase_fuel` steps the output is
+  **`v = dpack(fam_digits(a,b), m) = dpack(uinv_digits(b) ++ u_digits(a), m)`** — exactly `relnum(a,b)`'s
+  base-m digit block (bridge to the value: the EXISTING `lemma_relnum_is_fam_digits`,
+  `relnum(e,mm,m,a,b) == dpack(fam_digits(a,b),m)`, which the eventual R-MC composes). The master-swap is the
+  dissolved `load_master` frame-shift (§N+13.1): `q_clean`'s output IS phase-2's input with the `a+1` master
+  at gap `g' = g+b+2`, so `u_phase` just runs at `g := g'`. The splice is pure STATE IDENTIFICATION via
+  `lemma_tm_run_split` + two arithmetic bridges (`copy_u(0,M,G) = m^G·R(M)` via `lemma_copy_u_start`, and
+  `pow_nat` addition via `lemma_pow_nat_split`). GENERIC over an abstract `assemble5` machine carrying the
+  uinv windows `[pc_uinv,pc_uinv+8)`, the q_clean quints, and the u windows `[pc_u,pc_u+8)` at given
+  indices (same discipline as `gap2_psc_rp::lemma_rp_phase`); the concrete disjoint-zone `psc_tm` assembly
+  (R-enum.3) supplies them.
+- **`lemma_uinv_digits_bound`** / **`lemma_uinv_digits_low`** — digit bounds for `uinv_digits(b)`
+  (all digits `1..4`, low digit `4`): discharges `u_phase`'s `od`-digit precondition and `q_clean`'s
+  `1 ≤ v0 % m ≤ 4` when `v0 = dpack(uinv_digits(b), m)`. Via `cat_bound` × 7 + `lemma_seq_pow_bound` × 4.
+
+**Significance.** This closes the EMITTER half of R-relnum-gen end-to-end: the machine is now proven to lay
+`relnum(a,b)`'s exact digit block on tape. Combined with R-cmp (tailed, done) and the existing
+`lemma_relnum_is_fam_digits`, the remaining R-relnum-gen work is the *wiring into the dovetail body*
+(R-enum.4/.5 — feed `(a,b)` from the sim into the emitter's `iₐ/i_b` masters), which IS gated on Q4/Q5.
+
+**STILL GATED — the GATE for Danielle (unchanged; restated for convenience).** The deep heart (per-stage
+body: enum-sim ∘ extract `(a,b)` ∘ EMIT[now done] ∘ RELOC[done] ∘ COMPARE[done], dovetailed) needs Q1–Q5
+(§7), above all **Q4** (does the sim bank coexist with the CZ/output/α tail and get rebuilt each round —
+the N+35 §11 "re-run from scratch" reading favouring *clean sim + tailed shuttle walks*, OR do the sim
+gadgets carry `v`-tails). The recommendations stand (Q1 = β, Q3 = fuel-guard, Q4 lean = clean-bank +
+tailed-shuttle). port-8051 hallucinated the body math once (N+34) so this is a **human** call. Nothing here
+commits to it; the conditional chain `lemma_ceer_word_problem_in_h3` still stands.
