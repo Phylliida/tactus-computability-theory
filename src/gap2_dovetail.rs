@@ -41,6 +41,7 @@ use crate::tm_two_counter::{repunit_m, sep, lemma_repunit_digits_le, lemma_repun
 use crate::tm_h0_bwd::{digits_le, tm_config_wf, lemma_digits_le_pop, lemma_digits_le_low,
     lemma_digits_le_push};
 use crate::tm_dstring::{pow_nat, lemma_pow_nat_unfold, lemma_pow_nat_pos, lemma_pow_high_tail};
+use crate::tm_walk::{pile_ones, lemma_pile_ones_shift};
 
 verus! {
 
@@ -345,6 +346,80 @@ pub proof fn lemma_cz_peek(
         assert(tm_run(tm, c_final, 0) == c_final);
         assert(tm_run(tm, c_branch, 1) == c_final);
         assert(tm_run(tm, c_entry, 2) == c_final);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The tailed walk-left (the dec-cnt foundation).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// **Walk-left over a unary block with a `u`-high-tail above its separator.** The tail-generic analog of
+/// [`crate::tm_walk::lemma_walk_left_inner`]: from state `q_walk` scanning a `1`, with `j0` further ones in
+/// `u` then a separator blank then a preserved tail (`u == repunit_m(j0) + m^{j0+1}·tail`), the loop
+/// quintuple `(q_walk, 1, 1, q_walk, L)` fires `j0 + 1` times — peeling all `j0 + 1` ones onto `v` — and
+/// **stops at the separator blank**, leaving the tail flush on `u` (`u == tail`, scanned `== 0`). This is
+/// exactly the CZ dec/seek discipline: a walk over the `cnt` block halts at the `cnt`/`s` separator,
+/// the `s,T` blocks (`tail = cz_rest`) riding untouched. `tail == 0` recovers `lemma_walk_left_inner`.
+/// Induction on `j0`, the tail carried verbatim through each div/mod (the separator `0` at place `j0` is
+/// what stops the loop). Mirror of `lemma_walk_left_inner` (the `v` side is already generic there).
+pub proof fn lemma_walk_left_tailed(tm: Tm, c: TmConfig, q_walk: nat, j0: nat, tail: nat, i1: int)
+    requires
+        tm_wf(tm),
+        0 <= i1 < tm.quints.len(),
+        tm.quints[i1] == mk_quint(q_walk, 1, 1, q_walk, Dir::L),
+        c.u == repunit_m(j0, tm.m) + pow_nat(tm.m, (j0 + 1) as nat) * tail,
+        c.a == 1,
+        c.q == q_walk,
+    ensures
+        tm_run(tm, c, (j0 + 1) as nat)
+            == (TmConfig { u: tail, v: pile_ones(c.v, (j0 + 1) as nat, tm.m), a: 0, q: q_walk }),
+    decreases j0,
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 1);
+    lemma_tm_step_picks(tm, c, i1);
+    let c_next = (TmConfig { u: c.u / m, v: c.v * m + 1, a: c.u % m, q: q_walk });
+    assert(tm_step(tm, c) == Some(c_next));   // apply_quint L with a2 == 1
+    if j0 == 0 {
+        // c.u == repunit(0) + m^1·tail == m·tail ⟹ c_next == (tail, c.v·m+1, 0, q_walk).
+        assert(repunit_m(0, m) == 0);
+        assert(pow_nat(m, 1) == m) by {
+            lemma_pow_nat_unfold(m, 1);
+            assert(pow_nat(m, 0) == 1);
+            assert(m * pow_nat(m, 0) == m) by(nonlinear_arith) requires pow_nat(m, 0) == 1;
+        }
+        assert(c.u == m * tail);
+        assert(m * tail == tail * m) by(nonlinear_arith);
+        lemma_div_mod_step(tail, m, 0);       // (tail·m + 0)/m == tail, %m == 0
+        assert(c.u == tail * m + 0);
+        assert(c_next.u == tail);
+        assert(c_next.a == 0);
+        assert(pile_ones(c.v, 0, m) == c.v);
+        assert(pile_ones(c.v, 1, m) == pile_ones(c.v, 0, m) * m + 1);
+        assert(c_next == (TmConfig { u: tail, v: pile_ones(c.v, 1, m), a: 0, q: q_walk }));
+        assert(tm_run(tm, c_next, 0) == c_next);
+        assert(tm_run(tm, c, 1) == c_next);
+    } else {
+        // c.u == repunit(j0) + m^{j0+1}·tail == m·(repunit(j0-1) + m^{j0}·tail) + 1: peel one.
+        lemma_repunit_step((j0 - 1) as nat, m);    // repunit(j0) == m·repunit(j0-1) + 1
+        assert(((j0 - 1) as nat + 1) as nat == j0);
+        lemma_pow_nat_unfold(m, (j0 + 1) as nat);  // m^{j0+1} == m·m^{j0}
+        let qq = (repunit_m((j0 - 1) as nat, m) + pow_nat(m, j0) * tail) as nat;
+        assert(c.u == m * qq + 1) by(nonlinear_arith)
+            requires
+                c.u == repunit_m(j0, m) + pow_nat(m, (j0 + 1) as nat) * tail,
+                repunit_m(j0, m) == m * repunit_m((j0 - 1) as nat, m) + 1,
+                pow_nat(m, (j0 + 1) as nat) == m * pow_nat(m, j0),
+                qq == repunit_m((j0 - 1) as nat, m) + pow_nat(m, j0) * tail;
+        assert(m * qq == qq * m) by(nonlinear_arith);
+        lemma_div_mod_step(qq, m, 1);              // (qq·m + 1)/m == qq, %m == 1
+        assert(c_next.u == qq);
+        assert(c_next.a == 1);
+        // qq is the (j0-1)-tailed u; recurse.
+        lemma_walk_left_tailed(tm, c_next, q_walk, (j0 - 1) as nat, tail, i1);
+        lemma_pile_ones_shift(c.v, j0, m);         // pile_ones(c.v·m+1, j0) == pile_ones(c.v, j0+1)
+        assert(tm_run(tm, c, (j0 + 1) as nat) == tm_run(tm, c_next, j0));
     }
 }
 
