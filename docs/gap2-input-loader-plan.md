@@ -2534,7 +2534,7 @@ noted in N+31 (`lemma_cmp_accept_decide_tailed` currently ensures only `.q == q_
 `c_acc` config up is deferred to R-C). **NEXT = R-S** (control skeleton → enum-sim → wire emit→reloc→compare
 →branch) per the build order above.
 
-### N+33 — R-S control skeleton, LAYER 1: the Control-Zone tape layout (`gap2_dovetail.rs` 10/0, crate additive). Design co-designed + endorsed (port-8051).
+### N+33 — R-S control skeleton OPENS: LAYER 1 (Control-Zone tape layout) + LAYER 2 brick 1 (peek-`cnt` zero-test). `gap2_dovetail.rs` 18/0, crate 1917/0 → additive. Design co-designed + endorsed (port-8051).
 
 The keystone build opens. R-S re-expresses `search_rm`'s outer-`T` / inner-`s ≤ T` dovetail nesting as a
 **TM orchestrator** over the `assemble4` n≥4 window scaffold (the per-stage body is now a base-`m`
@@ -2573,18 +2573,25 @@ pinned the **Control Zone (CZ)** layout — the thing R-S most needs, since it f
 - **`lemma_cz_u_digits_le`** / **`lemma_cz_config_wf`** — every CZ digit is a real symbol; the CZ-home
   config is `tm_config_wf` (two `lemma_digits_le_concat` applications stack `T` over `s` over `cnt`).
 
-**Build lesson:** `pow_nat(m,1)==m` needs the spelled-out `m·pow_nat(m,0)==m` nonlinear step (the
-`(1-1) as nat`→`0` reduction won't carry the `·1` on its own — see `gap2_init.rs:78`); and `0 % m == 0` is
-NOT automatic — route digit-bound reads through `lemma_digits_le_low` (which discharges it via
-`lemma_small_mod`) rather than asserting `low % m == 0` directly.
+**LAYER 2 brick 1 — peek-`cnt` (the INNER_TOP zero-test), also DONE this session:**
+- **`cz_rest(s, big_t, m)`** = `R(s) + m^{s+1}·R(T)` (the (s,T) part above cnt's separator) +
+  **`lemma_cz_u_pop`**: `cz_u % m == (cnt==0 ? 0 : 1)` and `cz_u / m == (cnt==0 ? cz_rest : cz_u(cnt−1))`
+  — the cnt low-digit read AND the cnt-dec quotient in one (dec = divide out the low one; the
+  `cz_u(cnt−1)` quotient is the seed for the dec-cnt brick).
+- **`lemma_cz_peek`** — `v`-tail-generic clone of `lemma_peek_gadget` over `cz_config`: two steps (L then
+  R) restore the WHOLE config (counters + inert `v` working tail, via `v → v·m+2 → v`) and branch to
+  `q_pos`/`q_zero` on `cnt`. Validates the layout's head-on-`sep()` geometry end-to-end.
 
-**NEXT (R-S layer 2 — the back-edge primitives, head IN the CZ, all tail-generic on the `v` working tail
-via the blank-separator walk-stop):**
-1. **peek-cnt** (INNER_TOP zero-test): the `v`-tail-generic clone of `lemma_peek_gadget` (2 steps, L then R;
-   already nearly `v`-generic — the L/R pass restores any `v`). Reads `cz_u % m` (1 if `cnt>0`, 0 if
-   `cnt==0`) and branches.
+**Build lesson:** `pow_nat(m,1)==m` needs the spelled-out `m·pow_nat(m,0)==m` nonlinear step (the
+`(1-1) as nat`→`0` reduction won't carry the `·1` on its own — see `gap2_init.rs:78`); `0 % m == 0` is NOT
+automatic — route digit-bound reads through `lemma_digits_le_low` (which discharges it via `lemma_small_mod`);
+and a `if c==0 {0} else {1}` in an `ensures` needs `0nat`/`1nat` suffixes (E0283 otherwise).
+
+**NEXT (R-S layer 2 — the remaining back-edge primitives, head IN the CZ, all tail-generic on the `v`
+working tail via the blank-separator walk-stop):**
 2. **dec-cnt** (INNER_TOP advance): clone `lemma_dec` with the `cnt` block and `s,T` as a `u`-high-tail
-   above the cnt/s separator (the walk halts at that blank) and `v=vtail` inert.
+   above the cnt/s separator (the walk halts at that blank) and `v=vtail` inert. `lemma_cz_u_pop` already
+   gives the post-dec quotient `cz_u(cnt−1, s, T)`.
 3. **inc-s** (CONT) — grows the `s` block; needs a mid-`u`-stack insert (shifts `T` up) — the one op that
    touches a neighbour, so likely a seek-to-`s` + rebuild, or reorder so `s` is outermost. **DESIGN SUB-CALL:
    pick the inc-side discipline before building** (the emitter's `copy_u`/`q_clean` rebuild is the template).

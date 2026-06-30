@@ -33,8 +33,11 @@
 
 use vstd::prelude::*;
 use vstd::arithmetic::div_mod::lemma_fundamental_div_mod;
-use crate::tm::{Tm, TmConfig, tm_wf};
-use crate::tm_two_counter::{repunit_m, sep, lemma_repunit_digits_le};
+use verus_group_theory::machine_group::Dir;
+use verus_group_theory::word_numbering::lemma_div_mod_step;
+use crate::tm::{Tm, TmConfig, tm_wf, tm_step, tm_run, apply_quint};
+use crate::tm_gadget::{mk_quint, lemma_tm_step_picks};
+use crate::tm_two_counter::{repunit_m, sep, lemma_repunit_digits_le, lemma_repunit_step};
 use crate::tm_h0_bwd::{digits_le, tm_config_wf, lemma_digits_le_pop, lemma_digits_le_low,
     lemma_digits_le_push};
 use crate::tm_dstring::{pow_nat, lemma_pow_nat_unfold, lemma_pow_nat_pos, lemma_pow_high_tail};
@@ -204,6 +207,145 @@ pub proof fn lemma_cz_config_wf(tm: Tm, cnt: nat, s: nat, big_t: nat, vtail: nat
     let n = tm.n;
     lemma_cz_u_digits_le(cnt, s, big_t, m, n);
     // a == sep() == 2 ≤ n (n ≥ 2); q < m; digits_le(v == vtail) by hyp.
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The `cnt`-block low digit (the INNER_TOP peek read; the `cnt`-dec quotient).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The (`s`, `T`) part of the CZ counters above `cnt`'s separator: `R(s) + m^{s+1}·R(T)`.
+/// `cz_u(cnt, s, T) == R(cnt) + m^{cnt+1}·cz_rest(s, T)`.
+pub open spec fn cz_rest(s: nat, big_t: nat, m: nat) -> nat {
+    (repunit_m(s, m) + pow_nat(m, (s + 1) as nat) * repunit_m(big_t, m)) as nat
+}
+
+/// **The `cnt` low digit + dec quotient.** The head-nearest place of `cz_u` is `1` iff `cnt > 0`
+/// (else the `cnt`/`s` separator blank `0`), and dividing it out drops one `cnt` one:
+/// `cz_u(cnt,s,T)/m == cz_u(cnt−1,s,T)` for `cnt > 0` (== `cz_rest(s,T)` for `cnt == 0`). This is the
+/// INNER_TOP zero-test read and, simultaneously, the `cnt`-dec step (decrement = divide out the low one).
+pub proof fn lemma_cz_u_pop(cnt: nat, s: nat, big_t: nat, m: nat)
+    requires
+        m > 1,
+    ensures
+        cz_u(cnt, s, big_t, m) % m == (if cnt == 0 { 0nat } else { 1nat }),
+        cz_u(cnt, s, big_t, m) / m
+            == (if cnt == 0 { cz_rest(s, big_t, m) } else { cz_u((cnt - 1) as nat, s, big_t, m) }),
+{
+    let m1 = m;
+    let rest = cz_rest(s, big_t, m);
+    let cu = cz_u(cnt, s, big_t, m);
+    assert(cu == repunit_m(cnt, m) + pow_nat(m, (cnt + 1) as nat) * rest);   // def (cz_rest unfold)
+    if cnt == 0 {
+        assert(repunit_m(0, m) == 0);
+        // pow(m,1) == m
+        assert(pow_nat(m, 1) == m) by {
+            lemma_pow_nat_unfold(m, 1);
+            assert(pow_nat(m, 0) == 1);
+            assert(m * pow_nat(m, 0) == m) by(nonlinear_arith) requires pow_nat(m, 0) == 1;
+        }
+        assert(cu == m * rest);
+        assert(m * rest == rest * m) by(nonlinear_arith);
+        lemma_div_mod_step(rest, m, 0);          // (rest*m + 0)/m == rest, %m == 0
+        assert(cu == rest * m + 0);
+        assert(cu % m == 0);
+        assert(cu / m == rest);
+    } else {
+        lemma_repunit_step((cnt - 1) as nat, m); // R(cnt) == m·R(cnt-1) + 1
+        assert(((cnt - 1) as nat + 1) as nat == cnt);
+        lemma_pow_nat_unfold(m, (cnt + 1) as nat); // m^{cnt+1} == m·m^{cnt}
+        let q = cz_u((cnt - 1) as nat, s, big_t, m);
+        assert(q == repunit_m((cnt - 1) as nat, m) + pow_nat(m, cnt) * rest);   // def + (cnt-1)+1==cnt
+        assert(cu == m * q + 1) by(nonlinear_arith)
+            requires
+                cu == repunit_m(cnt, m) + pow_nat(m, (cnt + 1) as nat) * rest,
+                repunit_m(cnt, m) == m * repunit_m((cnt - 1) as nat, m) + 1,
+                pow_nat(m, (cnt + 1) as nat) == m * pow_nat(m, cnt),
+                q == repunit_m((cnt - 1) as nat, m) + pow_nat(m, cnt) * rest;
+        assert(m * q == q * m) by(nonlinear_arith);
+        lemma_div_mod_step(q, m, 1);             // (q*m + 1)/m == q, %m == 1
+        assert(cu == q * m + 1);
+        assert(cu % m == 1);
+        assert(cu / m == q);
+    }
+}
+
+/// **INNER_TOP peek-`cnt` (the zero-test back-edge).** From the CZ-home config, two steps — `L` to expose
+/// `cnt`'s inner cell, `R` to write it back — restore the whole config (counters AND the inert `v` working
+/// tail) and branch to `q_pos` if `cnt > 0` or `q_zero` if `cnt == 0`. The `v`-tail-generic clone of
+/// [`lemma_peek_gadget`]: the L/R pass carries any `v` through (`v → v·m+2 → v`), so the working region
+/// rides untouched. Three gadget quintuples at `i_entry`/`i_pos`/`i_zero`:
+///   `(q_entry, 2, 2, q_branch, L)`, `(q_branch, 1, 1, q_pos, R)`, `(q_branch, 0, 0, q_zero, R)`.
+pub proof fn lemma_cz_peek(
+    tm: Tm, cnt: nat, s: nat, big_t: nat, vtail: nat,
+    q_entry: nat, q_branch: nat, q_pos: nat, q_zero: nat,
+    i_entry: int, i_pos: int, i_zero: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 2,
+        q_entry < tm.m,
+        0 <= i_entry < tm.quints.len(),
+        0 <= i_pos < tm.quints.len(),
+        0 <= i_zero < tm.quints.len(),
+        tm.quints[i_entry] == mk_quint(q_entry, sep(), sep(), q_branch, Dir::L),
+        tm.quints[i_pos] == mk_quint(q_branch, 1, 1, q_pos, Dir::R),
+        tm.quints[i_zero] == mk_quint(q_branch, 0, 0, q_zero, Dir::R),
+    ensures
+        cnt > 0 ==> tm_run(tm, cz_config(cnt, s, big_t, vtail, q_entry, tm.m), 2)
+                    == cz_config(cnt, s, big_t, vtail, q_pos, tm.m),
+        cnt == 0 ==> tm_run(tm, cz_config(cnt, s, big_t, vtail, q_entry, tm.m), 2)
+                    == cz_config(cnt, s, big_t, vtail, q_zero, tm.m),
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 2);                               // n ≥ 2, n < m
+    let cu = cz_u(cnt, s, big_t, m);
+    let c_entry = cz_config(cnt, s, big_t, vtail, q_entry, m);
+
+    // Step 1 (L): expose cnt's inner cell. c_branch = (cu/m, vtail·m+2, cu%m, q_branch).
+    lemma_tm_step_picks(tm, c_entry, i_entry);
+    let c_branch = apply_quint(tm.quints[i_entry], c_entry, m);
+    assert(tm_step(tm, c_entry) == Some(c_branch));
+    assert(c_branch.u == cu / m);
+    assert(c_branch.v == vtail * m + sep());
+    assert(c_branch.a == cu % m);
+    assert(c_branch.q == q_branch);
+    lemma_div_mod_step(vtail, m, sep());         // (vtail·m+2)/m == vtail, %m == 2
+    lemma_cz_u_pop(cnt, s, big_t, m);            // cu%m, and cu == m·(cu/m) + cu%m below
+    lemma_fundamental_div_mod(cu as int, m as int);
+    assert(cu == m * (cu / m) + cu % m);
+
+    if cnt > 0 {
+        // a == 1 ⟹ the q_pos branch fires; R re-pushes the one, restoring cu and vtail.
+        assert(c_branch.a == 1);
+        lemma_tm_step_picks(tm, c_branch, i_pos);
+        let c_final = apply_quint(tm.quints[i_pos], c_branch, m);
+        assert(tm_step(tm, c_branch) == Some(c_final));
+        assert(c_final.u == (cu / m) * m + 1);
+        assert((cu / m) * m == m * (cu / m)) by(nonlinear_arith);
+        assert(c_final.u == cu);                 // cu == m·(cu/m) + 1
+        assert(c_final.v == vtail);
+        assert(c_final.a == sep());
+        assert(c_final == cz_config(cnt, s, big_t, vtail, q_pos, m));
+        assert(tm_run(tm, c_final, 0) == c_final);
+        assert(tm_run(tm, c_branch, 1) == c_final);
+        assert(tm_run(tm, c_entry, 2) == c_final);
+    } else {
+        // a == 0 ⟹ the q_zero branch fires; R re-pushes the blank, restoring cu and vtail.
+        assert(c_branch.a == 0);
+        lemma_tm_step_picks(tm, c_branch, i_zero);
+        let c_final = apply_quint(tm.quints[i_zero], c_branch, m);
+        assert(tm_step(tm, c_branch) == Some(c_final));
+        assert(c_final.u == (cu / m) * m + 0);
+        assert((cu / m) * m == m * (cu / m)) by(nonlinear_arith);
+        assert(c_final.u == cu);                 // cu == m·(cu/m) + 0
+        assert(c_final.v == vtail);
+        assert(c_final.a == sep());
+        assert(c_final == cz_config(cnt, s, big_t, vtail, q_zero, m));
+        assert(tm_run(tm, c_final, 0) == c_final);
+        assert(tm_run(tm, c_branch, 1) == c_final);
+        assert(tm_run(tm, c_entry, 2) == c_final);
+    }
 }
 
 } // verus!
