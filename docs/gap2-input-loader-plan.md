@@ -2686,10 +2686,29 @@ a literal `0` doesn't substitute); `1/m`,`1%m`,`0·m` all need explicit `by(nonl
 every `tm_run(…,1)` leg needs its fuel-0 base `tm_run(c_next,0)==c_next` asserted before the `run-split`
 compose (the established `tm_right_gadgets` pattern).
 
-**NEXT — the shuttle** (the one remaining structural piece before wiring): CZ-home ↔ working-home over the
-spent-master region, mirroring `s` into a working-region counter en route (reuse `lemma_walk_left_tailed`
-to count the `s` ones during shuttle-DOWN). This is what discharges the `f_body` hypothesis: the body
-entry = shuttle-down ∘ emit→reloc→compare (already tail-safe, N+32) ∘ shuttle-up-back-to-INNER_TOP.
+**NEXT — the shuttle** (the one remaining structural piece before wiring; Danielle confirmed shuttle-first
+over the round-driver, port-8051). CZ-home ↔ working-home over the spent-master region, mirroring `s` into a
+working-region counter en route (reuse `lemma_walk_left_tailed` to count the `s` ones during shuttle-DOWN).
+This is what discharges the `f_body` hypothesis: body entry = shuttle-down ∘ emit→reloc→compare (already
+tail-safe, N+32) ∘ shuttle-up-back-to-INNER_TOP.
+
+> **Shuttle design intel (read the exact interface before building — avoids a route-correction):**
+> * **The body's down-target is the EMIT entry, not reloc/compare.** The built body is `EMIT(s) → RELOC →
+>   COMPARE`. The N+32 reloc/compare entry (`lemma_reloc_then_compare_accept_tailed`) is
+>   `{ u: copy_u(0,M,g) + m^{g+M+1}·t_u,  v: dpack(output) + m^{L}·w,  a: 0,  q: q_s }` — i.e. the head is
+>   already DOWN at working-home with the CZ block riding as the high-`u` tail `t_u` at offset `g+M+1`, and
+>   `output` is the ALREADY-emitted digits. So the shuttle-DOWN must land at *emit's* entry (which then
+>   produces `output`), with the CZ `s|cnt` block recast as `t_u`.
+> * **`t_u` = the SHARED block.** The shuttle has to repackage `st_config`'s `u = R(s)` + the head/`v`
+>   block content into the body's `t_u` high tail (and back, on shuttle-UP — the outer/inner edges expect
+>   `st_config` again). The block value the body must preserve untouched as `t_u` is the whole `T+1` run.
+> * **OPEN DESIGN (the real shuttle sub-fork): how does `s` index the emit?** The emit primitives
+>   (`gap2_emit_window::seret*`) emit a FIXED symbol sequence — they don't read a stage index. So the
+>   per-stage variation (which program/budget stage `s` selects) is NOT inside emit as built; the s-mirror
+>   must drive *what gets emitted/compared* (the candidate relnum's `(a,b)` and/or the sim budget). Pin
+>   this with Danielle (emit-interface + s-indexing) BEFORE coding the shuttle: it decides whether the
+>   s-mirror feeds a decode-stage in front of emit, or the dovetail enumerates `(a,b,budget)` differently.
+
 A **round-level driver** (iterate inner-iter `T+1×` then outer, given a per-stage body contract quantified
 over `s=0..T` with a fuel function) is deferred to the body wiring — the per-stage fuel is body-specific.
 THEN: R-C (cleanup) → R-MC (`mm_decides_relnum` via `lemma_tm_h0_iff`) → B-W (`ceer_realizes`) → drop
