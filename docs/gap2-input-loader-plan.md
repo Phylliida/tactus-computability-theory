@@ -2876,3 +2876,44 @@ Q2 confirmed-tractable, Q3 confirmed-clean, quint-reuse soundness airtight (§9)
 + per-round teardown) and Q5 (small-unary `(a,b)`→counter handoff) are minor/design-choice — the remaining
 real risk is concentrated in the R-enum.2 tailed-gadget suite, which is pattern-work. The build is
 de-risked; awaiting only the Q1 route confirmation.**
+
+### N+36 — R-enum.2 LEFT-counter tailed-gadget suite BUILT (the safe, route-independent half). `tm_tailed.rs` 18/0, crate 1955→1973/0.
+
+Unsupervised session: Danielle's Q1–Q5 gate is still unanswered (her latest `MESSAGES_FROM_USER.md`
+note predates the N+35 commits), and no synchronous answer is reachable. Rather than idle or re-design,
+I built the part of R-enum.2 that is **provably route- and layout-polarity-independent** and does NOT
+touch the disputed Q1/Q4 decisions: the **LEFT-counter tailed gadgets**.
+
+**Built (`src/tm_tailed.rs`, all verified, no escape hatches):**
+- `lemma_inc_tailed`, `lemma_dec_tailed`, `lemma_peek_tailed`, `lemma_bounce_left_tailed` — the
+  `v`-abstract mirrors of `tm_inc::lemma_inc` / `tm_dec::lemma_dec` / `tm_gadget::lemma_peek_gadget` /
+  `tm_bounce::lemma_bounce_left`, with the right tape `v` left as an arbitrary `r2: nat`.
+
+**Key simplification discovered (vs. the plan's anticipation).** The plan framed the tailed gadgets as
+"each a mechanical mirror carrying a `+ m^H·tail` high term." Cross-checking the clean proofs shows it is
+even cleaner: the LEFT-counter gadgets read **only `u` + the scanned symbol** for control flow — they
+push/pop `v` during the walk but never inspect its high digits, and the turnaround/branch fires on the
+`u`-side blank. The clean proofs use `repunit_m(c2,m)` **only opaquely** (through `lemma_div_mod_step`),
+never its repunit structure. So the tailed gadget is just the clean gadget with `v` left **fully abstract**
+as `r2` — **no `m^H·tail` bookkeeping is needed at all** (`r2 == repunit(c2)` recovers the clean lemma).
+The caller instantiates `r2 = repunit_m(c2,m) + pow_nat(m,(c2+1))·tail` for the layout, but the proof never
+decomposes it. This makes the left suite layout-polarity agnostic on `v`.
+
+**⚠ SHARPENED GATE — the RIGHT-counter gadgets ARE Q4 (not safely buildable yet).** Extending the suite to
+the right counter (reg2, on `v`) surfaced a concrete refinement of the open gate: a right-counter **inc**
+grows reg2 by writing a `1` at the blank **directly above reg2 on `v`** — but in the `[sim bank][CZ][output]
+[α]` layout that blank is exactly the **separator before the CZ/output/α tail**. So reg2's growth collides
+with / consumes the tail's separator. Where reg2's growth goes relative to the tail — does the tail shift
+up, is there a pre-cleared growth gap, or is the bank rebuilt in fresh scratch each round with the tail
+reached only via the shuttle (the N+35 §11 "re-run from scratch" reading)? — **IS the open Q4 layout/
+teardown question.** N+35 §10 asserts the sim gadgets share the tape and need tails; but the standard
+Minsky two-stack model has reg2 growing **right into infinite blank**, which has no room for a tail without
+shifting. Resolving this (Q4) determines whether the right-counter suite is "v-tailed sim gadgets" or
+"clean sim on a fresh bank + tailed **shuttle** walks" (the latter reuses the already-built
+`lemma_walk_left_tailed`). **This is a genuine human-gate decision — not built.**
+
+**Status:** the route-independent half of R-enum.2 (left-counter inc/dec/peek/bounce) is DONE and banked
+(commits `68f351c`, then dec, then `f3eca9f`). The right-counter suite + disjoint-zone assembly (R-enum.3)
++ the m-generic `lemma_sim_step` re-proof (R-enum.1) remain gated on Danielle's Q1 (route) and Q4 (layout/
+teardown). The conditional chain still stands; this banks the low-risk pattern-work without committing to a
+disputed direction.
