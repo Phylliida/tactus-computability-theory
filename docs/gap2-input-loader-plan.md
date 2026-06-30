@@ -2483,3 +2483,53 @@ embed the per-stage surface in the dovetail. R-S build order: control skeleton (
 mirror `search_rm`'s nesting) → enum-sim-on-tape + `(a,b)` extraction → wire to emit→reloc→compare→branch →
 R-C (cleanup, consumes the exposed accept config) → R-MC (`mm_decides_relnum` via `lemma_tm_h0_iff`) → B-W
 (discharge `ceer_realizes`) → drop `axiom_ceer_fp_embedding`.
+
+### N+32 — u-TAIL-LIFT HALF 2 (tail-safe COMPARE) COMPLETE. The whole emit→reloc→compare→branch surface carries the Control-Zone backup `t_u` untouched. `tm_cmp_tailed.rs` 6/0 + `gap2_reloc_compare_tailed.rs` 18/0, additive.
+
+HALF 2 landed exactly as DE-RISK 3 predicted — **a thin instantiation layer, not a deep re-thread.** The
+comparator's gadgets are already tail-generic in their above-frontier parameter
+(`lemma_cmp_gap_cross`/`lemma_cmp_match_round_end` over `out_rest`, `lemma_cmp_loop`/`lemma_cmp_reach_inv_p`
+over `out_above`/`out_tail`), and the far-`5` sentinel rides in exactly that parameter. So the u-tail
+`m^H·t_u` (`H = L+1+g+M+1` from HALF 1) absorbs straight into the rest, the decision terminals firing on the
+frontier without ever popping `u` up to offset `H`.
+
+**Two new modules, both verified additively (no regression; the pre-existing baseline-20 runtime/todd_coxeter
+rejections + transient lake-spawns are undisturbed):**
+
+- **`tm_cmp_tailed.rs` (6/0) — the cmp-level tailed decides.** Only the two terminals that pin the far-`5`
+  needed a new lemma; the other three reject rounds are already `out_rest`-generic.
+  - **`lemma_cmp_accept_decide_tailed`** — generalises `lemma_cmp_accept_decide` to entry `out_rest == 5 +
+    m·tail`. Near-verbatim clone: gap-cross #1 reads `vk`, `lemma_cmp_match_round_end` (out_rest free)
+    matches it, the verify gap-cross #2 reads the far-`5` (`(5 + m·tail) % m == 5` since `5 < m`) with
+    `tail` riding above, and the accept quint fires on the scanned `5` (independent of `u`). Same fuel.
+  - **`lemma_cmp_decides_accept_tailed`** — end-to-end via the **already-generic** `lemma_cmp_reach_inv_p`
+    at `p = L-1`, `out_tail = vk + m·(5 + m·tail)` (so the bootstrap+loop carry the tail in `out_tail`),
+    then the tailed decide. Entry `u = dpack(α) + m^L·(5 + m·tail)`, `v = dpack(α) + m^L·5` (α parked
+    exactly — `u≠v` only above the far-5). Fuel `cmp_accept_fuel(L)`, identical to the untailed.
+  - **`lemma_cmp_decides_tooshort_tailed`** — the lone reject exception (too-short pins the far-`5`):
+    `out_tail = 5 + m·tail`, via `lemma_cmp_reach_inv_p` (generic) + `lemma_cmp_tooshort_round` (generic).
+- **`gap2_reloc_compare_tailed.rs` (18/0) — the reloc∘compare tailed assemblies.**
+  - **`lemma_reloc_to_parked_tailed`** — wraps HALF 1's `lemma_reloc_local_tailed`, re-packaging the v-tail
+    into the parked α-block. Parked `u = dpack(drev(output)) + m^L·5 + m^{L+1+g+M+1}·t_u`.
+  - **`lemma_reloc_then_compare_accept_tailed`** — composes it with `lemma_cmp_decides_accept_tailed`
+    (`tail = m^{g+M+1}·t_u`, the recast `m^L·5 + m^H·t_u = m^L·(5 + m·tail)` via one `pow_nat_add`). Entry
+    `u = copy_u(0,M,g) + m^{g+M+1}·t_u` → `q_accept`, fuel `reloc_compare_accept_fuel`.
+  - **the four tailed reject terminals + `lemma_reloc_then_compare_reject_tailed` dispatch.** The
+    mismatch/mismatch0/too-long cmp decides already take their above-frontier rest freely, so the tail
+    absorbs into that rest by a single pow split (`out_rest += m^{H-offset}·t_u`, `m^{offset}·m^{H-offset} =
+    m^H`), reusing the EXISTING (untailed) `lemma_cmp_decides_{mismatch,mismatch0,toolong}` verbatim; only
+    too-short routes to the new tailed cmp lemma. The dispatch routes by `cpl(drev(output), beta)` exactly
+    as the untailed `lemma_reloc_then_compare_reject`. Same `reloc_compare_reject_fuel`.
+
+  *Build lesson (the one re-thread):* the recast nonlinear `c_mid.u == terminal_shape_tailed` rlimited when
+  the pow/dpack subterms were all expanded in one `by(nonlinear_arith)`. Fix = the CLAUDE.md clean-context
+  pattern: abstract the `pow_nat`/`dpack` subterms into locals and split into small per-shape nonlinears
+  (`base == du`, `du + m^H·t_u == terminal_shape_tailed`), each over a handful of opaque vars — the
+  too-long case threads an extra `inner`/`q3` intermediate to keep the product degree ≤ 3.
+
+With `t_u == 0` every tailed lemma recovers its untailed original. **Both the accept (→ halt/cleanup) and
+reject (→ advance the dovetail) branches now carry `t_u`**, so R-S can embed the per-stage surface in the
+global frame. The ACCEPT-config exposure for R-C (the cleanup-to-origin) remains the cheap strengthening
+noted in N+31 (`lemma_cmp_accept_decide_tailed` currently ensures only `.q == q_accept`; threading the
+`c_acc` config up is deferred to R-C). **NEXT = R-S** (control skeleton → enum-sim → wire emit→reloc→compare
+→branch) per the build order above.
