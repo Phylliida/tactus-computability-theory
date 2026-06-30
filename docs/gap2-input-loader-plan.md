@@ -2533,3 +2533,62 @@ global frame. The ACCEPT-config exposure for R-C (the cleanup-to-origin) remains
 noted in N+31 (`lemma_cmp_accept_decide_tailed` currently ensures only `.q == q_accept`; threading the
 `c_acc` config up is deferred to R-C). **NEXT = R-S** (control skeleton → enum-sim → wire emit→reloc→compare
 →branch) per the build order above.
+
+### N+33 — R-S control skeleton, LAYER 1: the Control-Zone tape layout (`gap2_dovetail.rs` 10/0, crate additive). Design co-designed + endorsed (port-8051).
+
+The keystone build opens. R-S re-expresses `search_rm`'s outer-`T` / inner-`s ≤ T` dovetail nesting as a
+**TM orchestrator** over the `assemble4` n≥4 window scaffold (the per-stage body is now a base-`m`
+emit→reloc→compare, not an RM `eq_test`, so the dovetail can't be black-boxed as an RM). This session
+pinned the **Control Zone (CZ)** layout — the thing R-S most needs, since it fixes the global tape frame.
+
+**Design — confirmed with Danielle (port-8051 consult):**
+- **Three unary counters** `T` (outer bound), `s` (inner stage), `cnt = T+1−s` (inner countdown), mirroring
+  `search_rm`'s `Treg`/`scnt`/`cnt`.
+- **SHORT-CIRCUIT** (her "Agree"): generate-and-compare makes a match a *terminal accept*, so the dovetail
+  drops `search_rm`'s `result` accumulator entirely — INNER_EXIT → OUTER_CONT directly; "result" is just
+  Halt-vs-Continue, encoded in the state. Fewer counters, fewer head-moves per round.
+- **CZ-HOME** (her "Agree"): between dovetail ops the head rests in the CZ and the loop runs there via
+  counter gadgets; the per-stage body is a shuttle-DOWN-to-working-home / run emit→reloc→compare /
+  shuttle-UP-back-to-CZ subroutine. Minimises head-travel (one expensive shuttle per `(T,s)` pair, all the
+  administrative counter work local).
+- **LAYOUT** (her "Sound"): the three counters are **blank-separated unary blocks on `u`**, low→high =
+  `cnt`, `s`, `T`, head on a separator `sep()=2` at the CZ↔working boundary; the whole working region
+  (emit masters, output, the immutable α-block) rides as an **inert tail on `v`**. The `0` between blocks
+  is the walk-stop that makes every counter op **tail-safe by construction** — a dec/peek walk over one
+  block halts at the adjacent separator, untouching the neighbours and the `v` tail (the same
+  blank-delimited single-tape discipline the emitter uses, here for the control counters). Geometry note:
+  this reconciles with the BUILT per-stage frame — CZ is the high-`u` tail `t_u` at offset `H=L+1+g+M+1`;
+  shuttling LEFT across the (spent, ~`M`-wide, mostly-blank) master region brings the head to CZ-home with
+  working+α pushed onto `v` as an inert high tail.
+
+**Built (`gap2_dovetail.rs` 10/0, purely additive — new module + 1 lib.rs line, no escape hatches):**
+- **`lemma_repunit_lt_pow`** — `repunit_m(c,m) < m^c` (a `c`-digit block fits in `c` places; the "blank
+  above the block" fact placing each counter strictly below its separator).
+- **`lemma_digits_le_concat`** — the reusable digit-bound composer: `digits_le(low)` ∧ `digits_le(high)` ∧
+  `low < m^k` ⟹ `digits_le(low + m^k·high)`. Induction on `k`, peeling one place via `lemma_pow_high_tail`
+  (`h=k, k=1`) + `lemma_digits_le_low`/`_pop`/`_push`.
+- **`cz_u(cnt, s, big_t, m)`** = `R(cnt) + m^{cnt+1}·(R(s) + m^{s+1}·R(big_t))` — the CZ counters on `u`;
+  **`cz_config(cnt, s, big_t, vtail, q, m)`** = the CZ-home TmConfig (counters on `u`, `v=vtail` inert,
+  `a=sep()`).
+- **`lemma_cz_u_digits_le`** / **`lemma_cz_config_wf`** — every CZ digit is a real symbol; the CZ-home
+  config is `tm_config_wf` (two `lemma_digits_le_concat` applications stack `T` over `s` over `cnt`).
+
+**Build lesson:** `pow_nat(m,1)==m` needs the spelled-out `m·pow_nat(m,0)==m` nonlinear step (the
+`(1-1) as nat`→`0` reduction won't carry the `·1` on its own — see `gap2_init.rs:78`); and `0 % m == 0` is
+NOT automatic — route digit-bound reads through `lemma_digits_le_low` (which discharges it via
+`lemma_small_mod`) rather than asserting `low % m == 0` directly.
+
+**NEXT (R-S layer 2 — the back-edge primitives, head IN the CZ, all tail-generic on the `v` working tail
+via the blank-separator walk-stop):**
+1. **peek-cnt** (INNER_TOP zero-test): the `v`-tail-generic clone of `lemma_peek_gadget` (2 steps, L then R;
+   already nearly `v`-generic — the L/R pass restores any `v`). Reads `cz_u % m` (1 if `cnt>0`, 0 if
+   `cnt==0`) and branches.
+2. **dec-cnt** (INNER_TOP advance): clone `lemma_dec` with the `cnt` block and `s,T` as a `u`-high-tail
+   above the cnt/s separator (the walk halts at that blank) and `v=vtail` inert.
+3. **inc-s** (CONT) — grows the `s` block; needs a mid-`u`-stack insert (shifts `T` up) — the one op that
+   touches a neighbour, so likely a seek-to-`s` + rebuild, or reorder so `s` is outermost. **DESIGN SUB-CALL:
+   pick the inc-side discipline before building** (the emitter's `copy_u`/`q_clean` rebuild is the template).
+4. **SETUP** `cnt:=T+1` (copy `T`→`cnt` + inc) and **OUTER_CONT** `clear s; inc T` close the loop.
+Then: the shuttle (CZ-home ↔ working-home over the spent-master region) → wire to emit→reloc→compare→branch
+→ R-C (cleanup, consumes the exposed accept config) → R-MC (`mm_decides_relnum` via `lemma_tm_h0_iff`) → B-W
+(discharge `ceer_realizes`) → drop `axiom_ceer_fp_embedding`.

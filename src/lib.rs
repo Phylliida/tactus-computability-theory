@@ -450,3 +450,7 @@
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_power;
 // v-side (α-block) mirror of gap2_tail_power: power_block step = copy_refresh_v ∘ block_loop_v at h.
 #[cfg(verus_keep_ghost)] pub mod gap2_tail_power_v;
+// GAP-2 G2-F brick R-S — the dovetail control skeleton (layer 1): the Control-Zone tape layout.
+// Three blank-separated unary counters (cnt, s, T) on u, working+α inert on v, head on the home
+// separator. Layout spec + digit-bound/wf. See gap2_dovetail.rs / docs/gap2-input-loader-plan.md §N+33.
+#[cfg(verus_keep_ghost)] pub mod gap2_dovetail;
