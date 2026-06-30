@@ -3126,3 +3126,33 @@ the body predicate swapped from `declared_match` to `relnum(declared_pair(e,s)) 
 whole URM via `rm_to_tm` + `godel` + `lemma_tm_h0_iff` and discharge `ceer_realizes`. **A's first brick** =
 the shift-embedded tailed right-counter sim-gadget suite (heavier, TM-tape domain). Nothing built; the
 conditional chain `lemma_ceer_word_problem_in_h3` still stands.
+
+### N+40 — Confirmed: GAP-2 is *provably* the single last piece. Whole-crate re-verified GREEN (1979/0). Decision re-surfaced to Danielle + lane paused (no re-hardening; the recommendation was already bulletproof at N+39).
+
+Unsupervised session. Danielle's A-vs-B call is still unanswered; her latest note (2026-06-30T04:39Z,
+"follow the reading / upfront investment / no creative dragons") preceded the N+38 Zulip surface and is
+general methodology, not a letter. **I did NOT re-harden the recommendation a third time** (N+38/N+39
+already made it bulletproof + source-verified; a 4th de-risk would be the avoidance pattern Danielle's
+memory warns against). I also did **not** cross the reserved switch (this session's standing instruction).
+
+Instead I did two honest non-gated things and then surfaced + paused:
+1. **Swept for any remaining non-gated build work — found NONE.** The "Layer 0.5 cross-crate wiring"
+   that the AGENDA still listed as open (`[ ]`) is in fact **DONE and committed** (computability crate,
+   `d0570f2`→`2c63438`): `ceer_layer05.rs` (`ceer_decls_fam` + `lemma_ceer_decls_family_valid` +
+   `lemma_ceer_c0_embeds_in_c_iff` + `lemma_ceer_limit_commutation`) and `ceer_layer05_bridge.rs`
+   (971 lines, the native `lemma_ceer_native_embeds_in_c_iff`: `ceer_group_equiv(e,w,ε) ⟺
+   equiv_in_g_limit(ceer_decls_fam(e),…)`, both directions). The other `external_body` axioms
+   (`axiom_halts_is_prim_rec`, `axiom_output{1,2}_is_prim_rec`, `axiom_enumerator_machine_exists`) are
+   the **accepted** Church–Turing computability foundations, NOT debt to discharge. So the ONLY axiom
+   still targeted is `axiom_ceer_fp_embedding`, discharged solely by `ceer_realizes` = the GAP-2 body.
+2. **Re-verified the whole crate GREEN: `1979 verified, 0 errors`** (3 benign trigger warnings;
+   `./check.sh`, ~91s). Updated AGENDA Layer-0.5 entry to mark the cross-crate wiring done.
+
+**Net.** Everything except the GAP-2 body is machine-checked. `ceer_realizes` is *provably* the single
+remaining obligation between the current state and dropping `axiom_ceer_fp_embedding` (the last axiom).
+The build is one binary architecture choice away from done; that choice (A vs B; recommend **B**) belongs
+to Danielle (sunk cost + the explicit "architect the body WITH the human" gate). Lane paused with a
+crisp decision-forcing summary to her via the harness notify channel. Next session, once she answers:
+if **B**, execute N+39's 4-brick list (entry-fold → relnum URM → register compare → dovetail halts-iff →
+TM-sim via `rm_to_tm`/`godel`/`lemma_tm_h0_iff` → discharge `ceer_realizes`); if **A**, the shift-embedded
+right-counter gadget suite. Nothing built; `lemma_ceer_word_problem_in_h3` still stands.
