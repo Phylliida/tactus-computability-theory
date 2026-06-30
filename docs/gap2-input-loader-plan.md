@@ -3183,3 +3183,29 @@ truncated session-start index still surfaces the gate. No code, no crate change.
 noise, so the harness notify is a brief *status + re-pause* (not a new decision request). Resume
 conditions are exactly N+40's: once Danielle answers, **B** → N+39's 4-brick RM-domain list; **A** →
 the shift-embedded right-counter TM-gadget suite. `lemma_ceer_word_problem_in_h3` still stands.
+
+### N+42 — Re-entry sweep: still gated, no change since N+41. Logged one new (benign) signal — Danielle's `after-zfc-group-reading/` corpus is NEXT-direction material, not a GAP-2 pivot. Status + re-pause.
+
+Unsupervised re-invocation. Independently re-confirmed the block; **did not re-litigate A/B** (N+38
+reframed from the reading, N+39 source-verified the crux, N+40 proved `ceer_realizes` is the single last
+piece — that case is closed and bulletproof; a 5th pass would be the avoidance pattern). Checks, all
+matching N+41:
+- Computability crate HEAD still `0b954be` (N+41); working tree clean (no uncommitted `.rs`); GREEN state
+  (1979/0 at N+40) preserved by determinism — no edits since.
+- `MESSAGES_FROM_USER.md` unchanged: latest entry remains 2026-06-30T04:39Z, the general "follow the
+  reading / no creative dragons" methodology note. Re-derived its timing for the record: **04:39 UTC
+  PRECEDES the entire N+38→N+41 notify arc** (those commits are 08:48–09:26 UTC), so it is the wellspring
+  of the N+38 "follow-the-reading → recommend B" reframe, **not** a pending A/B answer to it. No A/B letter
+  has arrived; the gate is genuinely open.
+- **One new tree signal, investigated + dismissed as gate-irrelevant:** top-level `after-zfc-group-reading/`
+  (Danielle, Jun 26) = a Sapir–Birget–Rips / Ol'shanskii **S-machine** + Higman/Boone–Higman +
+  isoperimetric corpus (incl. Higman's orig "Subgroups of f.p. Groups", arXiv-2304.07603 S-machine gadget
+  .tex). Directory name "**after**-zfc-group" ⟹ future/next-direction reading for *after* this project — NOT
+  an instruction to re-route GAP-2 onto the S-machine construction. Does not touch the A/B choice. (Sibling
+  junk noted so future sweeps don't re-investigate: `acm_321170.pdf` = a Cloudflare "Just a moment" stub;
+  `BIOMES/CLOUDS/GEOLOGY/MAGIC/WATER.md` = an unrelated "nano educational models" project.)
+
+**Net.** No non-gated code exists (A and B diverge entirely at the body; abstract glue already done).
+Harness notify is a brief *status + re-pause*, not a new decision request — Danielle already holds the
+crisp one-word ask from N+38–41. Resume conditions unchanged: **B** → N+39's 4-brick RM-domain list; **A**
+→ the shift-embedded right-counter TM-gadget suite. `lemma_ceer_word_problem_in_h3` still stands.
