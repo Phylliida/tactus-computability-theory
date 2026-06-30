@@ -462,3 +462,10 @@
 // Three blank-separated unary counters (cnt, s, T) on u, working+α inert on v, head on the home
 // separator. Layout spec + digit-bound/wf. See gap2_dovetail.rs / docs/gap2-input-loader-plan.md §N+33.
 #[cfg(verus_keep_ghost)] pub mod gap2_dovetail;
+
+// GAP-2 G2-F — OPTION B (N+47), RM-domain body brick 1: the entry-fold Horner step `R := m·R + d`.
+// Folds one base-m digit into the accumulator register via move(R->tmp) o mult_back(tmp->R, k=m) o
+// move(d->R), reusing godel_gadgets' verified move/mult_back loops. The single-register S-S decider
+// convention (AC + [18]); no immutable alpha tape-block, so no Q4. See gap2_urm_fold.rs and
+// docs/gap2-input-loader-plan.md §N+38/§N+39/§N+47.
+#[cfg(verus_keep_ghost)] pub mod gap2_urm_fold;

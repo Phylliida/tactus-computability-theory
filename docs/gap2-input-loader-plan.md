@@ -3318,3 +3318,17 @@ engineering waste"). The open one-word ask from N+44 (Zulip 6041) stands as an e
 confirm-and-proceed, not a re-asked question, so no new ping is fired. **Building B's brick list (N+39),
 RM-domain, on the verified `multi_output_primitives` / `search_rm` / `godel`+`rm_to_tm`+`lemma_tm_h0_iff`
 substrate.** Progress recorded below as bricks land.
+
+**N+47 progress — BRICK 1 (entry-fold Horner step) DONE.** `gap2_urm_fold.rs`, crate 1979→**1981/0**
+(`./check.sh`, no regression; additive). `lemma_horner_step`: from `r=r0, dg=dg0, tmp=0` at `start_pc`,
+running `(k+5)·r0 + 3·dg0 + 3` steps lands at `start_pc + k + 8` with `r := k·r0 + dg0`, `dg := 0`,
+`tmp := 0`, all other registers framed. The reusable atom of the base-`m`→register fold (`R := m·R + d`,
+one digit `d`). Construction = the register-parametric `lemma_multiply_block` idiom — `move(r→tmp)` ∘
+`mult_back(tmp→r, k=m)` ∘ `move(dg→r)` — reusing `godel_gadgets::lemma_move_loop`/`lemma_mult_back_loop`
++ `search_rm_arith::lemma_run_add` verbatim, no escape hatches. `k=m` (Sylvester base) is a fixed
+construction parameter so the `k` `Inc`s are a finite block; `r0`/`dg0` unbounded `nat` (the fold's
+growth carried abstractly — the magnitude-parametric property of §N+39, demonstrated concretely here).
+**NEXT (B brick list): the entry-fold LOOP** (drive `lemma_horner_step` over α's base-`m` digit string,
+consuming `tm_dstring`'s `dpack`/`pop`/`digits_le` digit algebra) → then brick 2 (relnum URM via
+`lemma_relnum_is_fam_digits`) → brick 3 (register compare) → brick 4 (dovetail-body halts-iff via the
+`search_rm` template) → TM-sim via `rm_to_tm`+`godel`+`lemma_tm_h0_iff` → discharge `ceer_realizes`.
