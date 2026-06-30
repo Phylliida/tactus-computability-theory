@@ -86,6 +86,10 @@
 // u<->v, L<->R mirrors of tm_walk.rs, for the right counter c2 (in v). See tm_walk_right.rs.
 #[cfg(verus_keep_ghost)] pub mod tm_walk_right;
 
+// GAP-2 G2-F: tail-generic ("tailed") sim gadgets — the left-counter gadgets with `v` left abstract,
+// so the enum-sim can carry the CZ/output/α working region as an inert tail on v. See tm_tailed.rs.
+#[cfg(verus_keep_ghost)] pub mod tm_tailed;
+
 // GAP-2-E brick B5.2: the right-counter gadgets (lemma_peek_right / inc_right / dec_right) -- u<->v,
 // L<->R mirrors of the peek/inc/dec gadgets, operating on c2 (in v). See tm_right_gadgets.rs.
 #[cfg(verus_keep_ghost)] pub mod tm_right_gadgets;
