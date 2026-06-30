@@ -25,7 +25,7 @@
 use vstd::prelude::*;
 use verus_group_theory::machine_group::Dir;
 use verus_group_theory::word_numbering::lemma_div_mod_step;
-use crate::tm::{Tm, TmConfig, tm_wf, tm_step, tm_run, apply_quint};
+use crate::tm::{Tm, TmConfig, tm_wf, tm_step, tm_run, apply_quint, quint_matches};
 use crate::tm_two_counter::{repunit_m, sep, lemma_repunit_div_mod, lemma_repunit_step, lemma_repunit_zero};
 use crate::tm_gadget::{mk_quint, lemma_tm_step_picks};
 use crate::tm_walk::{pile_ones, lemma_walk_left_inner, lemma_walk_back_inner, lemma_pile_ones_div_mod};
@@ -270,6 +270,174 @@ pub proof fn lemma_dec_tailed(
         lemma_tm_run_split(tm, c0, (1 + c1 + 1 + 1) as nat, (c1 - 1) as nat);
         assert((1 + c1 + 1 + 1 + (c1 - 1)) as nat == (2 * c1 + 2) as nat);
         assert(tm_run(tm, c0, (2 * c1 + 2) as nat) == c_final);
+    }
+}
+
+/// **The tail-generic zero-test (peek) on the left counter.** The `v`-abstract mirror of
+/// [`crate::tm_gadget::lemma_peek_gadget`]: from `{u: repunit(c1), v: r2, a: sep(), q: q_entry}`,
+///   `(q_entry, 2, 2, q_branch, L)`  step off the separator into reg1,
+///   `(q_branch, 1, 1, q_pos, R)`    reg1 nonempty (inner cell 1, `c1>0`) → q_pos,
+///   `(q_branch, 0, 0, q_zero, R)`   reg1 empty (inner cell blank, `c1==0`) → q_zero,
+/// run 2 steps and land in `q_pos`/`q_zero` (head back on the separator), counters and `r2` unchanged.
+/// `r2 == repunit(c2)` recovers `lemma_peek_gadget`.
+pub proof fn lemma_peek_tailed(
+    tm: Tm, c1: nat, r2: nat,
+    q_entry: nat, q_branch: nat, q_pos: nat, q_zero: nat,
+    i_entry: int, i_pos: int, i_zero: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 2,
+        q_entry < tm.m,
+        0 <= i_entry < tm.quints.len(),
+        0 <= i_pos < tm.quints.len(),
+        0 <= i_zero < tm.quints.len(),
+        tm.quints[i_entry] == mk_quint(q_entry, sep(), sep(), q_branch, Dir::L),
+        tm.quints[i_pos] == mk_quint(q_branch, 1, 1, q_pos, Dir::R),
+        tm.quints[i_zero] == mk_quint(q_branch, 0, 0, q_zero, Dir::R),
+    ensures
+        c1 > 0 ==> tm_run(tm, (TmConfig { u: repunit_m(c1, tm.m), v: r2, a: sep(), q: q_entry }), 2)
+                    == (TmConfig { u: repunit_m(c1, tm.m), v: r2, a: sep(), q: q_pos }),
+        c1 == 0 ==> tm_run(tm, (TmConfig { u: repunit_m(c1, tm.m), v: r2, a: sep(), q: q_entry }), 2)
+                    == (TmConfig { u: repunit_m(c1, tm.m), v: r2, a: sep(), q: q_zero }),
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 2);
+    let c_entry = (TmConfig { u: repunit_m(c1, m), v: r2, a: sep(), q: q_entry });
+    assert(quint_matches(tm.quints[i_entry], c_entry));   // q == q_entry, a == sep()
+    lemma_tm_step_picks(tm, c_entry, i_entry);
+    let c_branch = apply_quint(tm.quints[i_entry], c_entry, m);
+    assert(tm_step(tm, c_entry) == Some(c_branch));
+    // c_branch (L-move): (repunit(c1)/m, r2*m + sep, repunit(c1)%m, q_branch).
+    assert(c_branch.u == repunit_m(c1, m) / m);
+    assert(c_branch.v == r2 * m + sep());
+    assert(c_branch.a == repunit_m(c1, m) % m);
+    assert(c_branch.q == q_branch);
+    lemma_div_mod_step(r2, m, sep());   // (r2*m + sep)/m == r2, %m == sep
+
+    if c1 > 0 {
+        lemma_repunit_div_mod((c1 - 1) as nat, m);   // repunit(c1)/m == repunit(c1-1), %m == 1
+        assert(((c1 - 1) as nat + 1) as nat == c1);
+        assert(c_branch.u == repunit_m((c1 - 1) as nat, m));
+        assert(c_branch.a == 1);
+        assert(quint_matches(tm.quints[i_pos], c_branch));   // q==q_branch, a==1
+        lemma_tm_step_picks(tm, c_branch, i_pos);
+        let c_final = apply_quint(tm.quints[i_pos], c_branch, m);
+        assert(tm_step(tm, c_branch) == Some(c_final));
+        // c_final (R-move): (repunit(c1-1)*m + 1, r2, sep, q_pos).
+        lemma_repunit_step((c1 - 1) as nat, m);
+        assert(repunit_m(c1, m) == m * repunit_m((c1 - 1) as nat, m) + 1);
+        assert(repunit_m((c1 - 1) as nat, m) * m == m * repunit_m((c1 - 1) as nat, m)) by(nonlinear_arith);
+        assert(c_final.u == repunit_m((c1 - 1) as nat, m) * m + 1);
+        assert(c_final.u == repunit_m(c1, m));
+        assert(c_final.v == r2);
+        assert(c_final.a == sep());
+        assert(c_final.q == q_pos);
+        let c_pos = (TmConfig { u: repunit_m(c1, m), v: r2, a: sep(), q: q_pos });
+        assert(c_final == c_pos);
+        assert(tm_run(tm, c_final, 0) == c_final);
+        assert(tm_run(tm, c_branch, 1) == c_final);
+        assert(tm_run(tm, c_entry, 2) == c_final);
+    } else {
+        lemma_repunit_zero(m);
+        assert(repunit_m(c1, m) == 0);
+        assert(0nat / m == 0) by(nonlinear_arith) requires m > 0;
+        assert(0nat % m == 0) by(nonlinear_arith) requires m > 0;
+        assert(c_branch.u == 0);
+        assert(c_branch.a == 0);
+        assert(quint_matches(tm.quints[i_zero], c_branch));   // q==q_branch, a==0
+        lemma_tm_step_picks(tm, c_branch, i_zero);
+        let c_final = apply_quint(tm.quints[i_zero], c_branch, m);
+        assert(tm_step(tm, c_branch) == Some(c_final));
+        assert(0nat * m == 0) by(nonlinear_arith);
+        assert(c_final.u == 0);
+        assert(c_final.v == r2);
+        assert(c_final.a == sep());
+        assert(c_final.q == q_zero);
+        let c_zero = (TmConfig { u: repunit_m(c1, m), v: r2, a: sep(), q: q_zero });
+        assert(c_final == c_zero);
+        assert(tm_run(tm, c_final, 0) == c_final);
+        assert(tm_run(tm, c_branch, 1) == c_final);
+        assert(tm_run(tm, c_entry, 2) == c_final);
+    }
+}
+
+/// **The tail-generic left-exit bounce.** The `v`-abstract mirror of [`crate::tm_bounce::lemma_bounce_left`]:
+/// from `{u: repunit(c1), v: r2, a: sep(), q}`,
+///   `(q, 2, 2, q_mid, L)`  step off the separator into reg1,
+///   `(q_mid, 1, 1, q_out, R)` / `(q_mid, 0, 0, q_out, R)`  bounce back (restoring reg1's inner cell),
+/// run 2 steps to `{u: repunit(c1), v: r2, a: sep(), q: q_out}` — a pure state change, counters and `r2`
+/// preserved. `r2 == repunit(c2)` recovers `lemma_bounce_left`.
+pub proof fn lemma_bounce_left_tailed(
+    tm: Tm, c1: nat, r2: nat, q: nat, q_mid: nat, q_out: nat,
+    i_b: int, i_one: int, i_zero: int,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 2,
+        q < tm.m,
+        0 <= i_b < tm.quints.len(),
+        0 <= i_one < tm.quints.len(),
+        0 <= i_zero < tm.quints.len(),
+        tm.quints[i_b] == mk_quint(q, sep(), sep(), q_mid, Dir::L),
+        tm.quints[i_one] == mk_quint(q_mid, 1, 1, q_out, Dir::R),
+        tm.quints[i_zero] == mk_quint(q_mid, 0, 0, q_out, Dir::R),
+    ensures
+        tm_run(tm, (TmConfig { u: repunit_m(c1, tm.m), v: r2, a: sep(), q }), 2)
+            == (TmConfig { u: repunit_m(c1, tm.m), v: r2, a: sep(), q: q_out }),
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    assert(m > 2);
+    let c0 = (TmConfig { u: repunit_m(c1, m), v: r2, a: sep(), q });
+    lemma_tm_step_picks(tm, c0, i_b);
+    let c_mid = apply_quint(tm.quints[i_b], c0, m);
+    assert(tm_step(tm, c0) == Some(c_mid));
+    lemma_div_mod_step(r2, m, sep());   // (r2*m+sep)/m == r2, %m == sep
+    assert(c_mid.v == r2 * m + sep());
+    assert(c_mid.q == q_mid);
+
+    if c1 >= 1 {
+        lemma_repunit_div_mod((c1 - 1) as nat, m);
+        assert(((c1 - 1) as nat + 1) as nat == c1);
+        assert(c_mid.u == repunit_m((c1 - 1) as nat, m));
+        assert(c_mid.a == 1);
+        lemma_tm_step_picks(tm, c_mid, i_one);
+        let c_fin = apply_quint(tm.quints[i_one], c_mid, m);
+        assert(tm_step(tm, c_mid) == Some(c_fin));
+        lemma_repunit_step((c1 - 1) as nat, m);
+        assert(repunit_m(c1, m) == m * repunit_m((c1 - 1) as nat, m) + 1);
+        assert(repunit_m((c1 - 1) as nat, m) * m == m * repunit_m((c1 - 1) as nat, m)) by(nonlinear_arith);
+        assert(c_fin.u == repunit_m(c1, m));
+        assert(c_fin.v == r2);       // (r2*m+sep)/m
+        assert(c_fin.a == sep());    // (r2*m+sep)%m
+        assert(c_fin.q == q_out);
+        let c_target = (TmConfig { u: repunit_m(c1, m), v: r2, a: sep(), q: q_out });
+        assert(c_fin == c_target);
+        assert(tm_run(tm, c_fin, 0) == c_fin);
+        assert(tm_run(tm, c_mid, 1) == c_fin);
+        assert(tm_run(tm, c0, 2) == c_fin);
+    } else {
+        lemma_repunit_zero(m);
+        assert(repunit_m(c1, m) == 0);
+        assert(0nat / m == 0) by(nonlinear_arith) requires m > 0;
+        assert(0nat % m == 0) by(nonlinear_arith) requires m > 0;
+        assert(c_mid.u == 0);
+        assert(c_mid.a == 0);
+        lemma_tm_step_picks(tm, c_mid, i_zero);
+        let c_fin = apply_quint(tm.quints[i_zero], c_mid, m);
+        assert(tm_step(tm, c_mid) == Some(c_fin));
+        assert(0nat * m == 0) by(nonlinear_arith);
+        assert(c_fin.u == 0);
+        assert(c_fin.v == r2);
+        assert(c_fin.a == sep());
+        assert(c_fin.q == q_out);
+        let c_target = (TmConfig { u: repunit_m(c1, m), v: r2, a: sep(), q: q_out });
+        assert(c_fin == c_target);
+        assert(tm_run(tm, c_fin, 0) == c_fin);
+        assert(tm_run(tm, c_mid, 1) == c_fin);
+        assert(tm_run(tm, c0, 2) == c_fin);
     }
 }
 
