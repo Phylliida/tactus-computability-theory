@@ -3328,7 +3328,19 @@ one digit `d`). Construction = the register-parametric `lemma_multiply_block` id
 + `search_rm_arith::lemma_run_add` verbatim, no escape hatches. `k=m` (Sylvester base) is a fixed
 construction parameter so the `k` `Inc`s are a finite block; `r0`/`dg0` unbounded `nat` (the fold's
 growth carried abstractly — the magnitude-parametric property of §N+39, demonstrated concretely here).
-**NEXT (B brick list): the entry-fold LOOP** (drive `lemma_horner_step` over α's base-`m` digit string,
-consuming `tm_dstring`'s `dpack`/`pop`/`digits_le` digit algebra) → then brick 2 (relnum URM via
-`lemma_relnum_is_fam_digits`) → brick 3 (register compare) → brick 4 (dovetail-body halts-iff via the
-`search_rm` template) → TM-sim via `rm_to_tm`+`godel`+`lemma_tm_h0_iff` → discharge `ceer_realizes`.
+**NEXT — the brick map, with two findings from this session's recon:**
+- **Brick 3 (register compare) = ALREADY AVAILABLE (reuse).** `search_rm_compare::lemma_eq_test_loop`
+  reaches `eq_exit_pc(va,vb,neq,sp)` = the EQUAL exit (`sp+5`) iff `va==vb`, else the external `neq`.
+  It is *destructive* (drains both regs) + needs a `zero` scratch, so the dovetail body must `copy`
+  (preserve) `R_α` before each compare — an assembly detail, not new gadget work.
+- **Brick 1-LOOP and Brick 2 are DESIGN-FIRST, not blind-buildable — they hinge on the FACT-2
+  tape↔register interface** N+38 flagged. The entry *loop* over `lemma_horner_step` is not a pure-RM
+  brick: an RM cannot index a variable-length digit bank, and if α already sits packed in one register
+  it IS the value (nothing to fold) — so *where* the base-`m`→register fold lives (inside `psc_urm`'s
+  registers vs at the `rm_to_tm` TM-input decode boundary) is the interface decision. Brick 2 (compute
+  `relnum(a,b)` as a nat == `dpack(fam_digits(a,b))` via `lemma_relnum_is_fam_digits`) is likewise a
+  substantial RM construction needing its own output-representation design. Settle the FACT-2 interface
+  (study `rm_to_tm`'s input encoding + `tm_dstring`/`dpack`; this is the one genuine remaining design
+  decision) BEFORE building the loop/relnum — do not rush it into a dragon.
+- Then: brick 4 (dovetail-body halts-iff via the `search_rm` template) → TM-sim via
+  `rm_to_tm`+`godel`+`lemma_tm_h0_iff` → discharge `ceer_realizes` ⟹ drop `axiom_ceer_fp_embedding`.
