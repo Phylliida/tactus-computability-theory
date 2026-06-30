@@ -2960,3 +2960,89 @@ the N+35 §11 "re-run from scratch" reading favouring *clean sim + tailed shuttl
 gadgets carry `v`-tails). The recommendations stand (Q1 = β, Q3 = fuel-guard, Q4 lean = clean-bank +
 tailed-shuttle). port-8051 hallucinated the body math once (N+34) so this is a **human** call. Nothing here
 commits to it; the conditional chain `lemma_ceer_word_problem_in_h3` still stands.
+
+### N+38 — Q4 REFRAMED FROM THE READING (AC + [18] = Shepherdson–Sturgis): the decider convention is SINGLE-REGISTER, so the whole Q4 immutable-α-tail collision is an architecture *deviation* from the source. No code; reading-grounded gate sharpening.
+
+Unsupervised session. Danielle's gate (Q1–Q5, esp. **Q4**) is still unanswered; her latest note
+(2026-06-30T04:39Z) reiterates *"follow the reading closely, even if something seems like a big effort
+better to do that upfront investment to do it right than doing something creative and encountering
+dragons."* The safe layout-independent well is essentially dry (left tailed gadgets, the emitter STEP-2
+capstone, and R-cmp are all done). Rather than build a 4th peripheral brick, I did the **upfront reading
+investment** she asked for. It reframes the gate — Q4 is not a layout knob, it is an architecture
+deviation from the reading.
+
+**THE READING (AC *Modular Machines I*, p.4; extracted via `nix-shell -p poppler-utils` → `pdftotext`).**
+AC's r.e.-set decider convention, verbatim:
+> "For any r.e. set S there is a Turing machine T such that fT is the (partial) characteristic function
+> of S. Further we may assume that if fTr is defined then T halts on a blank tape (see **[18]**, where T
+> is constructed to **simulate the action of a single-register machine** computing the function)."
+
+**[18] = J.C. Shepherdson & H.E. Sturgis, *Computability of recursive functions*** (AC bibliography,
+confirmed) — the EXACT paper Danielle placed in this crate (`ComputabilityOfRecursiveFunctions.pdf`,
+crate root) and told me to read (`MESSAGES_FROM_USER.md`, 2026-06-26). So AC's decider convention is
+grounded in the reading Danielle handed me, and §5's "Build with Shepherdson–Sturgis compositional
+style" already points at it.
+
+**What the reading says the decider IS.** A TM simulating a *single-register machine* (S–S URM): ONE
+register block on the tape, head at one end, the other side free scratch. The input `r` enters via `iM`
+(base-`m` tape description), is folded into the URM register/state, and the **entire** characteristic-
+function computation — here: dovetail declared pairs `(a,b)` → compute `relnum(a,b)` → compare to the
+input — is URM arithmetic on that single state. There is **no** "α parked as an immutable base-`m` block
+beside an active head-in-middle two-counter sim." This is exactly what §5's own AC-grounded block (line
+~405) already concluded: *"a STANDARD single-tape TM … no 2-stack-cramming puzzle, no register-fold, no
+unary/Gödel expansion … unbounded dovetail counters are ordinary tape regions; finite control is `q`."*
+
+**The internal tension this exposes (the crux).** The N+35 **body** design CONTRADICTS that reading. It
+runs the enum-sim (`E` on input `s`) as a head-in-middle **two-counter godel sim reusing `rm_to_tm`**
+(Route β) — i.e. exactly a register-fold + Gödel expansion — placed BESIDE the immutable α-block. So the
+outer machine is "no 2-stack puzzle" per the reading, but the body reintroduces the 2-stack Gödel sim
+the reading says to avoid. **That immutable-α-beside-active-2-stack-sim layout is the entire source of
+Q4.** It is not in the source.
+
+**Code-confirmed: the deviation does not even buy escape from the exponential.**
+- `godel.rs`: `godel(regs) = ∏_j base(j)^{regs[j]}` — exponential in the register values.
+- `godel_dispatch.rs::rm2_config_enc`: `registers[0] == godel_encode(c_k.registers)` (always exponential)
+  and `registers[1] == 0` at macro-step boundaries — but reg1 is the multiply/divide **scratch**, so it
+  transfers reg0↔reg1 during each macro-step and transiently reaches ~godel magnitude (exponential).
+- `tm_run_sim.rs::rm_config_enc` / `tm_two_counter.rs::two_counter_config`: register *values* become
+  *unary repunit lengths* on the tape (`u = repunit_m(reg0)`, `v = repunit_m(reg1)`).
+
+So in the current layout `[sim bank]·[CZ]·[output]·[α]` (tail on `v` above reg1, per `tm_tailed.rs`):
+- reg0 (`u`) is an **exponentially-long** unary block growing LEFT into blank — clean (this is why the
+  already-built v-abstract LEFT gadgets work), but it means **base-m bought no asymptotic escape**; it
+  relocated the exponential from α into the sim's reg0.
+- reg1 (`v`) transiently **overruns the immutable v-tail** (α+output) DURING each macro-step's
+  multiply/divide. So the "tailed RIGHT-counter gadget" is **not** an inert `+ m^H·tail` carry (§10's
+  estimate); each reg1 micro-inc must SHIFT the abstract tail out of reg1's way (a copy-walk over the
+  length-`L` tail), exponentially often per macro-step. **§10/§11's "low-risk inert-tail pattern-work"
+  estimate for the right-counter suite is therefore optimistic** — it embeds a tape-shift against
+  exponential growth, with no safe fixed-gap resting place for α on a single tape (both counters reach
+  exponential magnitude). (My first reflex this session — a "clean bank + measure-`T` gap" layout — is
+  UNSOUND for exactly this reason: the godel counters are exponential, not `≤ T`. Recorded as a caught
+  dragon, the kind Danielle's note warns against.)
+
+**THE REFRAMED GATE — the real Q1/Q4 decision, now architecture-level, for the human Danielle:**
+- **Option A — stay base-`m` (current Route i).** Keep α immutable on tape; build the **shift-embedded**
+  tailed RIGHT-counter sim gadgets (reg1 transiently overrunning the tail ⟹ shift α each macro-step).
+  Reuses the already-built base-`m` emitter (`gap2_emit_fam.rs` STEP-2) and R-cmp (tailed). Cost: the heavy
+  shift-embedded sim-gadget suite + per-macro-step tail bookkeeping (heavier than §10 budgeted).
+- **Option B — follow AC / [18] (single-register).** Fold α (+ dovetail state + candidate `(a,b)` +
+  generated `relnum`) into the URM/godel state; simulate via the EXISTING `godel` + `rm_to_tm` +
+  `lemma_tm_h0_iff` machinery (heavily built); comparison becomes register arithmetic. **Dissolves Q4
+  entirely** (one block, free scratch on the other side, no immutable tail). Cost: **discards** the
+  base-`m` emitter/compare bricks, and re-encounters the FACT-2 entry question (base-`m` α → register).
+  But FACT-2's rejected blowup was specifically the *unrolled raw-quad* form ("an exponential raw-quad
+  expansion, not a simple `R←R·m+d` fold"); a base-`m`→register entry done as a **finite loop gadget**
+  (`R ← R·m + d`, exponential *runtime*, bounded *proof*) is not that dragon. Worth re-examining.
+
+**Recommendation (offered, not enacted).** The reading — AC + [18], which Danielle provided and her notes
+repeatedly point to — favors **Option B**: it is the convention actually in the source, it dissolves Q4,
+and it reuses the standard sim pipeline instead of a bespoke shift-gadget suite. The Route-i base-`m`
+choice was made (with Danielle, port-8051, 2026-06-26) to dodge FACT-2's entry blowup — but (i) the body
+sim is exponential either way (godel), so base-`m` bought only an *extra* Q4 collision, not an escape; and
+(ii) FACT-2's blowup is the unrolled raw-quad form, not a finite fold loop. **This is a genuine
+architecture-level call with real sunk cost (Option B discards the base-`m` emitter/compare), so per the
+explicit instruction to "architect the body WITH the human" it is surfaced for Danielle, not decided
+here.** Nothing built; the conditional chain `lemma_ceer_word_problem_in_h3` still stands. port-8051 is
+*not* consulted (it hallucinated the body math at N+34, and the latest note says follow the reading, not
+the proxy).
