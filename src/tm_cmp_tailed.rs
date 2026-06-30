@@ -342,4 +342,74 @@ pub proof fn lemma_cmp_decides_accept_tailed(
     assert(tm_run(tm, c0_reach, cmp_accept_fuel(big_l)) == tm_run(tm, inv_p, f3));
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Brick 4a — the tailed TOO-SHORT decide (the one reject terminal that pins the far-5). The mismatch /
+// mismatch0 / too-long terminals already take their above-frontier rest freely, so they carry the tail
+// with no new cmp lemma; this is the lone exception.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// **u-tail-lift — the tailed TOO-SHORT decision (reaches `q_reject`).** As
+/// [`crate::tm_cmp_assemble::lemma_cmp_decides_tooshort`] but the output's far-`5` sentinel carries an
+/// arbitrary tail above it (`out_tail == 5 + m·tail`, was pinned `5`): the comparator reaches `INV(p)` via
+/// the tail-generic [`lemma_cmp_reach_inv_p`] (carrying `out_tail`), the gap-cross reads the sentinel `5`
+/// (`(5 + m·tail) % m == 5`), and the too-short quintuple fires → `q_reject`, the tail riding above. With
+/// `tail == 0` this IS `lemma_cmp_decides_tooshort`. Requires `n ≥ 5`, `|α| ≥ 2`, `1 ≤ p ≤ |α|-1`.
+pub proof fn lemma_cmp_decides_tooshort_tailed(
+    tm: Tm,
+    qw: spec_fn(nat) -> nat, qc: spec_fn(nat) -> nat, qb: spec_fn(nat) -> nat, qr: nat,
+    q_start: nat, q_read_boot: nat, q_reject: nat,
+    alpha: Seq<nat>, p: nat, tail: nat,
+)
+    requires
+        tm_wf(tm),
+        tm.n >= 5,
+        alpha.len() >= 2,
+        1 <= p <= alpha.len() - 1,
+        forall|k: int| 0 <= k < alpha.len() ==> 1 <= #[trigger] alpha[k] <= 4,
+        forall|V: nat| #![trigger cmp_quints_present(tm, qw, qc, qb, qr, V)]
+            1 <= V <= 4 ==> cmp_quints_present(tm, qw, qc, qb, qr, V),
+        has_quint(tm, mk_quint(q_start, 0, 0, q_read_boot, Dir::R)),
+        has_quint(tm, mk_quint(q_read_boot, alpha[0], 5, qw(alpha[0]), Dir::L)),
+        has_quint(tm, mk_quint(qc(alpha[p as int]), 5, 5, q_reject, Dir::R)),
+    ensures
+        tm_run(tm,
+            TmConfig {
+                u: dpack(alpha.subrange(0, p as int), tm.m) + pow_nat(tm.m, p) * (5 + tm.m * tail),
+                v: dpack(alpha, tm.m) + pow_nat(tm.m, alpha.len()) * 5,
+                a: 0,
+                q: q_start,
+            },
+            (8 + cmp_loop_fuel(1, 2, (p - 1) as nat) + (p + 2)) as nat).q == q_reject,
+{
+    reveal(tm_wf);
+    let m = tm.m;
+    let vk = alpha[p as int];
+    let out_tail = (5 + m * tail) as nat;
+    let c0 = TmConfig {
+        u: dpack(alpha.subrange(0, p as int), m) + pow_nat(m, p) * out_tail,
+        v: dpack(alpha, m) + pow_nat(m, alpha.len()) * 5,
+        a: 0,
+        q: q_start,
+    };
+    lemma_cmp_reach_inv_p(tm, qw, qc, qb, qr, q_start, q_read_boot, alpha, p, out_tail);
+    let inv_p = cmp_inv_config(qw, alpha.subrange(0, p as int), alpha.subrange(p as int, (p + 1) as int),
+        alpha_tail_above(alpha, p, m), (p + 1) as nat, out_tail, m);
+    assert(tm_run(tm, c0, (8 + cmp_loop_fuel(1, 2, (p - 1) as nat)) as nat) == inv_p);
+
+    lemma_singleton_out_pregap(alpha, p, out_tail, m);
+    assert(inv_p.a == pile_zeros(5 + m * tail, (p + 1) as nat, m) % m);
+    assert(inv_p.u == pile_zeros(5 + m * tail, (p + 1) as nat, m) / m);
+    assert(inv_p.q == qw(vk));
+
+    assert(cmp_quints_present(tm, qw, qc, qb, qr, vk));
+    let ib = extract_quint(tm, mk_quint(qw(vk), 0, 0, qc(vk), Dir::L));
+    let ic = extract_quint(tm, mk_quint(qc(vk), 0, 0, qc(vk), Dir::L));
+    let jt = extract_quint(tm, mk_quint(qc(vk), 5, 5, q_reject, Dir::R));
+    crate::tm_cmp_decide::lemma_cmp_tooshort_round(tm, inv_p, qw(vk), qc(vk), q_reject,
+        (p + 1) as nat, tail, ib, ic, jt);
+    assert(tm_run(tm, inv_p, (p + 2) as nat).q == q_reject);
+
+    lemma_tm_run_split(tm, c0, (8 + cmp_loop_fuel(1, 2, (p - 1) as nat)) as nat, (p + 2) as nat);
+}
+
 } // verus!
