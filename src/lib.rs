@@ -276,6 +276,12 @@
 // q_accept). See tm_cmp_assemble.rs and docs/gap2-input-loader-plan.md sec N+27/N+28.
 #[cfg(verus_keep_ghost)] pub mod tm_cmp_assemble;
 
+// GAP-2 G2-F Route (i) — u-TAIL-LIFT HALF 2 (tail-safe compare). lemma_cmp_accept_decide_tailed /
+// lemma_cmp_decides_accept_tailed: carry the Control-Zone backup tail above the far-5 through the
+// comparator's accept path (the reject rounds are already out_rest-generic). See tm_cmp_tailed.rs and
+// docs/gap2-input-loader-plan.md sec N+31/N+32.
+#[cfg(verus_keep_ghost)] pub mod tm_cmp_tailed;
+
 // GAP-2 G2-F Route (i) — the RELOCATION gadget (emit-coupling proper): emit-end -> compare parked-entry.
 // lemma_reloc_stamp_transfer_local/_contract: stamp the output far-5 (merged into the transfer's first
 // step) + dwalk_right transfer output v->u reversed -> u = dpack(drev(output)) + m^L*5. See gap2_reloc.rs
