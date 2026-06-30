@@ -2838,3 +2838,41 @@ lemmas are proven `m`-generic (any `m>1`, symbols `≤ n`, which holds since `2 
 `lemma_sim_step`'s per-instruction dispatch at the new `m` (the gadgets transfer). This strengthens the
 route-β recommendation. The same pass independently confirmed §2's irreducibility (no `H₀`-composition
 shortcut; the single-TM embedding is the required proof path).
+
+**10. Q2 sharpened against `lemma_sim_inc_left`'s proof (de-risk, no code).** Read the actual per-instruction
+sim proof (`tm_sim.rs:117`). Its skeleton: (i) `lemma_quint_at(rm,pc,off,sym)` locates each gadget quint by
+index in `rm_to_tm(rm).quints`; (ii) the state bounds `e=entry(pc) < m`, `e+1 < m` from `m=19+16·len`;
+(iii) the **m-generic** gadget calls `lemma_inc(tm,…)` / `lemma_bounce_left(tm,…)` (they take `tm`, use
+`tm.m`); (iv) chain via `lemma_tm_run_split`. **Consequence for R-enum.1:** if the sim-zone is the
+**prefix** of `psc_tm.quints` (i.e. `psc_tm.quints = rm_to_tm(godel E).quints ++ [other zones]`), then
+`psc_tm.quints[i] == rm_to_tm.quints[i]` for the sim indices (prefix property), so `lemma_quint_at` transfers
+nearly verbatim; the bounds `e < psc_tm.m` get EASIER (`psc_tm.m > tm_mod(len)`); and (iii)/(iv) reuse the
+m-generic gadgets directly. So the m-genericity is real and Q2's optimistic estimate holds — **with one
+correction:** the gadget calls in (iii) operate on a *clean* `two_counter_config` (no other tape content),
+but in `psc_tm` the sim shares the tape with the CZ/output/α tails. So R-enum.1's per-instruction proofs must
+call **TAIL-AWARE** gadgets, of which only `walk` currently has one (`lemma_walk_left_tailed`,
+`gap2_dovetail.rs`). **Therefore R-enum.1 and R-enum.2 are COUPLED, and the genuine bulk is a tailed gadget
+suite** — `lemma_inc`/`lemma_dec`/`lemma_bounce_{left,right}`/`lemma_peek`-tailed — each a mechanical mirror
+of its clean original carrying a `+ m^H·tail` high term (the established N+31/N+32 + `lemma_walk_left_tailed`
+pattern). This is MODERATE (≈6–10 tailed gadget lemmas + the prefix-indexed per-instruction sim re-proofs),
+not a from-scratch re-derivation. Net: route β's effort is dominated by the tailed-gadget suite, which is
+low-risk pattern-work; the m-genericity / quint-reuse is essentially free given the prefix placement.
+
+**11. Q3 confirmed + the "one fixed psc_tm" insight (de-risk, no code).** Read the `instrument` outcome
+interface (`search_rm_sim.rs`): `lemma_instrument_halts` (E halts in budget ⟹ reach `halted_pc` carrying E's
+registers — so `(a,b)=reg[1],reg[2]` are readable) and `lemma_instrument_guard_timeout`/`lemma_instrument_
+reaches_sink` (budget exhausted ⟹ reach `timeout_pc`). So `instrument(E)` is a TOTAL RM (always returns a
+verdict). **The fuel-guard is RM-level**, so the clean construction is to apply it FIRST:
+`enum-sim quints := rm_to_tm(godel(instrument(E)))` — totality lifts through godel (`lemma_godel_halts_iff`)
+and rm_to_tm, so the TM sim **always reaches origin in bounded steps** and the to-completion
+`tm_run_sim::lemma_sim_run` terminates (no manual TM-step counting). This **confirms Q3 (use the fuel-guard)**
+and yields the keystone simplification: **the `(T,s)` variation is entirely in the INITIAL REGISTER VALUES
+(`fuel_reg := T`, `input_reg := s`), NOT in the machine structure** — so a SINGLE fixed `psc_tm` (fixed quint
+list) handles every dovetail stage; the SHARED-TOTAL loop just rewrites the initial sim registers each round
+(R-enum.4 = the shuttle writes `T` and `s` into the sim bank; R-enum.5 reads `(a,b)` + the halted/timeout
+verdict off the bank after). This is why "re-run from scratch each round" is cheap and why the `f_body`
+hypothesis is dischargeable with a definite per-stage fuel. **Architecture status: Q1 recommended+grounded,
+Q2 confirmed-tractable, Q3 confirmed-clean, quint-reuse soundness airtight (§9). Q4 (bank/CZ tape coexistence
++ per-round teardown) and Q5 (small-unary `(a,b)`→counter handoff) are minor/design-choice — the remaining
+real risk is concentrated in the R-enum.2 tailed-gadget suite, which is pattern-work. The build is
+de-risked; awaiting only the Q1 route confirmation.**
