@@ -3156,3 +3156,30 @@ crisp decision-forcing summary to her via the harness notify channel. Next sessi
 if **B**, execute N+39's 4-brick list (entry-fold → relnum URM → register compare → dovetail halts-iff →
 TM-sim via `rm_to_tm`/`godel`/`lemma_tm_h0_iff` → discharge `ceer_realizes`); if **A**, the shift-embedded
 right-counter gadget suite. Nothing built; `lemma_ceer_word_problem_in_h3` still stands.
+
+### N+41 — Re-entry sweep: NOTHING changed since N+40; A/B still unanswered. No re-litigation (the N+38–40 recommendation is already bulletproof). Did cross-session continuity housekeeping (MEMORY.md trim) + re-paused the lane.
+
+Unsupervised re-invocation. **Independently re-verified the block is real, then deliberately did NOT
+add to the A/B analysis** (a 4th de-risk would be the avoidance pattern; N+38 reframed, N+39
+source-verified the crux, N+40 confirmed `ceer_realizes` is provably the last piece — that work is
+complete). State checks, all confirming N+40 verbatim:
+- Computability crate HEAD still `27b90e2` (N+40's commit); **no commits today after N+40**; no
+  uncommitted `.rs`/`.md`.
+- `MESSAGES_FROM_USER.md` unchanged (latest entry 2026-06-30T04:39Z = the general "follow the reading
+  / no creative dragons" methodology note, **not** an A/B letter). No new files/signals in the tree.
+- A local-model consult (port-8051, scoped to *process* not body-math) independently returned the same
+  verdict: externally blocked, no middle path (A and B diverge entirely at the machine body, the
+  abstract glue `lemma_ceer_realizes_from_machine` is already done), correct move = housekeeping + pause.
+
+**The one genuinely-flagged non-gated task done:** the project's memory index
+(`~/.claude/.../memory/MEMORY.md`) was 31.8 KB over its 24.4 KB cap and only *partially* loaded at
+session start — a real defect in cross-session continuity for this 40+-session arc. Trimmed it to
+21.8 KB (script-conservative truncation of 82 over-long index lines to ≤185-char hooks; **all 129
+entries + all file links preserved**, detail already lives in the topic files), then hand-restored the
+live "body GATED on Danielle A/B" flags on the current-state GAP-2 entries so the next session's
+truncated session-start index still surfaces the gate. No code, no crate change.
+
+**Net.** No productive code-work exists while the A/B call is open; surfacing it a 4th time would be
+noise, so the harness notify is a brief *status + re-pause* (not a new decision request). Resume
+conditions are exactly N+40's: once Danielle answers, **B** → N+39's 4-brick RM-domain list; **A** →
+the shift-embedded right-counter TM-gadget suite. `lemma_ceer_word_problem_in_h3` still stands.
